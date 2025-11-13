@@ -1,0 +1,246 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+Swiss/EU Brand Colors:
+- Alpine Blue: #2563EB (219 91% 53%)
+- Slate Gray: #334155 (213 24% 27%)
+- Engineering Green: #16A34A (142 76% 36%)
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Alpine Blue - Swiss/EU Brand Primary */
+    --primary: 219 91% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Slate Gray - Swiss/EU Brand Secondary */
+    --secondary: 213 24% 27%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 219 91% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 219 91% 53%;
+
+    --radius: 0.75rem;
+
+    --hero-bg: 222 47% 11%;
+    --hero-foreground: 0 0% 100%;
+    
+    --tech-glow: 219 91% 53%;
+    --gradient-start: 219 91% 53%;
+    --gradient-end: 245 58% 51%;
+    
+    /* Dark mode hero adjustments */
+    --dark-hero-bg: 0 0% 7%; /* #121212 */
+    --dark-hero-foreground: 0 0% 88%; /* #E0E0E0 */
+    --dark-tech-glow: 217 91% 60%; /* Lighter glow for dark mode */
+
+    /* Brand colors for use in components */
+    --alpine-blue: 219 91% 53%;
+    --slate-gray: 213 24% 27%;
+    --engineering-green: 142 76% 36%;
+    
+    /* P&ID specific colors */
+    --pid-primary: 142 76% 36%;
+    --pid-secondary: 213 24% 27%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Swiss/EU Dark Mode Design - Subtle grays for backgrounds */
+    --background: 0 0% 7%; /* #121212 */
+    --foreground: 0 0% 88%; /* #E0E0E0 */
+
+    --card: 0 0% 12%; /* #1E1E1E - surface color */
+    --card-foreground: 0 0% 88%; /* #E0E0E0 */
+
+    --popover: 0 0% 12%; /* #1E1E1E */
+    --popover-foreground: 0 0% 88%; /* #E0E0E0 */
+
+    /* Lighter primary blue for dark mode readability */
+    --primary: 217 91% 60%; /* #3B82F6 - lighter blue */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 12%; /* #1E1E1E */
+    --secondary-foreground: 0 0% 88%; /* #E0E0E0 */
+
+    --muted: 0 0% 12%; /* #1E1E1E */
+    --muted-foreground: 0 0% 65%; /* Adjusted for better contrast */
+
+    /* Brighter accent for dark mode */
+    --accent: 180 100% 35%; /* #00B3B3 */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 18%; /* Subtle border for dark mode */
+    --input: 0 0% 12%; /* #1E1E1E */
+    --ring: 217 91% 60%; /* Match primary for focus rings */
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', sans-serif;
+    line-height: 1.4;
+  }
+
+  h1 {
+    font-size: 40px;
+  }
+
+  /* Focus ring color variable - Updated for WCAG AA contrast */
+  :root {
+    --focus-ring-color: 217 91% 60%; /* #2563EB - 4.5:1 contrast ratio */
+  }
+  
+  .dark {
+    --focus-ring-color: 217 91% 60%; /* Lighter blue for dark mode - maintains contrast */
+  }
+  
+  /* Enhanced focus visibility for keyboard navigation */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring-color));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  
+  /* Button and interactive element focus */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring-color));
+    outline-offset: 2px;
+  }
+  
+  /* P&ID conditional styling */
+  .pid-accent {
+    color: hsl(var(--pid-primary));
+  }
+  
+  .pid-border {
+    border-color: hsl(var(--pid-primary) / 0.3);
+  }
+}
+
+@layer utilities {
+  .hero-gradient {
+    background: linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-end)));
+  }
+  
+  .tech-glow {
+    box-shadow: 0 0 30px hsl(var(--tech-glow) / 0.3);
+  }
+  
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .card-hover:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 40px -12px hsl(var(--primary) / 0.25);
+  }
+
+  .fade-in {
+    animation: fadeIn 0.6s ease-out forwards;
+  }
+
+  .slide-up {
+    animation: slideUp 0.6s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+}
