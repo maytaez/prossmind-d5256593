@@ -13,12 +13,12 @@ serve(async (req) => {
 
   try {
     const { prompt, diagramType = 'bpmn' } = await req.json();
-    console.log('Received request:', { diagramType, prompt });
+    console.log('Generating BPMN for prompt:', prompt);
 
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-    if (!GOOGLE_API_KEY) {
-      console.error('GOOGLE_API_KEY not found');
-      throw new Error('Google API key not configured');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      console.error('LOVABLE_API_KEY not found');
+      throw new Error('Lovable API key not configured');
     }
 
     const bpmnSystemPrompt = `You are a BPMN (Business Process Model and Notation) expert. Generate valid BPMN 2.0 XML based on user descriptions.
@@ -376,29 +376,27 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     
     // Use Pro model for complex diagrams or P&ID
     const useProModel = diagramType === 'pid' || complexityScore >= 5;
-    const model = useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    const model = useProModel ? 'google/gemini-2.5-pro' : 'google/gemini-2.5-flash';
     const maxTokens = useProModel ? 16384 : 12288;
     
-    console.log('Complexity score:', complexityScore);
-    console.log(`Using model: ${model}`);
+    console.log(`Using model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens})`);
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`,
+      'https://ai.gateway.lovable.dev/v1/chat/completions',
       {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: `${systemPrompt}\n\n${prompt}` }
-            ]
-          }],
-          generationConfig: {
-            maxOutputTokens: maxTokens,
-            temperature: 0.7
-          }
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.7
         }),
       }
     );
@@ -419,14 +417,14 @@ When combined with your **PidRenderer.js**, this updated prompt will:
         );
       }
       const errorText = await response.text();
-      console.error('Google API error:', response.status, errorText);
+      console.error('Lovable AI API error:', response.status, errorText);
       throw new Error('Failed to generate BPMN');
     }
 
     const data = await response.json();
-    console.log('Google API Response:', JSON.stringify(data, null, 2));
+    console.log('AI Response received');
     
-    let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let bpmnXml = data.choices?.[0]?.message?.content || '';
     
     if (!bpmnXml) {
       console.error('Failed to extract BPMN XML from response. Full response:', JSON.stringify(data));
