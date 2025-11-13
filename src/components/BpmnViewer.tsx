@@ -483,6 +483,12 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [visionJobId, setVisionJobId] = useState<string | null>(null);
   const canEditRef = useRef<boolean>(true);
   const hasGeneratedAlternativesRef = useRef(false);
+  const [systemActivities, setSystemActivities] = useState<SystemActivity[]>([]);
+  const [systemTrackingEnabled, setSystemTrackingEnabled] = useState(false);
+  const [confirmAlternative, setConfirmAlternative] = useState<AlternativeModel | null>(null);
+  const [confirmAlternativeDialogOpen, setConfirmAlternativeDialogOpen] = useState(false);
+  const systemActivitiesRef = useRef<SystemActivity[]>([]);
+  const systemTrackingCleanupRef = useRef<(() => void) | null>(null);
 
   const processSummary = useMemo(
     () => extractProcessSummary(xml, diagramType),
