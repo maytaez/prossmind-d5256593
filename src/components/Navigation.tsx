@@ -101,13 +101,25 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
+    
+    // Even if there's a server error (like session_not_found), 
+    // we should still clear the local session state
     if (error) {
-      toast({
-        variant: "destructive",
-        title: "Error signing out",
-        description: error.message,
-      });
+      // Only show error toast for non-session errors
+      if (!error.message?.includes('session') && !error.message?.includes('Session')) {
+        toast({
+          variant: "destructive",
+          title: "Error signing out",
+          description: error.message,
+        });
+      }
     }
+    
+    // Clear local state and force a page reload to ensure clean state
+    setUser(null);
+    sessionUserRef.current = null;
+    userStateRef.current = null;
+    window.location.href = '/';
   };
   
   const navItems = [
