@@ -948,5 +948,63 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                                             setUploadedFile(null);
                                         }}
                                     >
-                                        Cancel
-                                    </Button>
+                        Cancel
+                    </Button>
+                </div>
+            </div>
+        </div>
+    )}
+
+    {/* BPMN Viewer */}
+    {bpmnXml && (
+        <div id="bpmn-viewer" className="mt-12">
+            <BpmnViewerComponent
+                xml={bpmnXml}
+                onSave={setBpmnXml}
+                diagramType={diagramType}
+                onRefine={() => setShowRefineDialog(true)}
+            />
+        </div>
+    )}
+
+    {/* Refine Dialog */}
+    <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+                <DialogTitle>Refine {diagramType === "bpmn" ? "BPMN" : "P&ID"} Diagram</DialogTitle>
+                <DialogDescription>
+                    Describe the changes you'd like to make to your {diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram
+                </DialogDescription>
+            </DialogHeader>
+            <Textarea
+                value={refinementPrompt}
+                onChange={(e) => setRefinementPrompt(e.target.value)}
+                placeholder={`e.g., "Add a ${diagramType === "bpmn" ? "decision gateway" : "control valve"} after the first ${diagramType === "bpmn" ? "task" : "process unit"}"`}
+                className="min-h-[120px]"
+            />
+            <div className="flex gap-2 justify-end">
+                <Button
+                    variant="outline"
+                    onClick={() => {
+                        setShowRefineDialog(false);
+                        setRefinementPrompt("");
+                    }}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    onClick={handleRefineBpmn}
+                    disabled={isRefining || !refinementPrompt.trim()}
+                >
+                    {isRefining ? "Refining..." : "Apply Changes"}
+                </Button>
+            </div>
+        </DialogContent>
+    </Dialog>
+                </div>
+            </div>
+        </section>
+    );
+};
+
+export default SubdomainTryProssMe;
