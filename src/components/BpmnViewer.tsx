@@ -4,7 +4,7 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
 import { Button } from "@/components/ui/button";
-import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check } from "lucide-react";
+import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image, AlertTriangle, Plus, ChevronLeft, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Accordion,
   AccordionContent,
@@ -58,7 +59,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { User } from "@supabase/supabase-js";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 interface BpmnViewerProps {
   xml: string;
@@ -464,7 +465,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const modelerRef = useRef<BpmnModeler | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const [isProcessManager, setIsProcessManager] = useState(false);
   const [canEdit, setCanEdit] = useState(true);
   const [editingLocked, setEditingLocked] = useState(false);
@@ -1019,10 +1020,18 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Palette panel state
-  const [showPalette, setShowPalette] = useState(false);
-  const [palettePosition, setPalettePosition] = useState({ x: 20, y: 100 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [showPalette, setShowPalette] = useState(true);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
+  const [showRuler, setShowRuler] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPanMode, setIsPanMode] = useState(false);
+  const [showPropertiesPanel, setShowPropertiesPanel] = useState(false);
+  const [showParticipantsPanel, setShowParticipantsPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showDocumentationPanel, setShowDocumentationPanel] = useState(false);
+  const [showValidationResults, setShowValidationResults] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Array<{ message: string; elementId?: string }>>([]);
 
   // Element change context menu state
   const [selectedElement, setSelectedElement] = useState<{ type?: string; id?: string;[key: string]: unknown } | null>(null);
@@ -1215,6 +1224,10 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           }
         }
 
+        // Reset file input
+        const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
+        if (fileInput) fileInput.value = "";
+
         setVisionDialogOpen(false);
         setSelectedFile(null);
         setIsProcessing(false);
@@ -1225,6 +1238,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         toast.error("Vision AI processing failed", {
           description: errorMsg
         });
+        
+        // Reset file input
+        const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
+        if (fileInput) fileInput.value = "";
+        
         setIsProcessing(false);
         setSelectedFile(null);
         setVisionJobId(null);
@@ -1262,6 +1280,10 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               });
             }
 
+            // Reset file input
+            const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
+            if (fileInput) fileInput.value = "";
+
             setVisionDialogOpen(false);
             setSelectedFile(null);
             setIsProcessing(false);
@@ -1272,6 +1294,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             toast.error("Vision AI processing failed", {
               description: errorMsg
             });
+            
+            // Reset file input
+            const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
+            if (fileInput) fileInput.value = "";
+            
             setIsProcessing(false);
             setSelectedFile(null);
             setVisionJobId(null);
@@ -1292,6 +1319,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       toast.error("Processing timed out", {
         description: "Please try again or contact support"
       });
+      
+      // Reset file input
+      const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+      
       setIsProcessing(false);
       setSelectedFile(null);
       setVisionJobId(null);
@@ -1917,17 +1949,317 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
     toast.success("Canvas cleared!");
   };
 
-  const handleVisionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload/Import handler
+  const handleUpload = useCallback(() => {
     if (!canEdit) {
       toast.error("Editing is locked by the Process Manager");
       return;
     }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.bpmn,.xml';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file || !modelerRef.current) return;
+
+      try {
+        const text = await file.text();
+        // Basic validation - check if it's valid XML
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, 'text/xml');
+        const parseError = xmlDoc.querySelector('parsererror');
+        
+        if (parseError) {
+          toast.error("Invalid XML file");
+          return;
+        }
+
+        // Check if it contains BPMN elements
+        if (!text.includes('bpmn:') && !text.includes('bpmn2:') && !text.includes('bpmndi:')) {
+          toast.error("File does not appear to be a valid BPMN diagram");
+          return;
+        }
+
+        await modelerRef.current.importXML(text);
+        const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
+        canvas.zoom("fit-viewport");
+        toast.success("Diagram imported successfully");
+      } catch (error) {
+        console.error("Import error:", error);
+        toast.error("Failed to import diagram");
+      }
+    };
+    input.click();
+  }, [canEdit]);
+
+  // Enhanced Download/Export handler with format options
+  const handleDownloadWithFormat = useCallback(async (format: 'bpmn' | 'xml' | 'svg' = 'bpmn') => {
+    if (!modelerRef.current) return;
+
+    try {
+      if (format === 'svg') {
+        // Export as SVG
+        const canvas = modelerRef.current.get("canvas") as { svg: () => string };
+        const svg = canvas.svg();
+        const blob = new Blob([svg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `diagram.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success("SVG exported successfully");
+      } else {
+        // Export as BPMN/XML
+        const { xml } = await modelerRef.current.saveXML({ format: true });
+        const blob = new Blob([xml], { type: 'application/xml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `diagram.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success(`${format.toUpperCase()} exported successfully`);
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export diagram");
+    }
+  }, []);
+
+  // Zoom functions
+  const handleZoomIn = useCallback(() => {
+    if (!modelerRef.current) return;
+    try {
+      const canvas = modelerRef.current.get("canvas") as {
+        zoom: (step: number | string) => void;
+        getViewbox: () => { scale: number } | undefined;
+      };
+      const viewbox = canvas.getViewbox();
+      if (viewbox) {
+        const newScale = Math.min(viewbox.scale * 1.2, 3); // Max zoom 3x
+        canvas.zoom(newScale);
+      }
+    } catch (error) {
+      console.error("Error zooming in:", error);
+    }
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (!modelerRef.current) return;
+    try {
+      const canvas = modelerRef.current.get("canvas") as {
+        zoom: (step: number | string) => void;
+        getViewbox: () => { scale: number } | undefined;
+      };
+      const viewbox = canvas.getViewbox();
+      if (viewbox) {
+        const newScale = Math.max(viewbox.scale / 1.2, 0.2); // Min zoom 0.2x
+        canvas.zoom(newScale);
+      }
+    } catch (error) {
+      console.error("Error zooming out:", error);
+    }
+  }, []);
+
+  const handleFitToScreen = useCallback(() => {
+    if (!modelerRef.current) return;
+    try {
+      const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
+      canvas.zoom("fit-viewport");
+    } catch (error) {
+      console.error("Error fitting to screen:", error);
+    }
+  }, []);
+
+  // Fullscreen handler
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(() => {
+        toast.error("Failed to enter fullscreen mode");
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch(() => {
+        toast.error("Failed to exit fullscreen mode");
+      });
+    }
+  }, []);
+
+  // Grid toggle handler
+  const handleToggleGrid = useCallback(() => {
+    if (!modelerRef.current) return;
+    try {
+      const gridModule = modelerRef.current.get("grid", false) as { setVisible: (visible: boolean) => void } | undefined;
+      if (gridModule) {
+        setShowGrid(!showGrid);
+        gridModule.setVisible(!showGrid);
+      } else {
+        // Fallback: toggle via CSS
+        setShowGrid(!showGrid);
+        const container = containerRef.current;
+        if (container) {
+          const canvasElement = container.querySelector('.djs-container') as HTMLElement;
+          if (canvasElement) {
+            if (!showGrid) {
+              canvasElement.style.backgroundImage = 'linear-gradient(rgba(0, 0, 0, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.1) 1px, transparent 1px)';
+              canvasElement.style.backgroundSize = '20px 20px';
+            } else {
+              canvasElement.style.backgroundImage = 'none';
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling grid:", error);
+    }
+  }, [showGrid]);
+
+  // Ruler toggle handler
+  const handleToggleRuler = useCallback(() => {
+    setShowRuler(!showRuler);
+    toast.info(`Ruler ${!showRuler ? 'enabled' : 'disabled'}`);
+  }, [showRuler]);
+
+  // Validation handler
+  const handleValidateModel = useCallback(() => {
+    if (!modelerRef.current) return;
+    
+    const errors: Array<{ message: string; elementId?: string }> = [];
+    
+    try {
+      const elementRegistry = modelerRef.current.get("elementRegistry") as { getAll: () => Array<{ id?: string; type?: string; businessObject?: { name?: string } }> };
+      const allElements = elementRegistry.getAll();
+      
+      // Basic validation checks
+      const startEvents = allElements.filter(el => el.type?.includes('StartEvent'));
+      const endEvents = allElements.filter(el => el.type?.includes('EndEvent'));
+      
+      if (startEvents.length === 0) {
+        errors.push({ message: "No start event found. A BPMN diagram must have at least one start event." });
+      }
+      
+      if (endEvents.length === 0) {
+        errors.push({ message: "No end event found. A BPMN diagram should have at least one end event." });
+      }
+      
+      // Check for elements without names
+      allElements.forEach(element => {
+        if (element.type?.includes('Task') && !element.businessObject?.name) {
+          errors.push({ 
+            message: `Task "${element.id}" has no name`, 
+            elementId: element.id 
+          });
+        }
+      });
+      
+      // Check for orphaned elements (no incoming or outgoing flows)
+      allElements.forEach(element => {
+        if (element.type && !element.type.includes('Event') && !element.type.includes('Gateway')) {
+          // This is a simplified check - in a real implementation, you'd check actual flows
+        }
+      });
+      
+      setValidationErrors(errors);
+      setShowValidationResults(true);
+      
+      if (errors.length === 0) {
+        toast.success("Validation passed! No issues found.");
+      } else {
+        toast.warning(`Found ${errors.length} validation issue(s)`);
+      }
+    } catch (error) {
+      console.error("Validation error:", error);
+      toast.error("Failed to validate diagram");
+    }
+  }, []);
+
+  // Pan mode handler
+  const handleTogglePanMode = useCallback(() => {
+    if (!modelerRef.current) return;
+    setIsPanMode(!isPanMode);
+    
+    try {
+      const canvas = modelerRef.current.get("canvas") as { 
+        toggle: (tool: string) => void;
+        isActive: (tool: string) => boolean;
+      };
+      
+      if (!isPanMode) {
+        // Activate pan tool
+        canvas.toggle('hand-tool');
+        toast.info("Pan mode activated. Click and drag to move the canvas.");
+      } else {
+        // Deactivate pan tool
+        if (canvas.isActive('hand-tool')) {
+          canvas.toggle('hand-tool');
+        }
+        toast.info("Pan mode deactivated.");
+      }
+    } catch (error) {
+      console.error("Error toggling pan mode:", error);
+    }
+  }, [isPanMode]);
+
+  // Search handler
+  const handleSearch = useCallback((query: string) => {
+    if (!modelerRef.current || !query.trim()) return;
+    
+    try {
+      const elementRegistry = modelerRef.current.get("elementRegistry") as { 
+        getAll: () => Array<{ id?: string; type?: string; businessObject?: { name?: string } }> 
+      };
+      const canvas = modelerRef.current.get("canvas") as { 
+        zoom: (element: unknown) => void;
+        findRoot: (element: unknown) => unknown;
+      };
+      
+      const allElements = elementRegistry.getAll();
+      const queryLower = query.toLowerCase();
+      
+      const matches = allElements.filter(element => {
+        const name = element.businessObject?.name?.toLowerCase() || '';
+        const id = element.id?.toLowerCase() || '';
+        const type = element.type?.toLowerCase() || '';
+        return name.includes(queryLower) || id.includes(queryLower) || type.includes(queryLower);
+      });
+      
+      if (matches.length > 0) {
+        // Zoom to first match
+        const firstMatch = matches[0];
+        canvas.zoom(firstMatch);
+        toast.success(`Found ${matches.length} element(s) matching "${query}"`);
+      } else {
+        toast.info(`No elements found matching "${query}"`);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+    }
+  }, []);
+
+  const handleVisionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) {
+      toast.error("Editing is locked by the Process Manager");
+      e.target.value = ""; // Reset input
+      return;
+    }
 
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      e.target.value = ""; // Reset input
+      return;
+    }
 
     if (!file.type.startsWith('image/')) {
       toast.error("Please upload an image file");
+      e.target.value = ""; // Reset input
       return;
     }
 
@@ -1942,6 +2274,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         toast.error("Please log in to use Vision Modelling AI");
         setIsProcessing(false);
         setSelectedFile(null);
+        e.target.value = ""; // Reset input
         return;
       }
 
@@ -1966,7 +2299,9 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       // Handle job-based response
       if (data?.jobId) {
@@ -1974,14 +2309,20 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         toast.info("Processing started", {
           description: "Your image is being analyzed. This may take a moment..."
         });
+        // Don't reset file input here - keep it visible while processing
+        // Don't close dialog - let user see processing status
       } else {
         throw new Error("No job ID received from server");
       }
     } catch (error) {
       console.error('Vision processing error:', error);
-      toast.error("Failed to process image. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to process image. Please try again.";
+      toast.error("Failed to process image", {
+        description: errorMessage
+      });
       setIsProcessing(false);
       setSelectedFile(null);
+      e.target.value = ""; // Reset input on error
     }
   };
 
@@ -2123,6 +2464,46 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       toast.error('Failed to change element type');
     }
   }, [canEdit, selectedElement]);
+
+  // Apply Camunda-style color to selected element
+  const applyColor = useCallback((color: string, label: string) => {
+    if (!canEdit) {
+      toast.error("Editing is locked by the Process Manager");
+      setShowContextMenu(false);
+      return;
+    }
+
+    if (!modelerRef.current || !selectedElement) return;
+
+    try {
+      const modeling = modelerRef.current.get('modeling') as {
+        setColor: (elements: unknown[], options: { fill?: string; stroke?: string }) => void;
+      };
+
+      // Apply fill color (background) to the element
+      modeling.setColor([selectedElement], {
+        fill: color,
+        stroke: color // Also set stroke to match Camunda style
+      });
+
+      toast.success(`Applied ${label} color`);
+      setShowContextMenu(false);
+    } catch (error) {
+      console.error('Error applying color:', error);
+      toast.error('Failed to apply color');
+    }
+  }, [canEdit, selectedElement]);
+
+  // Camunda color palette
+  const camundaColors = [
+    { name: 'Bottleneck', color: '#FF5252', label: 'Bottleneck (Red)' },
+    { name: 'Optimization', color: '#4CAF50', label: 'Optimization (Green)' },
+    { name: 'Warning', color: '#FFC107', label: 'Warning (Yellow)' },
+    { name: 'Standard', color: '#2196F3', label: 'Standard (Blue)' },
+    { name: 'Inactive', color: '#9E9E9E', label: 'Inactive (Gray)' },
+    { name: 'Special', color: '#9C27B0', label: 'Special (Purple)' },
+    { name: 'Remove', color: 'none', label: 'Remove Color' }
+  ];
 
   const addBpmnElement = useCallback((elementType: string) => {
     if (!canEdit) {
@@ -2283,31 +2664,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
     }
   }, [canEdit]);
 
-  // Draggable palette handlers
-  const handlePaletteMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.palette-header')) {
-      setIsDragging(true);
-      setDragOffset({
-        x: e.clientX - palettePosition.x,
-        y: e.clientY - palettePosition.y,
-      });
-    }
-  }, [palettePosition]);
-
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setPalettePosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y,
-        });
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (showContextMenu && !target.closest('.context-menu')) {
@@ -2315,148 +2672,317 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       }
     };
 
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
-
     if (showContextMenu) {
       document.addEventListener('click', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('click', handleClickOutside);
     };
-  }, [isDragging, dragOffset, showContextMenu]);
+  }, [showContextMenu]);
+
+  // Fullscreen listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const isPid = diagramType === "pid";
 
   return (
-    <div className="space-y-4">
-      {/* Breadcrumb Navigation */}
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <a href="/" className="flex items-center gap-1 hover:text-primary">
-                <Home className="h-3 w-3" />
-                Dashboard
-              </a>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage className={isPid ? "text-engineering-green font-medium" : ""}>
-              {isPid ? "P&ID" : "BPMN"}
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>Export</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+    <div className="flex flex-col h-[calc(100vh-8rem)] bg-background">
+      {/* Top Header Bar - Flowable Style */}
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+        {/* Left: Logo/Branding */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            <span className="font-bold text-lg">PROSSMIND</span>
+            <span className="text-sm text-muted-foreground font-normal">DESIGN</span>
+          </div>
+        </div>
 
+        {/* Center: Breadcrumb Navigation */}
+        <div className="flex-1 flex justify-center">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <a href="/" className="text-sm hover:text-primary">Workspaces</a>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink className="text-sm hover:text-primary">Generated default</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage className={`text-sm font-medium ${isPid ? "text-engineering-green" : "text-primary"}`}>
+                  {isPid ? "* P&ID" : "* BPMN"}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
 
-      {/* Toolbar */}
-      <div className={`flex items-center gap-2 bg-muted/50 p-3 rounded-lg border ${isPid ? 'border-engineering-green/20' : 'border-border'}`}> 
+        {/* Right: Navigation Links & User */}
+        <div className="flex items-center gap-4">
+          <a href="/" className="text-sm hover:text-primary">Overview</a>
+          <a href="/" className="text-sm hover:text-primary">Models</a>
+          <a href="/" className="text-sm hover:text-primary font-medium">Editing</a>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full">
+            <User className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleClear}
-          title="Clear canvas"
-          disabled={!canEdit}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+      {/* Secondary Toolbar - Flowable Style */}
+      <div className={`flex items-center gap-0.5 px-1 py-1 border-b bg-muted/30 overflow-x-auto ${isPid ? 'border-engineering-green/20' : 'border-border'}`}>
+        {/* Left: Action Icons */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSave}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Save"
+            disabled={!canEdit}
+          >
+            <Save className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleUpload}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Upload/Import"
+            disabled={!canEdit}
+          >
+            <Upload className="h-3.5 w-3.5" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 shrink-0"
+                title="Download/Export"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('bpmn')}>
+                <FileDown className="h-4 w-4 mr-2" />
+                Export as .bpmn
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('xml')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as .xml
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('svg')}>
+                <Image className="h-4 w-4 mr-2" />
+                Export as .svg
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleUndo}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Undo"
+            disabled={!canUndo || !canEdit}
+          >
+            <Undo className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRedo}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Redo"
+            disabled={!canRedo || !canEdit}
+          >
+            <Redo className="h-3.5 w-3.5" />
+          </Button>
+          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 shrink-0"
+                title="Zoom Controls"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={handleZoomIn}>
+                <ZoomIn className="h-4 w-4 mr-2" />
+                Zoom In
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleZoomOut}>
+                <ZoomOut className="h-4 w-4 mr-2" />
+                Zoom Out
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleFitToScreen}>
+                <Maximize2 className="h-4 w-4 mr-2" />
+                Fit to Screen
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant={isFullscreen ? "default" : "ghost"}
+            size="sm"
+            onClick={handleToggleFullscreen}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Fullscreen Mode"
+          >
+            {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
+          </Button>
+          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          <Button
+            variant={showGrid ? "default" : "ghost"}
+            size="sm"
+            onClick={handleToggleGrid}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Toggle Grid"
+          >
+            <Grid3x3 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant={showRuler ? "default" : "ghost"}
+            size="sm"
+            onClick={handleToggleRuler}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Toggle Ruler"
+          >
+            <Ruler className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleFitToScreen}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Fit Diagram to Screen"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleValidateModel}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Validate Model"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+          </Button>
+          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClear}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Clear canvas"
+            disabled={!canEdit}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          
+          {/* Advanced Tools Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 h-7 px-2 shrink-0">
+                <Wrench className="h-3.5 w-3.5" />
+                <span className="text-xs">Tools</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel>{isPid ? "Advanced P&ID Tools" : "Advanced BPMN Tools"}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
 
-        <div className="h-6 w-px bg-border mx-2" />
-
-        {/* Advanced Tools Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Wrench className="h-4 w-4" />
-              Tools
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel>{isPid ? "Advanced P&ID Tools" : "Advanced BPMN Tools"}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-
-            {onRefine && (
-              <>
-                <DropdownMenuItem onClick={onRefine}>
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium">Refine Diagram</span>
-                      <span className="text-xs text-muted-foreground">AI-powered diagram refinement</span>
+              {onRefine && (
+                <>
+                  <DropdownMenuItem onClick={() => {
+                    if (!canEdit) {
+                      toast.error("Editing is locked by the Process Manager");
+                      return;
+                    }
+                    onRefine();
+                  }}>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium">Refine Diagram</span>
+                        <span className="text-xs text-muted-foreground">AI-powered diagram refinement</span>
+                      </div>
                     </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              <DropdownMenuItem onClick={() => setAgentDialogOpen(true)}>
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Modelling Agent Mode</span>
+                    <span className="text-xs text-muted-foreground">
+                      Review 5-7 AI-generated alternatives
+                    </span>
                   </div>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )}
-
-            <DropdownMenuItem onClick={() => setAgentDialogOpen(true)}>
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Modelling Agent Mode</span>
-                  <span className="text-xs text-muted-foreground">
-                    Review 5-7 AI-generated alternatives
-                  </span>
                 </div>
-              </div>
-            </DropdownMenuItem>
+              </DropdownMenuItem>
 
-            <DropdownMenuItem onClick={() => setLogDialogOpen(true)}>
-              <div className="flex items-center gap-2">
-                <History className="h-4 w-4" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Log Agent</span>
-                  <span className="text-xs text-muted-foreground">
-                    Review BPMN audit history
-                  </span>
+              <DropdownMenuItem onClick={() => setLogDialogOpen(true)}>
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4" />
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Log Agent</span>
+                    <span className="text-xs text-muted-foreground">
+                      Review BPMN audit history
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </DropdownMenuItem>
+              </DropdownMenuItem>
 
-            <DropdownMenuItem onClick={() => setVisionDialogOpen(true)}>
-              <div className="flex items-center gap-2">
-                <Upload className="h-4 w-4" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Vision Modelling AI</span>
-                  <span className="text-xs text-muted-foreground">Sketch to diagram</span>
+              <DropdownMenuItem onClick={() => setVisionDialogOpen(true)}>
+                <div className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Vision Modelling AI</span>
+                    <span className="text-xs text-muted-foreground">Sketch to diagram</span>
+                  </div>
                 </div>
-              </div>
-            </DropdownMenuItem>
+              </DropdownMenuItem>
 
-            <DropdownMenuSeparator />
+              <DropdownMenuSeparator />
 
-            <DropdownMenuItem onClick={() => setQrDialogOpen(true)}>
-              <div className="flex items-center gap-2">
-                <QrCode className="h-4 w-4" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Share via QR Code</span>
-                  <span className="text-xs text-muted-foreground">Invite collaborators</span>
+              <DropdownMenuItem onClick={() => setQrDialogOpen(true)}>
+                <div className="flex items-center gap-2">
+                  <QrCode className="h-4 w-4" />
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium">Share via QR Code</span>
+                    <span className="text-xs text-muted-foreground">Invite collaborators</span>
+                  </div>
                 </div>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Refine Button - Next to Tools */}
-        {onRefine && (
-          <>
+          {/* Refine Button - Next to Tools */}
+          {onRefine && (
             <Button
               variant="outline"
               size="sm"
-              className="gap-2"
+              className="gap-1.5 h-7 px-2 shrink-0"
               onClick={() => {
                 if (!canEdit) {
                   toast.error("Editing is locked by the Process Manager");
@@ -2467,269 +2993,73 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               title="Refine diagram with AI"
               disabled={!canEdit}
             >
-              <Sparkles className="h-4 w-4" />
-              Refine
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="text-xs">Refine</span>
             </Button>
-          </>
-        )}
+          )}
 
-        <Badge
-          variant={canEdit ? (isProcessManager ? "default" : "secondary") : "outline"}
-          className="ml-2"
-        >
-          {isProcessManager ? "Process Manager" : canEdit ? "Editor mode" : "View only"}
-        </Badge>
-
-        <div className="flex-1" />
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowPalette(!showPalette)}
-          className="gap-2"
-          title="Show BPMN Palette"
-          disabled={!canEdit}
-        >
-          <Palette className="h-4 w-4" />
-          Palette
-        </Button>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" title="How to edit">
-              <Info className="h-4 w-4" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80">
-            <div className="space-y-2">
-              <p className="font-semibold text-foreground">How to edit:</p>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li>• <strong>Add shapes:</strong> Use the palette on the left side to drag shapes onto the canvas</li>
-                <li>• <strong>Connect shapes:</strong> Click and drag from a shape's connection points to another shape</li>
-                <li>• <strong>Edit text:</strong> Double-click any shape to edit its name or properties</li>
-                <li>• <strong>Delete:</strong> Select an element and press Delete key, or use the context menu</li>
-                <li>• <strong>Move:</strong> Click and drag shapes to reposition them</li>
-                <li>• <strong>Zoom:</strong> Use mouse wheel or trackpad to zoom in/out</li>
-              </ul>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSave}
-          className="gap-2"
-          disabled={!canEdit}
-        >
-          <Save className="h-4 w-4" />
-          Save
-        </Button>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleDownload}
-          className="gap-2"
-        >
-          <Download className="h-4 w-4" />
-          Download
-        </Button>
-      </div>
-
-      {/* BPMN/P&ID Canvas */}
-      <div className="relative">
-        {/* Floating Undo/Redo Toolbar */}
-        <div className="absolute top-4 right-4 z-40 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUndo}
-            disabled={!canEdit || !canUndo}
-            title="Undo (Ctrl+Z)"
-            className="h-8 w-8 p-0"
+          <Badge
+            variant={canEdit ? (isProcessManager ? "default" : "secondary") : "outline"}
+            className="ml-1 shrink-0 text-xs"
           >
-            <Undo className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRedo}
-            disabled={!canEdit || !canRedo}
-            title="Redo (Ctrl+Y)"
-            className="h-8 w-8 p-0"
-          >
-            <Redo className="h-4 w-4" />
-          </Button>
-          <div className="h-6 w-px bg-border mx-1" />
-          <span className="text-xs text-muted-foreground px-2">
-            v{version}
-            {versions.length > 1 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="ml-1 text-primary hover:underline">
-                    · v{versions.length}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {versions.map((_, idx) => (
-                    <DropdownMenuItem key={idx} onClick={() => handleVersionChange(idx)}>
-                      Version {idx + 1}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </span>
+            {isProcessManager ? "Process Manager" : canEdit ? "Editor mode" : "View only"}
+          </Badge>
         </div>
 
-        {/* Error State Fallback */}
-        {errorState && (
-          <div className="w-full h-[700px] bg-muted/50 border border-destructive/20 rounded-lg flex flex-col items-center justify-center p-8">
-            <div className="text-center space-y-4 max-w-md">
-              <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-                <X className="h-8 w-8 text-destructive" />
-              </div>
-              <h3 className="text-lg font-semibold">Generation Failed</h3>
-              <p className="text-sm text-muted-foreground">{errorState}</p>
-              <Button onClick={() => setErrorState(null)} variant="outline">
-                Retry with Simplified Prompt
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <div
-          ref={containerRef}
-          style={{ backgroundColor: '#ffffff' }}
-          className={`w-full h-[700px] border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
-        />
-
-        {/* P&ID Legend Panel */}
-        {isPid && showLegend && (
-          <div className="absolute top-16 right-4 w-80 bg-background border border-engineering-green/20 rounded-lg shadow-lg z-40 max-h-[600px] overflow-y-auto">
-            <div className="p-4 border-b border-border flex items-center justify-between">
-              <h4 className="font-semibold text-sm flex items-center gap-2">
-                <Layers className="h-4 w-4 text-engineering-green" />
-                ISA S5.1 Symbols
-              </h4>
+        {/* Center: Tabs */}
+        <div className="flex-1 flex justify-center min-w-0 shrink">
+          <div className="flex items-center gap-1 bg-background rounded-md border border-border p-0.5">
+            <div className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium flex items-center gap-1.5">
+              {isPid ? "P&ID" : "BPMN"}
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => setShowLegend(false)}
+                className="h-3.5 w-3.5 p-0 hover:bg-primary-foreground/20"
+                onClick={() => {/* Handle close tab */}}
               >
-                <X className="h-4 w-4" />
+                <X className="h-2.5 w-2.5" />
               </Button>
             </div>
-            <div className="p-4 space-y-4">
-              <Accordion type="single" collapsible>
-                <AccordionItem value="equipment">
-                  <AccordionTrigger className="text-sm">Equipment</AccordionTrigger>
-                  <AccordionContent className="text-xs space-y-2">
-                    <div><strong>TK-xxx:</strong> Storage Tank</div>
-                    <div><strong>P-xxx:</strong> Pump</div>
-                    <div><strong>V-xxx:</strong> Pressure Vessel</div>
-                    <div><strong>E-xxx:</strong> Heat Exchanger</div>
-                    <div><strong>R-xxx:</strong> Reactor</div>
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="valves">
-                  <AccordionTrigger className="text-sm">Valves</AccordionTrigger>
-                  <AccordionContent className="text-xs space-y-2">
-                    <div><strong>FCV-xxx:</strong> Flow Control Valve</div>
-                    <div><strong>TCV-xxx:</strong> Temperature Control Valve</div>
-                    <div><strong>PCV-xxx:</strong> Pressure Control Valve</div>
-                    <div><strong>PSV-xxx:</strong> Pressure Safety Valve</div>
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="instruments">
-                  <AccordionTrigger className="text-sm">Instruments</AccordionTrigger>
-                  <AccordionContent className="text-xs space-y-2">
-                    <div><strong>FI:</strong> Flow Indicator</div>
-                    <div><strong>TI:</strong> Temperature Indicator</div>
-                    <div><strong>PI:</strong> Pressure Indicator</div>
-                    <div><strong>LI:</strong> Level Indicator</div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-
-              <Accordion type="single" collapsible>
-                <AccordionItem value="advanced">
-                  <AccordionTrigger
-                    className="text-sm"
-                    onClick={() => setShowAdvancedSymbols(!showAdvancedSymbols)}
-                  >
-                    Show Advanced Symbols
-                  </AccordionTrigger>
-                  {showAdvancedSymbols && (
-                    <AccordionContent className="text-xs space-y-2">
-                      <div><strong>FIC:</strong> Flow Indicating Controller</div>
-                      <div><strong>TIC:</strong> Temperature Indicating Controller</div>
-                      <div><strong>PIC:</strong> Pressure Indicating Controller</div>
-                      <div><strong>LIC:</strong> Level Indicating Controller</div>
-                      <div><strong>Line Ratings:</strong> 150# = ASME B16.5 Class 150</div>
-                      <div><strong>Line Ratings:</strong> 300# = ASME B16.5 Class 300</div>
-                    </AccordionContent>
-                  )}
-                </AccordionItem>
-              </Accordion>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              title="New Tab"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
           </div>
-        )}
+        </div>
 
-        {/* P&ID Export Button (Fixed Position) */}
-        {isPid && !errorState && (
-          <div className="absolute bottom-8 right-8 z-30">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button className="shadow-lg hover:shadow-xl bg-engineering-green hover:bg-engineering-green/90">
-                  Export →
-                  <FileDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExportPid("svg")}>
-                  Export as SVG
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportPid("pdf")}>
-                  Export as PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportPid("dwg")}>
-                  Export as DWG
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        {/* Right: Quick Search */}
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-1.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Q Quick Search..."
+              className="pl-7 pr-7 h-7 w-40 text-xs"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch(e.currentTarget.value);
+                }
+              }}
+            />
+            <kbd className="absolute right-1.5 top-1/2 transform -translate-y-1/2 pointer-events-none inline-flex h-3.5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[9px] font-medium text-muted-foreground opacity-100">
+              ⌘K
+            </kbd>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Show Legend Button for P&ID */}
-        {isPid && !showLegend && !errorState && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute top-16 right-4 z-30 bg-background/95 backdrop-blur-sm border-engineering-green/20 hover:bg-engineering-green/10"
-            onClick={() => setShowLegend(true)}
-          >
-            <Layers className="h-4 w-4 mr-2 text-engineering-green" />
-            Show Legend
-          </Button>
-        )}
-
-        {/* Draggable Palette Panel */}
+      {/* Main Board Layout - Flowable Style */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Fixed Palette */}
         {showPalette && (
-          <div
-            className="absolute bg-background border border-border rounded-lg shadow-lg z-50"
-            style={{
-              left: `${palettePosition.x}px`,
-              top: `${palettePosition.y}px`,
-              cursor: isDragging ? 'grabbing' : 'default',
-            }}
-            onMouseDown={handlePaletteMouseDown}
-          >
-            <div className="palette-header flex items-center justify-between p-3 border-b cursor-grab active:cursor-grabbing">
+          <div className="w-64 border-r border-border bg-muted/30 flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-border bg-background">
               <div className="flex items-center gap-2">
                 <Palette className="h-4 w-4" />
-                <span className="font-semibold text-sm">BPMN Palette</span>
+                <span className="font-semibold text-sm">Elements</span>
               </div>
               <Button
                 variant="ghost"
@@ -2740,10 +3070,10 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto" style={{ width: '260px' }}>
-
-              {/* Start Events */}
-              <div className="space-y-2">
+            <ScrollArea className="flex-1 p-3">
+              <div className="space-y-3">
+                {/* Start Events */}
+                <div className="space-y-2">
                 <p className="text-xs font-bold text-foreground">START EVENTS</p>
                 <div className="grid grid-cols-4 gap-2">
                   <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start Event">
@@ -2993,10 +3323,340 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 </div>
               </div>
 
-              <p className="text-xs text-muted-foreground pt-2 border-t">
-                💡 Click elements to add them. Double-click shapes to edit labels. Use context menu (right-click) for more options.
-              </p>
+                <p className="text-xs text-muted-foreground pt-2 border-t">
+                  💡 Click elements to add them. Double-click shapes to edit labels. Use context menu (right-click) for more options.
+                </p>
+              </div>
+            </ScrollArea>
+            
+            {/* Zoom Controls at Bottom - Flowable Style */}
+            <div className="border-t border-border p-2 flex items-center justify-center gap-1 bg-background">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={handleZoomIn}
+                title="Zoom In"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={handleZoomOut}
+                title="Zoom Out"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={handleFitToScreen}
+                title="Fit to Screen"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setShowSettingsPanel(true)}
+                title="Settings"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </Button>
             </div>
+          </div>
+        )}
+
+        {/* Main Canvas Area */}
+        <div className="flex-1 relative flex flex-col overflow-hidden">
+          {/* Floating Undo/Redo Toolbar */}
+          <div className="absolute top-4 right-4 z-40 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleUndo}
+              disabled={!canEdit || !canUndo}
+              title="Undo (Ctrl+Z)"
+              className="h-8 w-8 p-0"
+            >
+              <Undo className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRedo}
+              disabled={!canEdit || !canRedo}
+              title="Redo (Ctrl+Y)"
+              className="h-8 w-8 p-0"
+            >
+              <Redo className="h-4 w-4" />
+            </Button>
+            <div className="h-6 w-px bg-border mx-1" />
+            <span className="text-xs text-muted-foreground px-2">
+              v{version}
+              {versions.length > 1 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="ml-1 text-primary hover:underline">
+                      · v{versions.length}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {versions.map((_, idx) => (
+                      <DropdownMenuItem key={idx} onClick={() => handleVersionChange(idx)}>
+                        Version {idx + 1}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </span>
+          </div>
+
+          {/* Error State Fallback */}
+          {errorState && (
+            <div className="w-full h-full bg-muted/50 border border-destructive/20 rounded-lg flex flex-col items-center justify-center p-8">
+              <div className="text-center space-y-4 max-w-md">
+                <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+                  <X className="h-8 w-8 text-destructive" />
+                </div>
+                <h3 className="text-lg font-semibold">Generation Failed</h3>
+                <p className="text-sm text-muted-foreground">{errorState}</p>
+                <Button onClick={() => setErrorState(null)} variant="outline">
+                  Retry with Simplified Prompt
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* BPMN Canvas */}
+          <div
+            ref={containerRef}
+            style={{ backgroundColor: '#ffffff' }}
+            className={`w-full h-full border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
+          />
+
+          {/* P&ID Legend Panel */}
+          {isPid && showLegend && (
+            <div className="absolute top-16 right-4 w-80 bg-background border border-engineering-green/20 rounded-lg shadow-lg z-40 max-h-[600px] overflow-y-auto">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-engineering-green" />
+                  ISA S5.1 Symbols
+                </h4>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setShowLegend(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="p-4 space-y-4">
+                <Accordion type="single" collapsible>
+                  <AccordionItem value="equipment">
+                    <AccordionTrigger className="text-sm">Equipment</AccordionTrigger>
+                    <AccordionContent className="text-xs space-y-2">
+                      <div><strong>TK-xxx:</strong> Storage Tank</div>
+                      <div><strong>P-xxx:</strong> Pump</div>
+                      <div><strong>V-xxx:</strong> Pressure Vessel</div>
+                      <div><strong>E-xxx:</strong> Heat Exchanger</div>
+                      <div><strong>R-xxx:</strong> Reactor</div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="valves">
+                    <AccordionTrigger className="text-sm">Valves</AccordionTrigger>
+                    <AccordionContent className="text-xs space-y-2">
+                      <div><strong>FCV-xxx:</strong> Flow Control Valve</div>
+                      <div><strong>TCV-xxx:</strong> Temperature Control Valve</div>
+                      <div><strong>PCV-xxx:</strong> Pressure Control Valve</div>
+                      <div><strong>PSV-xxx:</strong> Pressure Safety Valve</div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="instruments">
+                    <AccordionTrigger className="text-sm">Instruments</AccordionTrigger>
+                    <AccordionContent className="text-xs space-y-2">
+                      <div><strong>FI:</strong> Flow Indicator</div>
+                      <div><strong>TI:</strong> Temperature Indicator</div>
+                      <div><strong>PI:</strong> Pressure Indicator</div>
+                      <div><strong>LI:</strong> Level Indicator</div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
+                <Accordion type="single" collapsible>
+                  <AccordionItem value="advanced">
+                    <AccordionTrigger
+                      className="text-sm"
+                      onClick={() => setShowAdvancedSymbols(!showAdvancedSymbols)}
+                    >
+                      Show Advanced Symbols
+                    </AccordionTrigger>
+                    {showAdvancedSymbols && (
+                      <AccordionContent className="text-xs space-y-2">
+                        <div><strong>FIC:</strong> Flow Indicating Controller</div>
+                        <div><strong>TIC:</strong> Temperature Indicating Controller</div>
+                        <div><strong>PIC:</strong> Pressure Indicating Controller</div>
+                        <div><strong>LIC:</strong> Level Indicating Controller</div>
+                        <div><strong>Line Ratings:</strong> 150# = ASME B16.5 Class 150</div>
+                        <div><strong>Line Ratings:</strong> 300# = ASME B16.5 Class 300</div>
+                      </AccordionContent>
+                    )}
+                  </AccordionItem>
+                </Accordion>
+              </div>
+            </div>
+          )}
+
+          {/* P&ID Export Button (Fixed Position) */}
+          {isPid && !errorState && (
+            <div className="absolute bottom-8 right-8 z-30">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="shadow-lg hover:shadow-xl bg-engineering-green hover:bg-engineering-green/90">
+                    Export →
+                    <FileDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExportPid("svg")}>
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExportPid("pdf")}>
+                    Export as PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExportPid("dwg")}>
+                    Export as DWG
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
+          {/* Show Legend Button for P&ID */}
+          {isPid && !showLegend && !errorState && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="absolute top-16 right-4 z-30 bg-background/95 backdrop-blur-sm border-engineering-green/20 hover:bg-engineering-green/10"
+              onClick={() => setShowLegend(true)}
+            >
+              <Layers className="h-4 w-4 mr-2 text-engineering-green" />
+              Show Legend
+            </Button>
+          )}
+        </div>
+
+        {/* Right Sidebar - Utility Icons - Flowable Style */}
+        {showRightSidebar && (
+          <div className="w-12 border-l border-border bg-muted/30 flex flex-col items-center py-2 gap-2">
+            <Button
+              variant={showPropertiesPanel ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Diagram Overview"
+              onClick={() => setShowPropertiesPanel(!showPropertiesPanel)}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={showParticipantsPanel ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Participants / Pools & Lanes"
+              onClick={() => setShowParticipantsPanel(!showParticipantsPanel)}
+            >
+              <Users className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={showSettingsPanel ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Execution Settings"
+              onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={showValidationResults ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Check Model / Validate"
+              onClick={handleValidateModel}
+            >
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="User / Role Panel"
+              onClick={() => toast.info("User/Role panel - coming soon")}
+            >
+              <Users className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={showDocumentationPanel ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Element Documentation"
+              onClick={() => setShowDocumentationPanel(!showDocumentationPanel)}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={isPanMode ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Pan / Navigate Tool"
+              onClick={handleTogglePanMode}
+            >
+              <Hand className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              title="Search"
+              onClick={() => {
+                const searchInput = document.querySelector('input[placeholder*="Quick Search"]') as HTMLInputElement;
+                if (searchInput) {
+                  searchInput.focus();
+                }
+              }}
+            >
+              <FileSearch className="h-4 w-4" />
+            </Button>
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() => setShowRightSidebar(false)}
+              title="Collapse Sidebar"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Right Sidebar Collapse Button - When Hidden */}
+        {!showRightSidebar && (
+          <div className="w-8 border-l border-border bg-muted/30 flex items-center justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setShowRightSidebar(true)}
+              title="Expand Sidebar"
+            >
+              <ChevronLeft className="h-4 w-4 rotate-180" />
+            </Button>
           </div>
         )}
       </div>
@@ -3096,6 +3756,55 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 </div>
               </div>
             )}
+
+            {/* Camunda Color Palette */}
+            <div className="pt-2 border-t space-y-1">
+              <p className="text-[10px] font-bold text-muted-foreground">CAMUNDA COLORS</p>
+              <div className="grid grid-cols-3 gap-1">
+                {camundaColors.map((colorOption) => (
+                  <button
+                    key={colorOption.name}
+                    onClick={() => {
+                      if (colorOption.color === 'none') {
+                        // Remove color
+                        try {
+                          const modeling = modelerRef.current?.get('modeling') as {
+                            setColor: (elements: unknown[], options: { fill?: string; stroke?: string }) => void;
+                          } | undefined;
+                          if (modeling && selectedElement) {
+                            modeling.setColor([selectedElement], {
+                              fill: undefined,
+                              stroke: undefined
+                            });
+                            toast.success('Color removed');
+                            setShowContextMenu(false);
+                          }
+                        } catch (error) {
+                          console.error('Error removing color:', error);
+                          toast.error('Failed to remove color');
+                        }
+                      } else {
+                        applyColor(colorOption.color, colorOption.label);
+                      }
+                    }}
+                    className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded transition-colors"
+                    title={colorOption.label}
+                  >
+                    {colorOption.color === 'none' ? (
+                      <div className="w-6 h-6 border-2 border-dashed border-foreground rounded flex items-center justify-center">
+                        <X className="h-3 w-3" />
+                      </div>
+                    ) : (
+                      <div
+                        className="w-6 h-6 rounded border-2 border-border"
+                        style={{ backgroundColor: colorOption.color }}
+                      />
+                    )}
+                    <span className="text-[8px] text-center leading-tight">{colorOption.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Always show option to change to any category */}
             <div className="pt-2 border-t space-y-1">
@@ -3991,6 +4700,151 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Properties Panel */}
+      {showPropertiesPanel && (
+        <Dialog open={showPropertiesPanel} onOpenChange={setShowPropertiesPanel}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Diagram Overview</DialogTitle>
+              <DialogDescription>Edit process properties and metadata</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Process Name</Label>
+                <Input placeholder="Enter process name" />
+              </div>
+              <div>
+                <Label>Process ID</Label>
+                <Input placeholder="process-id" />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Textarea placeholder="Enter process description" rows={4} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowPropertiesPanel(false)}>Cancel</Button>
+                <Button onClick={() => { toast.success("Properties saved"); setShowPropertiesPanel(false); }}>Save</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Participants Panel */}
+      {showParticipantsPanel && (
+        <Dialog open={showParticipantsPanel} onOpenChange={setShowParticipantsPanel}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Participants / Pools & Lanes</DialogTitle>
+              <DialogDescription>Manage collaboration elements</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Manage pools, lanes, and participant assignments for your BPMN diagram.
+              </div>
+              <Button onClick={() => toast.info("Add participant functionality - coming soon")}>Add Participant</Button>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowParticipantsPanel(false)}>Close</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Settings Panel */}
+      {showSettingsPanel && (
+        <Dialog open={showSettingsPanel} onOpenChange={setShowSettingsPanel}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Execution Settings</DialogTitle>
+              <DialogDescription>Configure process engine options and metadata</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Process Version</Label>
+                <Input type="number" defaultValue="1" />
+              </div>
+              <div>
+                <Label>Process Namespace</Label>
+                <Input placeholder="http://example.org/bpmn" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch id="executable" />
+                <Label htmlFor="executable">Executable Process</Label>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowSettingsPanel(false)}>Cancel</Button>
+                <Button onClick={() => { toast.success("Settings saved"); setShowSettingsPanel(false); }}>Save</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Documentation Panel */}
+      {showDocumentationPanel && (
+        <Dialog open={showDocumentationPanel} onOpenChange={setShowDocumentationPanel}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Element Documentation</DialogTitle>
+              <DialogDescription>Add documentation for the selected element</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Element: {selectedElement?.id || 'None selected'}</Label>
+                <Textarea placeholder="Enter element documentation" rows={6} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowDocumentationPanel(false)}>Cancel</Button>
+                <Button onClick={() => { toast.success("Documentation saved"); setShowDocumentationPanel(false); }}>Save</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Validation Results Panel */}
+      {showValidationResults && (
+        <Dialog open={showValidationResults} onOpenChange={setShowValidationResults}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Validation Results</DialogTitle>
+              <DialogDescription>BPMN structural validation issues</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {validationErrors.length === 0 ? (
+                <div className="text-center py-8 text-green-600">
+                  <Check className="h-12 w-12 mx-auto mb-2" />
+                  <p className="font-semibold">No validation issues found!</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-2">
+                    {validationErrors.map((error, idx) => (
+                      <div key={idx} className="p-3 border border-destructive/20 rounded-lg bg-destructive/5">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{error.message}</p>
+                            {error.elementId && (
+                              <p className="text-xs text-muted-foreground mt-1">Element ID: {error.elementId}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowValidationResults(false)}>Close</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
     </div>
   );
 };

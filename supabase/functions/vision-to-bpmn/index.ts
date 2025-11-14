@@ -664,7 +664,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { text: `${bpmnSystemPrompt}\n\nProcess description:\n${processDescription}` }
+                  { text: `${systemPrompt}\n\nProcess description:\n${processDescription}` }
                 ]
               }],
               generationConfig: {
@@ -695,12 +695,35 @@ When combined with your **PidRenderer.js**, this updated prompt will:
         }
         
         let bpmnXml = bpmnCandidate.content.parts[0].text;
-        bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+        
+        // Extract XML from markdown code blocks if present
+        const xmlMatch = bpmnXml.match(/```(?:xml)?\s*([\s\S]*?)```/) || 
+                        bpmnXml.match(/<bpmn:definitions[\s\S]*<\/bpmn:definitions>/) ||
+                        bpmnXml.match(/<bpmn2:definitions[\s\S]*<\/bpmn2:definitions>/);
+        
+        if (xmlMatch) {
+          bpmnXml = xmlMatch[1] || xmlMatch[0];
+        }
+        
+        // Clean up the XML
+        bpmnXml = bpmnXml
+          .replace(/```xml\n?/g, '')
+          .replace(/```\n?/g, '')
+          .replace(/^[^<]*/, '') // Remove any text before XML
+          .trim();
+        
+        // Ensure it starts with XML declaration
+        if (!bpmnXml.startsWith('<?xml')) {
+          bpmnXml = '<?xml version="1.0" encoding="UTF-8"?>\n' + bpmnXml;
+        }
         
         // Validate XML completeness
         const hasProperClosing = bpmnXml.includes('</definitions>') || bpmnXml.includes('</bpmn:definitions>');
-        if (!bpmnXml.includes('<?xml') || !hasProperClosing) {
-          throw new Error('Generated BPMN XML is incomplete.');
+        if (!bpmnXml.includes('<definitions') && !bpmnXml.includes('<bpmn:definitions')) {
+          throw new Error('Generated BPMN XML is missing definitions element.');
+        }
+        if (!hasProperClosing) {
+          throw new Error('Generated BPMN XML is incomplete - missing closing tag.');
         }
 
         console.log('Vision-to-BPMN processing complete');
