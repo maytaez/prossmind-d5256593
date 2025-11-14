@@ -11,32 +11,32 @@ import PageContainer from "@/components/layout/PageContainer";
 
 const teamMembers = [
   {
-    name: "Sarah Johnson",
+    name: "Mayank Sharma",
     role: "CEO & Founder",
-    description: "Visionary leader with 15+ years in process automation and AI technology.",
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop",
-    initials: "SJ"
+    description: "Visionary leader with 5+ years in Finance and Technology Sector.",
+    image: "",
+    initials: "MS"
   },
   {
-    name: "Michael Chen",
+    name: "Satyam Pant",
     role: "CTO",
     description: "Tech innovator specializing in AI-driven business process solutions.",
-    image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop",
-    initials: "MC"
+    image: "",
+    initials: "SP"
   },
   {
-    name: "Emily Rodriguez",
-    role: "Head of Product",
+    name: "Divyam Pant",
+    role: "Head of Product and Data Architect",
     description: "Product strategist focused on creating intuitive workflow automation tools.",
-    image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop",
-    initials: "ER"
+    image: "",
+    initials: "DP"
   },
   {
-    name: "David Park",
-    role: "Lead Developer",
+    name: "Sahil Pandey",
+    role: "Cloud Developer & Solution Engineer",
     description: "Full-stack engineer passionate about building scalable BPMN solutions.",
-    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop",
-    initials: "DP"
+    image: "",
+    initials: "SP"
   }
 ];
 
