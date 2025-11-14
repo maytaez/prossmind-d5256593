@@ -2,10 +2,43 @@ import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Mail, MessageSquare, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import PageContainer from "@/components/layout/PageContainer";
+
+const teamMembers = [
+  {
+    name: "Sarah Johnson",
+    role: "CEO & Founder",
+    description: "Visionary leader with 15+ years in process automation and AI technology.",
+    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop",
+    initials: "SJ"
+  },
+  {
+    name: "Michael Chen",
+    role: "CTO",
+    description: "Tech innovator specializing in AI-driven business process solutions.",
+    image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop",
+    initials: "MC"
+  },
+  {
+    name: "Emily Rodriguez",
+    role: "Head of Product",
+    description: "Product strategist focused on creating intuitive workflow automation tools.",
+    image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop",
+    initials: "ER"
+  },
+  {
+    name: "David Park",
+    role: "Lead Developer",
+    description: "Full-stack engineer passionate about building scalable BPMN solutions.",
+    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop",
+    initials: "DP"
+  }
+];
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -60,6 +93,38 @@ const Contact = () => {
               </div>
               <h3 className="font-semibold mb-2">Live Chat</h3>
               <p className="text-sm text-muted-foreground">Available 24/7</p>
+            </div>
+          </div>
+
+          <div className="mb-16">
+            <div className="text-center mb-12">
+              <h2 className="text-4xl font-bold mb-4">
+                Meet Our{" "}
+                <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Team</span>
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                The passionate people behind ProssMind
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {teamMembers.map((member) => (
+                <Card key={member.name} className="text-center hover:shadow-lg transition-shadow">
+                  <CardContent className="pt-6 pb-6">
+                    <Avatar className="w-24 h-24 mx-auto mb-4">
+                      <AvatarImage src={member.image} alt={member.name} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                        {member.initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <h3 className="font-semibold text-lg mb-1">{member.name}</h3>
+                    <p className="text-sm text-primary mb-3">{member.role}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {member.description}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </div>
 
