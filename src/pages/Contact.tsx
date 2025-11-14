@@ -14,21 +14,21 @@ const teamMembers = [
     name: "Mayank Sharma",
     role: "CEO & Founder",
     description: "Finance and digital transformation leader driving data-powered, innovative tech solutions.",
-    image: "",
+    image: "/mayank.png",
     initials: "MS"
   },
   {
     name: "Satyam Pant",
     role: "Cofounder & AI Solutions",
     description: "Tech innovator specializing in AI-driven business process solutions.",
-    image: "",
+    image: "/satyam.jpeg",
     initials: "SP"
   },
   {
     name: "Divyam Pant",
     role: "CTO & Head of Product",
     description: "Product strategist focused on creating intuitive workflow automation tools.",
-    image: "",
+    image: "/divyam.jpeg",
     initials: "DP"
   },
   {
