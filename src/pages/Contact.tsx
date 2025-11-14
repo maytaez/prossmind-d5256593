@@ -84,7 +84,7 @@ const Contact = () => {
                 <Phone className="h-6 w-6 text-primary" />
               </div>
               <h3 className="font-semibold mb-2">Call Us</h3>
-              <p className="text-sm text-muted-foreground">+1 (555) 123-4567</p>
+              <p className="text-sm text-muted-foreground">+41 78 330 79 67</p>
             </div>
 
             <div className="bg-card border border-border rounded-xl p-6 text-center">
