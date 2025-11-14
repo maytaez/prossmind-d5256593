@@ -35,7 +35,7 @@ const teamMembers = [
     name: "Sahil Pandey",
     role: "DevOps Engineer",
     description: "Full-stack engineer passionate about building scalable BPMN solutions.",
-    image: "",
+    image: "/sahil.jpeg",
     initials: "SP"
   }
 ];
