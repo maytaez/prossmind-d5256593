@@ -13,8 +13,8 @@ const featuresDetailed = [
   {
     icon: Workflow,
     title: "Process Generator",
-    description: "Design and build automated business processes with powerful AI capabilities and intuitive visual tools.",
-    benefits: ["Visual process builder", "Real-time monitoring", "Automatic optimization"],
+    description: "Design and build automated business processes with powerful AI capabilities and intuitive visual tools. Download BPMN diagrams and integrate seamlessly with SAP Signavio, Camunda, Flowable, and more.",
+    benefits: ["Visual process builder", "Real-time monitoring", "Automatic optimization", "Export BPMN diagrams", "Integration with SAP Signavio, Camunda, Flowable"],
   },
   {
     icon: Eye,

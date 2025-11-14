@@ -1,4 +1,4 @@
-import { Bot, Workflow, Eye, Plug, BarChart3 } from "lucide-react";
+import { Bot, Workflow, Eye, Plug, BarChart3, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 const features = [
@@ -11,6 +11,11 @@ const features = [
     icon: Eye,
     title: "Vision Automation",
     description: "Automate visual tasks with advanced computer vision and image processing.",
+  },
+  {
+    icon: Download,
+    title: "BPMN Integration",
+    description: "Download BPMN diagrams and integrate with SAP Signavio, Camunda, Flowable, and more.",
   },
 ];
 
