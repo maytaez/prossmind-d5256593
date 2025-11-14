@@ -271,7 +271,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-bpmn', {
-        body: { prompt, diagramType }
+        body: { prompt, diagramType },
+        headers: user ? undefined : { Authorization: '' }
       });
 
       if (error) {
@@ -390,7 +391,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                 body: { 
                   audio: base64Audio,
                   language: language
-                }
+                },
+                headers: user ? undefined : { Authorization: '' }
               });
 
               if (error) throw error;
@@ -481,7 +483,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         body: {
           imageBase64: uploadedFile.base64,
           diagramType
-        }
+        },
+        headers: user ? undefined : { Authorization: '' }
       });
 
       toast.dismiss(loadingToast);
@@ -578,7 +581,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           instructions: refinementPrompt,
           userId: currentUser.id,
           diagramType
-        }
+        },
+        headers: user ? undefined : { Authorization: '' }
       });
 
       // Check for errors in both error field and data.error

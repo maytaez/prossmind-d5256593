@@ -442,7 +442,7 @@ const AlternativeDiagramPreview = ({ xml, title }: { xml: string; title: string 
   }, [xml, title]);
 
   return (
-    <div className="w-full h-full bg-muted flex items-center justify-center overflow-hidden">
+    <div className="w-full h-full flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#ffffff' }}>
       {loading ? (
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       ) : error ? (
@@ -2567,7 +2567,8 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
 
         <div
           ref={containerRef}
-          className={`w-full h-[700px] bg-white border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
+          style={{ backgroundColor: '#ffffff' }}
+          className={`w-full h-[700px] border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
         />
 
         {/* P&ID Legend Panel */}
@@ -3541,7 +3542,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                           <p className="text-xs font-medium text-muted-foreground uppercase">
                             Diagram Preview
                           </p>
-                          <div className="h-64 border rounded-md bg-background/70">
+                          <div className="h-64 border rounded-md" style={{ backgroundColor: '#ffffff' }}>
                             <AlternativeDiagramPreview xml={selectedAlternative.xml} title={selectedAlternative.title} />
                           </div>
                         </div>
@@ -3665,7 +3666,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                                 </div>
                                 {isSelected && <Check className="h-5 w-5 text-primary flex-shrink-0" />}
                               </div>
-                              <div className="h-32 mt-2 rounded-md border bg-muted">
+                              <div className="h-32 mt-2 rounded-md border" style={{ backgroundColor: '#ffffff' }}>
                                 <AlternativeDiagramPreview xml={model.xml} title={model.title} />
                               </div>
                             </button>
