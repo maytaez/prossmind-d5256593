@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@prossmind/ui/dialog";
 import { z } from "zod";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2, Brain, Network, Sparkles, Shield, CheckCircle, Lock } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, AlertCircle, Loader2, Brain, Network, Sparkles, Shield, CheckCircle, Lock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 
@@ -604,6 +604,7 @@ const Auth = ({
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.3, delay: 0.3 }}
+                          className="space-y-3"
                         >
                           <Button 
                             type="submit" 
@@ -619,21 +620,18 @@ const Auth = ({
                                 Signing in...
                               </>
                             ) : (
-                              <>
-                                Sign In
-                                <ArrowRight className="h-4 w-4 ml-1" />
-                              </>
+                              "Sign In"
                             )}
                           </Button>
+                          <Button 
+                            type="button" 
+                            variant="link" 
+                            className="w-full text-sm text-center"
+                            onClick={() => setShowForgotPassword(true)}
+                          >
+                            Forgot password?
+                          </Button>
                         </motion.div>
-                        <Button 
-                          type="button" 
-                          variant="link" 
-                          className="w-full text-sm"
-                          onClick={() => setShowForgotPassword(true)}
-                        >
-                          Forgot password?
-                        </Button>
                         </motion.form>
                       </TabsContent>
                     
@@ -790,10 +788,7 @@ const Auth = ({
                                 Creating account...
                               </>
                             ) : (
-                              <>
-                                Sign Up
-                                <ArrowRight className="h-4 w-4 ml-1" />
-                              </>
+                              "Sign Up"
                             )}
                           </Button>
                         </motion.div>

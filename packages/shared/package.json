@@ -14,7 +14,8 @@
     "./hooks": "./src/hooks/index.ts",
     "./utils": "./src/utils/index.ts",
     "./types": "./src/types/index.ts",
-    "./config": "./src/config/index.ts"
+    "./config": "./src/config/index.ts",
+    "./context": "./src/context/index.ts"
   },
   "dependencies": {
     "@prossmind/ui": "*",

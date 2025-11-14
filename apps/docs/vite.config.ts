@@ -16,6 +16,10 @@ export default defineConfig({
         replacement: path.resolve(__dirname, "./src"),
       },
       {
+        find: /^@prossmind\/shared\/(.+)$/,
+        replacement: path.resolve(__dirname, "../../packages/shared/src/$1"),
+      },
+      {
         find: "@prossmind/shared",
         replacement: path.resolve(__dirname, "../../packages/shared/src"),
       },
