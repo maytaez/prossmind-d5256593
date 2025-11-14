@@ -33,7 +33,7 @@ const teamMembers = [
   },
   {
     name: "Sahil Pandey",
-    role: "Cloud Developer & Solution Engineer",
+    role: "DevOps Engineer",
     description: "Full-stack engineer passionate about building scalable BPMN solutions.",
     image: "",
     initials: "SP"
