@@ -1,6 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check } from "lucide-react";
+import { useState } from "react";
+import { motion } from "framer-motion";
+import ContactSalesModal from "@/components/ContactSalesModal";
 
 const products = [
   {
@@ -12,6 +15,8 @@ const products = [
       "Community support",
       "Basic analytics",
     ],
+    cta: "Start Sandbox",
+    ctaAction: "sandbox",
   },
   {
     name: "ProssMind Vision",
@@ -25,6 +30,8 @@ const products = [
       "Custom integrations",
     ],
     popular: true,
+    cta: "Request Trial",
+    ctaAction: "trial",
   },
   {
     name: "Custom Models",
@@ -37,10 +44,26 @@ const products = [
       "SLA guarantee",
       "Training & consulting",
     ],
+    cta: "Contact Sales",
+    ctaAction: "sales",
   },
 ];
 
 const ProductTiers = () => {
+  const [isSalesModalOpen, setIsSalesModalOpen] = useState(false);
+
+  const handleCtaClick = (action: string) => {
+    if (action === "sales") {
+      setIsSalesModalOpen(true);
+    } else if (action === "trial") {
+      // Navigate to auth or show trial signup
+      window.location.href = "/auth";
+    } else {
+      // Sandbox - navigate to main app
+      window.location.href = "/";
+    }
+  };
+
   return (
     <section className="py-24 bg-background relative">
       <div className="container mx-auto px-6">
@@ -55,19 +78,26 @@ const ProductTiers = () => {
 
         <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {products.map((product, index) => (
-            <Card 
+            <motion.div
               key={index}
-              className={`relative card-hover slide-up stagger-${index + 1} flex flex-col h-full transition-all ${
-                product.popular 
-                  ? "border-primary shadow-2xl scale-105 bg-gradient-to-b from-card to-primary/5 hover:border-primary/80" 
-                  : "border-border bg-card/50 backdrop-blur-sm hover:border-primary/50"
-              }`}
-              role="article"
-              aria-label={`Pricing tier: ${product.name}${product.popular ? ' - Most Popular' : ''}`}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={{ duration: 0.6, delay: index * 0.15, ease: [0.4, 0, 0.2, 1] }}
+              whileHover={{ y: -10, transition: { duration: 0.3, ease: "easeOut" } }}
             >
+              <Card 
+                className={`relative flex flex-col h-full transition-all duration-300 group pricing-card-hover ${
+                  product.popular 
+                    ? "border-primary shadow-2xl scale-105 bg-gradient-to-b from-card to-primary/5 hover:border-primary/80" 
+                    : "border-border bg-card/50 backdrop-blur-sm hover:border-primary/50"
+                }`}
+                role="article"
+                aria-label={`Pricing tier: ${product.name}${product.popular ? ' - Most Popular' : ''}`}
+              >
               {product.popular && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
-                  <span className="bg-gradient-to-r from-primary to-accent text-primary-foreground text-sm font-semibold px-6 py-2 rounded-full shadow-lg">
+                  <span className="badge-pulse bg-gradient-to-r from-primary to-accent text-primary-foreground text-sm font-semibold px-6 py-2 rounded-full shadow-lg">
                     Most Popular
                   </span>
                 </div>
@@ -91,22 +121,25 @@ const ProductTiers = () => {
                 </ul>
                 
                 <Button 
-                  className={`w-full text-base py-6 mt-auto hover:scale-[1.03] transition-all ${
+                  className={`w-full text-base py-6 mt-auto hover:scale-[1.03] active:scale-[0.98] transition-all ${
                     product.popular 
                       ? "shadow-lg hover:shadow-xl" 
                       : ""
                   }`}
                   variant={product.popular ? "default" : "outline"}
                   size="lg"
-                  aria-label={`Get started with ${product.name}`}
+                  onClick={() => handleCtaClick(product.ctaAction)}
+                  aria-label={`${product.cta} for ${product.name}`}
                 >
-                  Get Started
+                  {product.cta}
                 </Button>
               </CardContent>
             </Card>
+            </motion.div>
           ))}
         </div>
       </div>
+      <ContactSalesModal open={isSalesModalOpen} onOpenChange={setIsSalesModalOpen} />
     </section>
   );
 };

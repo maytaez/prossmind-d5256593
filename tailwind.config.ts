@@ -68,6 +68,30 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      boxShadow: {
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        xl: "var(--shadow-xl)",
+        "2xl": "var(--shadow-2xl)",
+      },
+      transitionDuration: {
+        fast: "var(--animation-duration-fast)",
+        normal: "var(--animation-duration-normal)",
+        slow: "var(--animation-duration-slow)",
+        slower: "var(--animation-duration-slower)",
+        slowest: "var(--animation-duration-slowest)",
+      },
+      zIndex: {
+        base: "var(--z-index-base)",
+        dropdown: "var(--z-index-dropdown)",
+        sticky: "var(--z-index-sticky)",
+        fixed: "var(--z-index-fixed)",
+        "modal-backdrop": "var(--z-index-modal-backdrop)",
+        modal: "var(--z-index-modal)",
+        popover: "var(--z-index-popover)",
+        tooltip: "var(--z-index-tooltip)",
+      },
       keyframes: {
         "accordion-down": {
           from: {

@@ -32,7 +32,7 @@ Swiss/EU Brand Colors:
     --secondary-foreground: 0 0% 100%;
 
     --muted: 240 5% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 16% 50%;
 
     --accent: 219 91% 53%;
     --accent-foreground: 0 0% 100%;
@@ -75,6 +75,30 @@ Swiss/EU Brand Colors:
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    
+    /* Design Tokens - Shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+    
+    /* Design Tokens - Animation Durations */
+    --animation-duration-fast: 150ms;
+    --animation-duration-normal: 300ms;
+    --animation-duration-slow: 500ms;
+    --animation-duration-slower: 700ms;
+    --animation-duration-slowest: 1000ms;
+    
+    /* Design Tokens - Z-Index Scale */
+    --z-index-base: 0;
+    --z-index-dropdown: 1000;
+    --z-index-sticky: 1020;
+    --z-index-fixed: 1030;
+    --z-index-modal-backdrop: 1040;
+    --z-index-modal: 1050;
+    --z-index-popover: 1060;
+    --z-index-tooltip: 1070;
   }
 
   .dark {
@@ -96,7 +120,7 @@ Swiss/EU Brand Colors:
     --secondary-foreground: 0 0% 88%; /* #E0E0E0 */
 
     --muted: 0 0% 12%; /* #1E1E1E */
-    --muted-foreground: 0 0% 65%; /* Adjusted for better contrast */
+    --muted-foreground: 0 0% 70%; /* Adjusted for better contrast - lighter for AA compliance */
 
     /* Brighter accent for dark mode */
     --accent: 180 100% 35%; /* #00B3B3 */
@@ -117,6 +141,30 @@ Swiss/EU Brand Colors:
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    
+    /* Design Tokens - Shadows (Dark Mode) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+    
+    /* Design Tokens - Animation Durations (same for dark mode) */
+    --animation-duration-fast: 150ms;
+    --animation-duration-normal: 300ms;
+    --animation-duration-slow: 500ms;
+    --animation-duration-slower: 700ms;
+    --animation-duration-slowest: 1000ms;
+    
+    /* Design Tokens - Z-Index Scale (same for dark mode) */
+    --z-index-base: 0;
+    --z-index-dropdown: 1000;
+    --z-index-sticky: 1020;
+    --z-index-fixed: 1030;
+    --z-index-modal-backdrop: 1040;
+    --z-index-modal: 1050;
+    --z-index-popover: 1060;
+    --z-index-tooltip: 1070;
   }
 }
 
@@ -138,7 +186,8 @@ Swiss/EU Brand Colors:
   }
 
   h1 {
-    font-size: 40px;
+    font-size: 48px;
+    font-weight: 700;
   }
 
   /* Focus ring color variable - Updated for WCAG AA contrast */
@@ -183,7 +232,106 @@ Swiss/EU Brand Colors:
   }
   
   .tech-glow {
-    box-shadow: 0 0 30px hsl(var(--tech-glow) / 0.3);
+    box-shadow: 0 0 30px hsl(var(--tech-glow) / 0.4);
+    animation: tech-glow-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes tech-glow-pulse {
+    0%, 100% {
+      box-shadow: 0 0 30px hsl(var(--tech-glow) / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 30px hsl(var(--tech-glow) / 0.8);
+    }
+  }
+
+  @keyframes pulse-error {
+    0%, 100% {
+      border-color: hsl(var(--destructive));
+    }
+    25%, 75% {
+      border-color: hsl(var(--destructive) / 0.5);
+    }
+    50% {
+      border-color: hsl(var(--destructive));
+    }
+  }
+
+  .animate-pulse-error {
+    animation: pulse-error 0.6s ease-in-out 3;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+
+  .animate-shake {
+    animation: shake 0.5s ease-in-out 3;
+  }
+
+  @keyframes diagram-entrance {
+    0% {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.01);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .diagram-entrance {
+    animation: diagram-entrance 0.8s ease-out forwards;
+  }
+
+  .diagram-entrance .djs-element {
+    animation: fadeIn 0.4s ease-out forwards;
+    opacity: 0;
+  }
+
+  .diagram-entrance .djs-element:nth-child(1) { animation-delay: 0.1s; }
+  .diagram-entrance .djs-element:nth-child(2) { animation-delay: 0.15s; }
+  .diagram-entrance .djs-element:nth-child(3) { animation-delay: 0.2s; }
+  .diagram-entrance .djs-element:nth-child(4) { animation-delay: 0.25s; }
+  .diagram-entrance .djs-element:nth-child(5) { animation-delay: 0.3s; }
+  .diagram-entrance .djs-element:nth-child(n+6) { animation-delay: 0.35s; }
+
+  .diagram-element-hover {
+    filter: drop-shadow(0 0 12px rgba(100, 180, 255, 0.8)) !important;
+    transform: scale(1.05) !important;
+    transition: all 0.2s ease-out !important;
+    cursor: pointer !important;
+  }
+
+  .diagram-connection-hover {
+    stroke: rgba(100, 180, 255, 0.8) !important;
+    stroke-width: 3px !important;
+    filter: drop-shadow(0 0 8px rgba(100, 180, 255, 0.6)) !important;
+    transition: all 0.2s ease-out !important;
+  }
+
+  @keyframes badge-pulse {
+    0%, 100% {
+      box-shadow: 0 0 20px hsl(var(--primary) / 0.3), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    50% {
+      box-shadow: 0 0 30px hsl(var(--primary) / 0.8), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+  }
+
+  .badge-pulse {
+    animation: badge-pulse 2s ease-in-out infinite;
+  }
+
+  .badge-pulse:hover {
+    transform: scale(1.05);
+    transition: transform 0.3s ease;
   }
   
   .card-hover {
@@ -191,8 +339,26 @@ Swiss/EU Brand Colors:
   }
   
   .card-hover:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 20px 40px -12px hsl(var(--primary) / 0.25);
+    transform: translateY(-12px) scale(1.03);
+    box-shadow: 0 30px 80px -12px hsl(var(--primary) / 0.35);
+    border-color: hsl(var(--primary) / 0.6);
+  }
+
+  .card-hover-3d {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .card-hover-3d:hover {
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4), 0 0 20px rgba(100, 180, 255, 0.6);
+    border-color: hsl(var(--primary) / 0.8);
+  }
+
+  .pricing-card-hover {
+    transition: all 0.3s ease-out;
+  }
+
+  .pricing-card-hover:hover {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 30px rgba(100, 180, 255, 0.2) !important;
   }
 
   .fade-in {
@@ -242,5 +408,99 @@ Swiss/EU Brand Colors:
 
   .animate-scale-in {
     animation: scaleIn 0.3s ease-out forwards;
+  }
+
+  @keyframes gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  @keyframes gradient-shift {
+    0% {
+      background: linear-gradient(135deg, hsl(219 91% 53%), hsl(200 100% 60%), hsl(245 58% 51%));
+      background-position: 0% 50%;
+    }
+    16.66% {
+      background: linear-gradient(160deg, hsl(200 100% 60%), hsl(270 70% 60%), hsl(219 91% 53%));
+      background-position: 25% 50%;
+    }
+    33.33% {
+      background: linear-gradient(200deg, hsl(270 70% 60%), hsl(300 65% 55%), hsl(200 100% 60%));
+      background-position: 50% 50%;
+    }
+    50% {
+      background: linear-gradient(240deg, hsl(300 65% 55%), hsl(219 91% 53%), hsl(270 70% 60%));
+      background-position: 75% 50%;
+    }
+    66.66% {
+      background: linear-gradient(280deg, hsl(219 91% 53%), hsl(245 58% 51%), hsl(300 65% 55%));
+      background-position: 50% 75%;
+    }
+    83.33% {
+      background: linear-gradient(320deg, hsl(245 58% 51%), hsl(200 100% 60%), hsl(219 91% 53%));
+      background-position: 25% 100%;
+    }
+    100% {
+      background: linear-gradient(135deg, hsl(219 91% 53%), hsl(200 100% 60%), hsl(245 58% 51%));
+      background-position: 0% 50%;
+    }
+  }
+
+  @keyframes gradient-brightness {
+    0%, 100% {
+      opacity: 0.8;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes gradient-saturation {
+    0%, 100% {
+      filter: saturate(1);
+    }
+    50% {
+      filter: saturate(1.2);
+    }
+  }
+
+  @keyframes gradient-wave {
+    0%, 100% {
+      background-size: 200% 200%;
+      background-position: 0% 50%;
+    }
+    50% {
+      background-size: 250% 250%;
+      background-position: 100% 50%;
+    }
+  }
+
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient 10s ease-in-out infinite;
+  }
+
+  .animate-gradient-shift {
+    background-size: 300% 300%;
+    animation: gradient-shift 18s ease-in-out infinite, gradient-brightness 10s ease-in-out infinite, gradient-wave 20s ease-in-out infinite, gradient-saturation 12s ease-in-out infinite;
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

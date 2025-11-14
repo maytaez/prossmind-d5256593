@@ -1,12 +1,12 @@
-import { Shield, MapPin, CheckCircle2 } from "lucide-react";
+import { Shield, MapPin, CheckCircle2, Github, Twitter, Linkedin } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Footer = () => {
   return (
-    <footer className="border-t border-border bg-background">
-      <div className="container mx-auto px-6 py-12">
+    <footer className="border-t border-border/50 bg-background/95 backdrop-blur-sm">
+      <div className="container mx-auto px-6 py-12 md:py-16">
         {/* Main Footer Content - 3 Column Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12 mb-8">
           {/* Product Column */}
           <div>
             <h3 className="font-semibold text-lg mb-4">Product</h3>
@@ -67,6 +67,37 @@ const Footer = () => {
               </li>
             </ul>
           </div>
+        </div>
+
+        {/* Social Icons */}
+        <div className="flex items-center justify-center gap-4 mb-8">
+          <a 
+            href="https://github.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+          >
+            <Github className="h-5 w-5" aria-hidden="true" />
+          </a>
+          <a 
+            href="https://twitter.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            aria-label="Twitter"
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+          >
+            <Twitter className="h-5 w-5" aria-hidden="true" />
+          </a>
+          <a 
+            href="https://linkedin.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            aria-label="LinkedIn"
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+          >
+            <Linkedin className="h-5 w-5" aria-hidden="true" />
+          </a>
         </div>
 
         {/* Compliance Badges */}

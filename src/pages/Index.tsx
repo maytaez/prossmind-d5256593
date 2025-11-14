@@ -10,6 +10,8 @@ import ProductTiers from "@/components/ProductTiers";
 import ChatBot from "@/components/ChatBot";
 import Footer from "@/components/Footer";
 import TrustStrip from "@/components/TrustStrip";
+import AnimatedSection from "@/components/AnimatedSection";
+import FloatingCTA from "@/components/FloatingCTA";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -61,12 +63,25 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Navigation user={user} />
       <TrustStrip />
-      <Hero />
-      <TryProssMe user={user} />
-      <FeatureCards />
-      <ProductTiers />
-      <ChatBot />
+      <main id="main-content" tabIndex={-1}>
+        <AnimatedSection variant="fade-in">
+          <Hero />
+        </AnimatedSection>
+      <AnimatedSection variant="fade-up" delay={0.1}>
+        <TryProssMe user={user} />
+      </AnimatedSection>
+      <AnimatedSection variant="fade-up" delay={0.2}>
+        <FeatureCards />
+      </AnimatedSection>
+      <AnimatedSection variant="fade-up" delay={0.3}>
+        <ProductTiers />
+      </AnimatedSection>
+      <AnimatedSection variant="fade-up" delay={0.4}>
+        <ChatBot />
+      </AnimatedSection>
+      </main>
       <Footer />
+      <FloatingCTA />
     </div>
   );
 };

@@ -4,7 +4,7 @@ import { useFreePrompts } from "@/hooks/useFreePrompts";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, Mic, Send, Sparkles, MicOff, Languages, MessageSquare, Factory, FileText, File, Image } from "lucide-react";
+import { Paperclip, Mic, Send, Sparkles, MicOff, Languages, MessageSquare, Factory, FileText, File, Image, Shield } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -825,38 +825,48 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                         setIsDragOver(false);
                         handleFileUpload(e);
                       }}
-                      className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+                      className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-normal bg-card/50 backdrop-blur-sm ${
                         isDragOver
-                          ? "border-primary bg-primary/5 scale-[1.02]"
-                          : "border-border hover:border-primary/50"
+                          ? "border-primary bg-primary/10 scale-[1.02] shadow-lg"
+                          : "border-border hover:border-primary/50 hover:bg-card/80"
                       }`}
                     >
-                      <div className="flex justify-center gap-4 mb-4">
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Image className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">PNG/JPG</span>
+                      <div className="flex justify-center gap-6 mb-6 flex-wrap">
+                        <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <Image className="h-6 w-6 text-primary" aria-hidden="true" />
+                          </div>
+                          <span className="text-xs font-medium">PNG/JPG</span>
                         </div>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <FileText className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">PDF</span>
+                        <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <FileText className="h-6 w-6 text-primary" aria-hidden="true" />
+                          </div>
+                          <span className="text-xs font-medium">PDF</span>
                         </div>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <File className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">DOCX</span>
+                        <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <File className="h-6 w-6 text-primary" aria-hidden="true" />
+                          </div>
+                          <span className="text-xs font-medium">DOCX</span>
                         </div>
                       </div>
                       <Button 
                         variant="outline"
                         onClick={() => fileInputRef.current?.click()}
                         disabled={isGenerating}
-                        className="w-full"
+                        className="w-full mb-3"
                         aria-label="Upload file"
                       >
                         <Paperclip className="h-4 w-4 mr-2" aria-hidden="true" />
                         Upload File
                       </Button>
-                      <p className="text-xs text-muted-foreground mt-3">
+                      <p className="text-xs text-muted-foreground mb-2">
                         Drag and drop a file here or click to browse
+                      </p>
+                      <p className="text-xs text-muted-foreground/70 flex items-center justify-center gap-1">
+                        <Shield className="h-3 w-3" aria-hidden="true" />
+                        Processed securely in Switzerland
                       </p>
                     </div>
                   </div>
@@ -936,107 +946,193 @@ const TryProssMe = ({ user }: { user: User | null }) => {
             {/* Input Area */}
             <div className="bg-card border border-border rounded-2xl p-8 shadow-xl slide-up stagger-2">
               <div className="space-y-6">
-                {/* Language Selector for Voice Input */}
-                <div className="flex items-center gap-2">
-                  <Languages className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  <Select value={language} onValueChange={setLanguage}>
-                    <SelectTrigger className="w-[200px] h-8" aria-label="Select voice recognition language">
-                      <SelectValue placeholder="Select language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en-US">English (US)</SelectItem>
-                      <SelectItem value="en-GB">English (UK)</SelectItem>
-                      <SelectItem value="es-ES">Spanish</SelectItem>
-                      <SelectItem value="fr-FR">French</SelectItem>
-                      <SelectItem value="de-DE">German</SelectItem>
-                      <SelectItem value="it-IT">Italian</SelectItem>
-                      <SelectItem value="pt-BR">Portuguese (Brazil)</SelectItem>
-                      <SelectItem value="pt-PT">Portuguese (Portugal)</SelectItem>
-                      <SelectItem value="ru-RU">Russian</SelectItem>
-                      <SelectItem value="ja-JP">Japanese</SelectItem>
-                      <SelectItem value="ko-KR">Korean</SelectItem>
-                      <SelectItem value="zh-CN">Chinese (Simplified)</SelectItem>
-                      <SelectItem value="zh-TW">Chinese (Traditional)</SelectItem>
-                      <SelectItem value="ar-SA">Arabic</SelectItem>
-                      <SelectItem value="hi-IN">Hindi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-xs text-muted-foreground">Voice recognition language</span>
-                </div>
-                
-                <Textarea
-                  placeholder="Describe your P&ID process, or upload files (images, PDFs, Word docs, text files) - I'll extract content and generate a P&ID diagram. You can preview before generation and refine using natural language after creation..."
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  className="min-h-[120px] resize-none border-muted"
-                  disabled={isGenerating}
-                  aria-label="P&ID process description input"
-                />
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx,.txt"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      aria-label="Upload file input"
-                    />
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isGenerating}
-                      title="Upload image, PDF, Word, or text file to generate P&ID"
-                      aria-label="Upload file"
-                    >
-                      <Paperclip className="h-5 w-5" aria-hidden="true" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={handleVoiceRecording}
-                      disabled={isGenerating}
-                      className={isRecording ? "text-red-500" : ""}
-                      title="Voice to text"
-                      aria-label={isRecording ? "Stop voice recording" : "Start voice recording"}
-                    >
-                      {isRecording ? <MicOff className="h-5 w-5 animate-pulse" aria-hidden="true" /> : <Mic className="h-5 w-5" aria-hidden="true" />}
-                    </Button>
-                  </div>
+                {/* Segmented Control Style Tabs for Input Methods */}
+                <Tabs defaultValue="prompt" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 bg-muted/50">
+                    <TabsTrigger value="prompt" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                      <MessageSquare className="h-4 w-4" />
+                      <span className="hidden sm:inline">Prompt</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="voice" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                      <Mic className="h-4 w-4" />
+                      <span className="hidden sm:inline">Voice</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="attachment" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                      <Paperclip className="h-4 w-4" />
+                      <span className="hidden sm:inline">Attachment</span>
+                    </TabsTrigger>
+                  </TabsList>
                   
-                  <Button 
-                    onClick={handleSend} 
-                    className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
-                    size="lg"
-                    disabled={isGenerating || !message.trim()}
-                    aria-label="Generate P&ID diagram"
-                  >
-                    {isGenerating ? "Generating..." : "Generate P&ID"}
-                    <Send className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
+                  <TabsContent value="prompt" className="mt-4">
+                    <Textarea
+                      placeholder="Describe your P&ID process step by step..."
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      className="min-h-[120px] resize-none border-muted"
+                      style={{ paddingLeft: '1.2em', paddingRight: '1.2em' }}
+                      disabled={isGenerating}
+                      aria-label="P&ID process description input"
+                    />
+                  </TabsContent>
+                  
+                  <TabsContent value="voice" className="mt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Languages className="h-4 w-4 text-muted-foreground" />
+                        <Select value={language} onValueChange={setLanguage}>
+                          <SelectTrigger className="w-[200px] h-8">
+                            <SelectValue placeholder="Select language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="en-US">English (US)</SelectItem>
+                            <SelectItem value="en-GB">English (UK)</SelectItem>
+                            <SelectItem value="es-ES">Spanish</SelectItem>
+                            <SelectItem value="fr-FR">French</SelectItem>
+                            <SelectItem value="de-DE">German</SelectItem>
+                            <SelectItem value="it-IT">Italian</SelectItem>
+                            <SelectItem value="pt-BR">Portuguese (Brazil)</SelectItem>
+                            <SelectItem value="pt-PT">Portuguese (Portugal)</SelectItem>
+                            <SelectItem value="ru-RU">Russian</SelectItem>
+                            <SelectItem value="ja-JP">Japanese</SelectItem>
+                            <SelectItem value="ko-KR">Korean</SelectItem>
+                            <SelectItem value="zh-CN">Chinese (Simplified)</SelectItem>
+                            <SelectItem value="zh-TW">Chinese (Traditional)</SelectItem>
+                            <SelectItem value="ar-SA">Arabic</SelectItem>
+                            <SelectItem value="hi-IN">Hindi</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-xs text-muted-foreground">Voice recognition language</span>
+                      </div>
+                      <Button 
+                        variant="outline"
+                        onClick={handleVoiceRecording}
+                        disabled={isGenerating}
+                        className={isRecording ? "text-red-500 border-red-500" : "w-full"}
+                      >
+                        {isRecording ? (
+                          <>
+                            <MicOff className="h-4 w-4 mr-2 animate-pulse" />
+                            Click to Stop Recording
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="h-4 w-4 mr-2" />
+                            Start Voice Recording
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="attachment" className="mt-4">
+                    <div className="space-y-4">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx,.txt"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(true);
+                        }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(false);
+                          handleFileUpload(e);
+                        }}
+                        className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-normal bg-card/50 backdrop-blur-sm ${
+                          isDragOver
+                            ? "border-primary bg-primary/10 scale-[1.02] shadow-lg"
+                            : "border-border hover:border-primary/50 hover:bg-card/80"
+                        }`}
+                      >
+                        <div className="flex justify-center gap-6 mb-6 flex-wrap">
+                          <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                            <div className="p-2 rounded-full bg-primary/10">
+                              <Image className="h-6 w-6 text-primary" aria-hidden="true" />
+                            </div>
+                            <span className="text-xs font-medium">PNG/JPG</span>
+                          </div>
+                          <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                            <div className="p-2 rounded-full bg-primary/10">
+                              <FileText className="h-6 w-6 text-primary" aria-hidden="true" />
+                            </div>
+                            <span className="text-xs font-medium">PDF</span>
+                          </div>
+                          <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                            <div className="p-2 rounded-full bg-primary/10">
+                              <File className="h-6 w-6 text-primary" aria-hidden="true" />
+                            </div>
+                            <span className="text-xs font-medium">DOCX</span>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isGenerating}
+                          className="w-full mb-3"
+                          aria-label="Upload file"
+                        >
+                          <Paperclip className="h-4 w-4 mr-2" aria-hidden="true" />
+                          Upload File
+                        </Button>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Drag and drop a file here or click to browse
+                        </p>
+                        <p className="text-xs text-muted-foreground/70 flex items-center justify-center gap-1">
+                          <Shield className="h-3 w-3" aria-hidden="true" />
+                          Processed securely in Switzerland
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
                 
-                <div className="border border-border rounded-lg p-4 bg-muted/30">
-                  <div className="flex justify-center gap-4 mb-2">
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Image className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">PNG/JPG</span>
+                {/* 3-Step Progress Indicator */}
+                {isGenerating && generationStep !== "idle" && (
+                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border">
+                    <p className="text-sm font-medium text-foreground mb-2">Processing your document...</p>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={generationStep === "reading" ? "font-semibold" : "text-muted-foreground"}>
+                        {generationStep === "reading" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                        {generationStep !== "reading" && "✓ "}
+                        Step 1: Reading prompt...
+                      </span>
+                      {generationStep === "reading" && <Progress value={33} className="w-24" aria-label="Progress: 33%" />}
                     </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <FileText className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">PDF</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={generationStep === "generating" ? "font-semibold" : generationStep === "drawing" ? "text-muted-foreground" : ""}>
+                        {generationStep === "generating" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                        {generationStep !== "generating" && generationStep !== "reading" && "✓ "}
+                        Step 2: Generating...
+                      </span>
+                      {generationStep === "generating" && <Progress value={66} className="w-24" aria-label="Progress: 66%" />}
                     </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <File className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">DOCX</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={generationStep === "drawing" ? "font-semibold" : "text-muted-foreground"}>
+                        {generationStep === "drawing" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                        {generationStep !== "drawing" && generationStep !== "generating" && generationStep !== "reading" && "✓ "}
+                        Step 3: Drawing Diagram...
+                      </span>
+                      {generationStep === "drawing" && <Progress value={100} className="w-24" aria-label="Progress: 100%" />}
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Supported file types for upload
-                  </p>
-                </div>
+                )}
+                
+                <Button 
+                  onClick={handleSend} 
+                  className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all w-full"
+                  size="lg"
+                  disabled={isGenerating || !message.trim()}
+                  aria-label="Generate P&ID diagram"
+                >
+                  {isGenerating ? "Generating..." : "Generate P&ID"}
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                </Button>
               </div>
             </div>
           </TabsContent>

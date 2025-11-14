@@ -6,6 +6,7 @@ interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   resolvedTheme: "light" | "dark";
+  prefersReducedMotion: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -29,6 +30,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return theme;
   });
 
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+
   // Update resolved theme when theme changes
   useEffect(() => {
     if (theme === "system") {
@@ -45,6 +51,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setResolvedTheme(theme);
     }
   }, [theme]);
+
+  // Listen for reduced motion preference changes
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateReducedMotion = (e: MediaQueryListEvent | MediaQueryList) => {
+      setPrefersReducedMotion(e.matches);
+    };
+    
+    updateReducedMotion(mediaQuery);
+    mediaQuery.addEventListener("change", updateReducedMotion);
+    
+    return () => mediaQuery.removeEventListener("change", updateReducedMotion);
+  }, []);
 
   // Apply theme to HTML element
   useEffect(() => {
@@ -86,7 +107,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme, prefersReducedMotion }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -98,5 +119,13 @@ export function useTheme() {
     throw new Error("useTheme must be used within a ThemeProvider");
   }
   return context;
+}
+
+export function useReducedMotion() {
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error("useReducedMotion must be used within a ThemeProvider");
+  }
+  return context.prefersReducedMotion;
 }
 

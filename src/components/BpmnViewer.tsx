@@ -206,7 +206,7 @@ const extractProcessSummary = (xmlString: string, type: "bpmn" | "pid"): string 
     const summaryPrefix = type === "pid"
       ? "P&ID workflow covering: "
       : "Process steps include: ";
-      
+
     return `${summaryPrefix}${truncatedNames.join(", ")}${suffix}`;
 
   } catch (error) {
@@ -483,12 +483,6 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [visionJobId, setVisionJobId] = useState<string | null>(null);
   const canEditRef = useRef<boolean>(true);
   const hasGeneratedAlternativesRef = useRef(false);
-  const [systemActivities, setSystemActivities] = useState<SystemActivity[]>([]);
-  const [systemTrackingEnabled, setSystemTrackingEnabled] = useState(false);
-  const [confirmAlternative, setConfirmAlternative] = useState<AlternativeModel | null>(null);
-  const [confirmAlternativeDialogOpen, setConfirmAlternativeDialogOpen] = useState(false);
-  const systemActivitiesRef = useRef<SystemActivity[]>([]);
-  const systemTrackingCleanupRef = useRef<(() => void) | null>(null);
 
   const processSummary = useMemo(
     () => extractProcessSummary(xml, diagramType),
@@ -884,9 +878,9 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               xml: data.bpmnXml,
               generatedAt: new Date().toISOString(),
             };
-            
+
             generated.push(newModel);
-            
+
             // Update UI with the new model as it becomes available
             setAlternativeModels([...generated]);
             if (!selectedAlternativeId) {
@@ -2361,7 +2355,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
 
 
       {/* Toolbar */}
-      <div className={`flex items-center gap-2 bg-muted/50 p-3 rounded-lg border ${isPid ? 'border-engineering-green/20' : 'border-border'}`}> 
+      <div className={`flex items-center gap-2 bg-muted/50 p-3 rounded-lg border ${isPid ? 'border-engineering-green/20' : 'border-border'}`}>
 
         <Button
           variant="outline"
@@ -2387,21 +2381,6 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             <DropdownMenuLabel>{isPid ? "Advanced P&ID Tools" : "Advanced BPMN Tools"}</DropdownMenuLabel>
             <DropdownMenuSeparator />
 
-            {onRefine && (
-              <>
-                <DropdownMenuItem onClick={onRefine}>
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium">Refine Diagram</span>
-                      <span className="text-xs text-muted-foreground">AI-powered diagram refinement</span>
-                    </div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )}
-
             <DropdownMenuItem onClick={() => setAgentDialogOpen(true)}>
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4" />
@@ -2426,16 +2405,6 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               </div>
             </DropdownMenuItem>
 
-            <DropdownMenuItem onClick={() => setVisionDialogOpen(true)}>
-              <div className="flex items-center gap-2">
-                <Upload className="h-4 w-4" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Vision Modelling AI</span>
-                  <span className="text-xs text-muted-foreground">Sketch to diagram</span>
-                </div>
-              </div>
-            </DropdownMenuItem>
-
             <DropdownMenuSeparator />
 
             <DropdownMenuItem onClick={() => setQrDialogOpen(true)}>
@@ -2452,25 +2421,23 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
 
         {/* Refine Button - Next to Tools */}
         {onRefine && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => {
-                if (!canEdit) {
-                  toast.error("Editing is locked by the Process Manager");
-                  return;
-                }
-                onRefine();
-              }}
-              title="Refine diagram with AI"
-              disabled={!canEdit}
-            >
-              <Sparkles className="h-4 w-4" />
-              Refine
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => {
+              if (!canEdit) {
+                toast.error("Editing is locked by the Process Manager");
+                return;
+              }
+              onRefine();
+            }}
+            title="Refine diagram with AI"
+            disabled={!canEdit}
+          >
+            <Sparkles className="h-4 w-4" />
+            Refine
+          </Button>
         )}
 
         <Badge
@@ -3310,7 +3277,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                       const notes = Array.isArray(entry.alternative_models)
                         ? (entry.alternative_models as Array<Record<string, unknown>>)[0]
                         : undefined;
-                      const preview = 
+                      const preview =
                         notes && typeof notes === "object" && typeof notes.preview === "string"
                           ? notes.preview
                           : undefined;
@@ -3685,8 +3652,8 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                               type="button"
                               onClick={() => setSelectedAlternativeId(model.id)}
                               className={`w-full text-left border rounded-lg p-3 transition-all focus:outline-none ${isSelected
-                                  ? "border-primary bg-primary/10 shadow-lg"
-                                  : "border-border hover:shadow-md"
+                                ? "border-primary bg-primary/10 shadow-lg"
+                                : "border-border hover:shadow-md"
                                 }`}
                             >
                               <div className="flex items-start justify-between gap-2">

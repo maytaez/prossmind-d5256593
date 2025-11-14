@@ -1,6 +1,15 @@
+<<<<<<< Updated upstream
+import { Auth, ParticleBackground } from "@prossmind/shared/components";
+import prossmindLogo from "@/assets/prossmind-logo-transparent.png";
+import { useReducedMotion } from "@prossmind/shared/context";
+
+const AuthPage = () => {
+  const prefersReducedMotion = useReducedMotion();
+  const appUrl = import.meta.env.VITE_APP_URL || "http://localhost:8080";
+=======
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +38,8 @@ const Auth = () => {
 
   useEffect(() => {
     // Check if user is already logged in
+    if (!isSupabaseConfigured) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         navigate("/");
@@ -47,7 +58,15 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (!isSupabaseConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Authentication unavailable",
+        description: "Supabase environment variables are not configured. Contact the workspace owner.",
+      });
+      return;
+    }
+
     // Validate input
     const validation = authSchema.safeParse({ email, password });
     if (!validation.success) {
@@ -106,6 +125,15 @@ const Auth = () => {
 
     setIsLoading(true);
 
+    if (!isSupabaseConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Authentication unavailable",
+        description: "Supabase environment variables are not configured. Contact the workspace owner.",
+      });
+      return;
+    }
+
     const { error } = await supabase.auth.verifyOtp({
       email: pendingEmail,
       token: otp,
@@ -136,6 +164,15 @@ const Auth = () => {
   const handleResendOtp = async () => {
     setIsLoading(true);
     
+    if (!isSupabaseConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Authentication unavailable",
+        description: "Supabase environment variables are not configured. Contact the workspace owner.",
+      });
+      return;
+    }
+
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: pendingEmail,
@@ -173,6 +210,15 @@ const Auth = () => {
 
     setIsLoading(true);
 
+    if (!isSupabaseConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Authentication unavailable",
+        description: "Supabase environment variables are not configured. Contact the workspace owner.",
+      });
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
       email: validation.data.email,
       password: validation.data.password,
@@ -203,6 +249,15 @@ const Auth = () => {
 
     setIsLoading(true);
 
+    if (!isSupabaseConfigured) {
+      toast({
+        variant: "destructive",
+        title: "Authentication unavailable",
+        description: "Supabase environment variables are not configured. Contact the workspace owner.",
+      });
+      return;
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
       redirectTo: `${window.location.origin}/`,
     });
@@ -224,180 +279,44 @@ const Auth = () => {
       setResetEmail("");
     }
   };
+>>>>>>> Stashed changes
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-2xl text-center">Authentication Unavailable</CardTitle>
+            <CardDescription className="text-center">
+              Supabase environment variables are missing. Configure the following in your `.env` and restart the app:
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border bg-muted/30 p-4 text-sm">
+              <p className="font-medium mb-2">Required variables</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li><code>VITE_SUPABASE_URL</code></li>
+                <li><code>VITE_SUPABASE_ANON_KEY</code> or <code>VITE_SUPABASE_PUBLISHABLE_KEY</code></li>
+              </ul>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              After setting these values, restart <code>npm run dev</code> and reload this page.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Welcome to ProssMind</CardTitle>
-          <CardDescription className="text-center">
-            {showForgotPassword 
-              ? "Reset your password" 
-              : showOtpVerification
-              ? "Verify your email"
-              : "Sign in or create an account to start generating BPMN diagrams"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {showOtpVerification ? (
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShowOtpVerification(false);
-                  setOtp("");
-                  setPendingEmail("");
-                }}
-                className="mb-4 p-0 h-auto"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to sign up
-              </Button>
-              <div className="space-y-2">
-                <Label htmlFor="otp">Verification Code</Label>
-                <Input
-                  id="otp"
-                  type="text"
-                  placeholder="Enter 6-digit code"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  maxLength={6}
-                  required
-                  disabled={isLoading}
-                  className="text-center text-2xl tracking-widest"
-                />
-                <p className="text-xs text-muted-foreground text-center">
-                  Enter the 6-digit code sent to {pendingEmail}
-                </p>
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading || otp.length !== 6}>
-                {isLoading ? "Verifying..." : "Verify Email"}
-              </Button>
-              <Button
-                type="button"
-                variant="link"
-                className="w-full text-sm"
-                onClick={handleResendOtp}
-                disabled={isLoading}
-              >
-                Didn't receive the code? Resend
-              </Button>
-            </form>
-          ) : showForgotPassword ? (
-            <form onSubmit={handlePasswordReset} className="space-y-4">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowForgotPassword(false)}
-                className="mb-4 p-0 h-auto"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to sign in
-              </Button>
-              <div className="space-y-2">
-                <Label htmlFor="reset-email">Email</Label>
-                <Input
-                  id="reset-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Sending..." : "Send Reset Link"}
-              </Button>
-            </form>
-          ) : (
-            <Tabs defaultValue="signin" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signin">Sign In</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
-            
-            <TabsContent value="signin">
-              <form onSubmit={handleSignIn} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signin-email">Email</Label>
-                  <Input
-                    id="signin-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isLoading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
-                  <Input
-                    id="signin-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={isLoading}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Signing in..." : "Sign In"}
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="link" 
-                  className="w-full text-sm"
-                  onClick={() => setShowForgotPassword(true)}
-                >
-                  Forgot password?
-                </Button>
-              </form>
-            </TabsContent>
-            
-            <TabsContent value="signup">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isLoading}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={isLoading}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Password must be at least 6 characters
-                  </p>
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Creating account..." : "Sign Up"}
-                </Button>
-              </form>
-            </TabsContent>
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <Auth
+      logoUrl={prossmindLogo}
+      redirectUrl={appUrl}
+      homeUrl="/"
+      ParticleBackgroundComponent={ParticleBackground}
+      useReducedMotion={useReducedMotion}
+    />
   );
 };
 
-export default Auth;
+export default AuthPage;

@@ -12,13 +12,50 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, diagramType = 'bpmn' } = await req.json();
-    console.log('Generating BPMN for prompt:', prompt);
+    // Parse request body with error handling
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'Invalid request body. Expected JSON.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not found');
-      throw new Error('Lovable API key not configured');
+    const { prompt, diagramType = 'bpmn' } = requestBody;
+    
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'Prompt is required and must be a non-empty string.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log(`Generating ${diagramType.toUpperCase()} for prompt:`, prompt);
+
+    // Check if using Ollama for local development
+    const USE_OLLAMA = Deno.env.get('USE_OLLAMA') === 'true';
+    const OLLAMA_URL = Deno.env.get('OLLAMA_URL') || 'http://localhost:11434';
+    const OLLAMA_MODEL = Deno.env.get('OLLAMA_MODEL') || 'gemma:7b';
+    
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    
+    console.log('Environment check:', {
+      USE_OLLAMA,
+      HAS_OLLAMA_URL: !!OLLAMA_URL,
+      HAS_GOOGLE_API_KEY: !!GOOGLE_API_KEY,
+      OLLAMA_MODEL
+    });
+    
+    if (!USE_OLLAMA && !GOOGLE_API_KEY) {
+      const errorMsg = 'Google API key not configured. Set USE_OLLAMA=true for local development with Ollama, or set GOOGLE_API_KEY secret.';
+      console.error(errorMsg);
+      return new Response(
+        JSON.stringify({ error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const bpmnSystemPrompt = `You are a BPMN (Business Process Model and Notation) expert. Generate valid BPMN 2.0 XML based on user descriptions.
@@ -374,61 +411,124 @@ When combined with your **PidRenderer.js**, this updated prompt will:
       (hasDataObjects ? 1 : 0) +
       (hasMessageFlows ? 1 : 0);
     
-    // Use Pro model for complex diagrams or P&ID
-    const useProModel = diagramType === 'pid' || complexityScore >= 5;
-    const model = useProModel ? 'google/gemini-2.5-pro' : 'google/gemini-2.5-flash';
-    const maxTokens = useProModel ? 16384 : 12288;
+    let bpmnXml = '';
     
-    console.log(`Using model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens})`);
-
-    const response = await fetch(
-      'https://ai.gateway.lovable.dev/v1/chat/completions',
-      {
+    if (USE_OLLAMA) {
+      // Use Ollama for local development
+      console.log(`Using Ollama model: ${OLLAMA_MODEL} at ${OLLAMA_URL}`);
+      
+      const fullPrompt = `${systemPrompt}\n\n${prompt}`;
+      const maxTokens = diagramType === 'pid' || complexityScore >= 5 ? 16384 : 8192;
+      
+      const response = await fetch(`${OLLAMA_URL}/api/generate`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.7
+          model: OLLAMA_MODEL,
+          prompt: fullPrompt,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: maxTokens,
+          }
         }),
-      }
-    );
+      });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        console.error('Rate limit exceeded');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Ollama API error:', response.status, errorText);
         return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: `Ollama API error (${response.status}): ${errorText.substring(0, 200)}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      if (response.status === 402) {
-        console.error('Payment required');
+
+      const data = await response.json();
+      console.log('Ollama API Response received');
+      
+      bpmnXml = data.response || '';
+      
+      if (!bpmnXml) {
+        console.error('Failed to extract text from Ollama response. Full response:', JSON.stringify(data));
+        throw new Error('No content generated from Ollama model');
+      }
+    } else {
+      // Use Google Gemini API
+      const useProModel = diagramType === 'pid' || complexityScore >= 5;
+      const model = useProModel ? 'gemini-1.5-pro' : 'gemini-1.5-flash';
+      const maxTokens = useProModel ? 16384 : 8192;
+      
+      console.log(`Using Google Gemini model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens})`);
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: `${systemPrompt}\n\n${prompt}` }
+              ]
+            }],
+            generationConfig: {
+              maxOutputTokens: maxTokens,
+              temperature: 0.7
+            }
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Google API error:', response.status, errorText);
+        
+        if (response.status === 429) {
+          return new Response(
+            JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (response.status === 402) {
+          return new Response(
+            JSON.stringify({ error: 'AI credits depleted. Please add more credits.' }),
+            { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (response.status === 400) {
+          // Try to parse error message from response
+          let errorMessage = 'Invalid request to AI model';
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error?.message || errorData.message || errorMessage;
+          } catch (e) {
+            // If parsing fails, use default message
+          }
+          return new Response(
+            JSON.stringify({ error: errorMessage }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
         return new Response(
-          JSON.stringify({ error: 'AI credits depleted. Please add more credits.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: `AI model error (${response.status}): ${errorText.substring(0, 200)}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      const errorText = await response.text();
-      console.error('Lovable AI API error:', response.status, errorText);
-      throw new Error('Failed to generate BPMN');
-    }
 
-    const data = await response.json();
-    console.log('AI Response received');
-    
-    let bpmnXml = data.choices?.[0]?.message?.content || '';
-    
-    if (!bpmnXml) {
-      console.error('Failed to extract BPMN XML from response. Full response:', JSON.stringify(data));
-      throw new Error('No content generated from AI model');
+      const data = await response.json();
+      console.log('Google API Response structure:', JSON.stringify(data, null, 2).substring(0, 500));
+      
+      bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      if (!bpmnXml) {
+        console.error('Failed to extract text from response. Full response:', JSON.stringify(data));
+        throw new Error('No content generated from AI model');
+      }
     }
 
     // Clean up the response - remove markdown code blocks if present
@@ -443,8 +543,15 @@ When combined with your **PidRenderer.js**, this updated prompt will:
 
   } catch (error) {
     console.error('Error in generate-bpmn function:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('Error details:', { errorMessage, errorStack });
+    
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ 
+        error: errorMessage || 'Unknown error occurred while generating diagram',
+        details: process.env.DENO_ENV === 'development' ? errorStack : undefined
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
