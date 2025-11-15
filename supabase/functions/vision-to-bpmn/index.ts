@@ -91,27 +91,37 @@ Deno.serve(async (req) => {
         // Generate image hash for caching (for images and PDFs)
         let imageHash: string | null = null;
         let bpmnXml = '';
+        let cacheHit = false;
+        let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
 
         if (isImage || isPDF || isDocument) {
-          // Extract base64 data (remove data URL prefix)
+          // Extract base64 data (remove data URL prefix) and normalize
           const base64Data = imageBase64.includes(',') 
-            ? imageBase64.split(',')[1] 
-            : imageBase64;
+            ? imageBase64.split(',')[1].trim().replace(/\s+/g, '')
+            : imageBase64.trim().replace(/\s+/g, '');
+          
           imageHash = await generateHash(`${base64Data}:${diagramType}`);
+          console.log('Generated image hash for cache lookup:', imageHash.substring(0, 16) + '...');
 
           // Check vision cache
           const visionCache = await checkVisionCache(imageHash, diagramType);
           if (visionCache) {
-            console.log('Vision cache hit - using cached analysis');
+            console.log('✅ VISION CACHE HIT - Found cached data for image hash:', imageHash.substring(0, 16) + '...');
+            console.log('Cache entry ID:', visionCache.cacheId);
+            cacheHit = true;
+            cacheType = 'exact_hash';
 
             // If we have cached BPMN XML, use it and skip generation
             if (visionCache.bpmnXml) {
-              console.log('Using cached BPMN XML');
+              console.log('✅ Using cached BPMN XML directly');
+              bpmnXml = visionCache.bpmnXml;
+              
               await supabase
                 .from('vision_bpmn_jobs')
                 .update({
                   bpmn_xml: visionCache.bpmnXml,
                   status: 'completed',
+                  model_used: 'cached',
                   completed_at: new Date().toISOString()
                 })
                 .eq('id', job.id);
@@ -119,14 +129,18 @@ Deno.serve(async (req) => {
               const responseTime = Date.now() - startTime;
               await logPerformanceMetric({
                 function_name: 'vision-to-bpmn',
-                cache_type: 'exact_hash',
+                cache_type: cacheType,
                 response_time_ms: responseTime,
                 cache_hit: true,
+                model_used: 'cached',
                 error_occurred: false,
               });
-
-              return;
+              
+              console.log('Job completed from cache:', job.id, 'in', responseTime, 'ms');
+              return; // Exit early with cached result
             }
+          } else {
+            console.log('❌ Vision cache miss - No cached data found for hash:', imageHash.substring(0, 16) + '...');
           }
 
           // Single-pass: Generate BPMN/P&ID directly from image
