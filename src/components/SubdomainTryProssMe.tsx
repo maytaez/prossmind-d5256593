@@ -677,23 +677,6 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                     </p>
                 </div>
 
-                {/* Free Prompts Counter */}
-                {!user && (
-                    <div className="text-center mb-6">
-                        <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-2">
-                            <span className="text-sm font-medium">
-                                {hasUsedAllPrompts ? (
-                                    <span className="text-destructive">No free prompts left - Sign up to continue!</span>
-                                ) : (
-                                    <span>
-                                        Free prompts remaining: <span className="font-bold text-primary">{remainingPrompts}/5</span>
-                                    </span>
-                                )}
-                            </span>
-                        </div>
-                    </div>
-                )}
-
                 <div className="max-w-5xl mx-auto mt-12 space-y-8">
                     {/* Suggestion Prompts */}
                     <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">

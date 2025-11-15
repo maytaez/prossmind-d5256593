@@ -5,12 +5,16 @@ import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Paperclip, Mic, Send, Sparkles, MicOff, Languages, MessageSquare, Factory, FileText, File, Image } from "lucide-react";
+import { motion } from "framer-motion";
+import { scrollRevealVariants } from "@/hooks/useScrollReveal";
+import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import BpmnViewerComponent from "./BpmnViewer";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { AnimatedTabs, AnimatedTabsList, AnimatedTabsTrigger, AnimatedTabsContent } from "@/components/ui/AnimatedTabs";
 import {
   Select,
   SelectContent,
@@ -37,6 +41,7 @@ const suggestionPrompts = [
 
 const TryProssMe = ({ user }: { user: User | null }) => {
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion();
   const { remainingPrompts, hasUsedAllPrompts, usePrompt, isUnlimited } = useFreePrompts(!!user);
   const [message, setMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -658,51 +663,40 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   return (
     <section className="py-24 bg-muted/20 relative" data-section="try-prossmind">
       <div className="container mx-auto px-6">
-        <div className="text-center mb-12 slide-up">
+        <motion.div 
+          className="text-center mb-12"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.3 }}
+          variants={scrollRevealVariants}
+        >
           <h2 className="text-4xl md:text-5xl font-bold mb-6">
             Try <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">ProssMind!</span>
           </h2>
           <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
             Describe your business process, upload an image, PDF, Word doc, or text file - AI will generate a BPMN or P&ID diagram for you
           </p>
-        </div>
-        
-        {/* Free Prompts Counter */}
-        {!user && (
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-2">
-              <span className="text-sm font-medium">
-                {hasUsedAllPrompts ? (
-                  <span className="text-destructive">No free prompts left - Sign up to continue!</span>
-                ) : (
-                  <span>
-                    Free prompts remaining: <span className="font-bold text-primary">{remainingPrompts}/5</span>
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
+        </motion.div>
         
         <div className="max-w-5xl mx-auto mt-12 space-y-8">
-          <Tabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-            <TabsList className={`grid w-full max-w-md mx-auto grid-cols-2 mb-8 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
-              <TabsTrigger 
+          <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
+            <AnimatedTabsList className={`grid w-full max-w-md mx-auto grid-cols-2 mb-8 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
+              <AnimatedTabsTrigger 
                 value="bpmn"
-                className={diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}
+                className={`${diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}`}
               >
                 BPMN Diagram
-              </TabsTrigger>
-              <TabsTrigger 
+              </AnimatedTabsTrigger>
+              <AnimatedTabsTrigger 
                 value="pid"
-                className={diagramType === "pid" ? "data-[state=active]:bg-engineering-green data-[state=active]:text-white" : ""}
+                className={`${diagramType === "pid" ? "data-[state=active]:bg-engineering-green data-[state=active]:text-white" : ""}`}
               >
-                <Factory className="h-4 w-4 mr-2" />
+                <Factory className="h-4 w-4 mr-2 flex-shrink-0" />
                 P&ID Diagram
-              </TabsTrigger>
-            </TabsList>
+              </AnimatedTabsTrigger>
+            </AnimatedTabsList>
             
-            <TabsContent value="bpmn" className="space-y-8">
+            <AnimatedTabsContent value="bpmn" className="space-y-8">
               {/* Suggestion Prompts */}
               <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">
                 <div className="flex items-center gap-3 mb-6">
@@ -750,14 +744,56 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                 </TabsList>
                 
                 <TabsContent value="prompt" className="mt-4">
-                  <Textarea
-                    placeholder="Describe your process step by step..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className="min-h-[120px] resize-none border-muted"
-                    style={{ paddingLeft: '1.2em', paddingRight: '1.2em' }}
-                    disabled={isGenerating}
-                  />
+                  <div className="relative">
+                    <Textarea
+                      placeholder="Describe your process step by step..."
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      className="min-h-[120px] resize-none border-muted"
+                      style={{ paddingLeft: '1.2em', paddingRight: '1.2em' }}
+                      disabled={isGenerating}
+                    />
+                    {isGenerating && (
+                      <div className="absolute bottom-3 right-3 flex items-center gap-1">
+                        <motion.span
+                          className="w-2 h-2 bg-primary rounded-full"
+                          animate={prefersReducedMotion ? {} : {
+                            scale: [1, 1.2, 1],
+                            opacity: [0.5, 1, 0.5],
+                          }}
+                          transition={getReducedMotionTransition(prefersReducedMotion) || {
+                            duration: 1,
+                            repeat: Infinity,
+                            delay: 0,
+                          }}
+                        />
+                        <motion.span
+                          className="w-2 h-2 bg-primary rounded-full"
+                          animate={prefersReducedMotion ? {} : {
+                            scale: [1, 1.2, 1],
+                            opacity: [0.5, 1, 0.5],
+                          }}
+                          transition={getReducedMotionTransition(prefersReducedMotion) || {
+                            duration: 1,
+                            repeat: Infinity,
+                            delay: 0.2,
+                          }}
+                        />
+                        <motion.span
+                          className="w-2 h-2 bg-primary rounded-full"
+                          animate={prefersReducedMotion ? {} : {
+                            scale: [1, 1.2, 1],
+                            opacity: [0.5, 1, 0.5],
+                          }}
+                          transition={getReducedMotionTransition(prefersReducedMotion) || {
+                            duration: 1,
+                            repeat: Infinity,
+                            delay: 0.4,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </TabsContent>
                 
                 <TabsContent value="voice" className="mt-4">
@@ -910,9 +946,9 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               </Button>
             </div>
           </div>
-          </TabsContent>
+          </AnimatedTabsContent>
 
-          <TabsContent value="pid" className="space-y-8">
+          <AnimatedTabsContent value="pid" className="space-y-8">
             {/* Suggestion Prompts for P&ID */}
             <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">
               <div className="flex items-center gap-3 mb-6">
@@ -1043,8 +1079,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                 </div>
               </div>
             </div>
-          </TabsContent>
-          </Tabs>
+          </AnimatedTabsContent>
+          </AnimatedTabs>
 
           {/* File Preview Modal */}
           {showPreview && uploadedFile && (
@@ -1098,7 +1134,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           )}
 
           {/* BPMN Editor with Refinement */}
-          {bpmnXml && (
+          {bpmnXml ? (
             <div id="bpmn-viewer" className="space-y-6 relative">
               <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
                 <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
@@ -1180,7 +1216,25 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                 </DialogContent>
               </Dialog>
             </div>
-          )}
+          ) : isGenerating && generationStep === "drawing" ? (
+            <motion.div 
+              className="bg-card border border-border rounded-2xl p-6 shadow-lg"
+              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
+            >
+              <h3 className="text-xl font-semibold mb-4">Generating {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
+              <div className="space-y-4">
+                {/* Skeleton loader for BPMN preview */}
+                <div className="w-full h-[400px] bg-muted/50 rounded-lg animate-pulse border border-border/50 flex items-center justify-center">
+                  <div className="text-center space-y-3">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                    <p className="text-sm text-muted-foreground">Rendering diagram...</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
         </div>
       </div>
     </section>

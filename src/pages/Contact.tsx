@@ -71,24 +71,24 @@ const Contact = () => {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 mb-16">
-            <div className="bg-card border border-border rounded-xl p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-card border border-border rounded-xl p-6 text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.02] hover:-translate-y-1">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 transition-all duration-300">
                 <Mail className="h-6 w-6 text-primary" />
               </div>
               <h3 className="font-semibold mb-2">Email Us</h3>
               <p className="text-sm text-muted-foreground">info@prossmind.com</p>
             </div>
 
-            <div className="bg-card border border-border rounded-xl p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-card border border-border rounded-xl p-6 text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.02] hover:-translate-y-1">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 transition-all duration-300">
                 <Phone className="h-6 w-6 text-primary" />
               </div>
               <h3 className="font-semibold mb-2">Call Us</h3>
               <p className="text-sm text-muted-foreground">+41 78 330 79 67</p>
             </div>
 
-            <div className="bg-card border border-border rounded-xl p-6 text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-card border border-border rounded-xl p-6 text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.02] hover:-translate-y-1">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 transition-all duration-300">
                 <MessageSquare className="h-6 w-6 text-primary" />
               </div>
               <h3 className="font-semibold mb-2">Live Chat</h3>
@@ -109,9 +109,9 @@ const Contact = () => {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
               {teamMembers.map((member) => (
-                <Card key={member.name} className="text-center hover:shadow-lg transition-shadow">
+                <Card key={member.name} className="text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.03] hover:-translate-y-2">
                   <CardContent className="pt-6 pb-6">
-                    <Avatar className="w-24 h-24 mx-auto mb-4">
+                    <Avatar className="w-24 h-24 mx-auto mb-4 transition-all duration-300">
                       <AvatarImage src={member.image} alt={member.name} />
                       <AvatarFallback className="bg-primary/10 text-primary text-xl">
                         {member.initials}
@@ -129,7 +129,7 @@ const Contact = () => {
           </div>
 
           <div className="max-w-2xl mx-auto">
-            <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-8 space-y-6 transition-all duration-300 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-blue-500/30">
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label htmlFor="name" className="text-sm font-medium">
@@ -140,6 +140,7 @@ const Contact = () => {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Your name"
+                    className="transition-all duration-300 focus:shadow-[0_0_15px_rgba(59,130,246,0.4)] focus:shadow-blue-500/40"
                     required
                   />
                 </div>
@@ -153,6 +154,7 @@ const Contact = () => {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="your@email.com"
+                    className="transition-all duration-300 focus:shadow-[0_0_15px_rgba(59,130,246,0.4)] focus:shadow-blue-500/40"
                     required
                   />
                 </div>
@@ -167,6 +169,7 @@ const Contact = () => {
                   value={formData.subject}
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                   placeholder="How can we help?"
+                  className="transition-all duration-300 focus:shadow-[0_0_15px_rgba(59,130,246,0.4)] focus:shadow-blue-500/40"
                   required
                 />
               </div>
@@ -180,12 +183,12 @@ const Contact = () => {
                   value={formData.message}
                   onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                   placeholder="Tell us more about your inquiry..."
-                  className="min-h-[150px]"
+                  className="min-h-[150px] transition-all duration-300 focus:shadow-[0_0_15px_rgba(59,130,246,0.4)] focus:shadow-blue-500/40"
                   required
                 />
               </div>
 
-              <Button type="submit" size="lg" className="w-full">
+              <Button type="submit" size="lg" className="w-full transition-all duration-300 hover:shadow-[0_0_20px_rgba(59,130,246,0.6)] hover:shadow-blue-500/60 hover:scale-[1.02]">
                 Send Message
               </Button>
             </form>

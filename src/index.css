@@ -75,6 +75,26 @@ Swiss/EU Brand Colors:
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Design System: 4-point spacing scale */
+    --spacing-1: 0.25rem; /* 4px */
+    --spacing-2: 0.5rem;  /* 8px */
+    --spacing-4: 1rem;    /* 16px */
+    --spacing-6: 1.5rem;  /* 24px */
+    --spacing-8: 2rem;    /* 32px */
+    --spacing-12: 3rem;   /* 48px */
+
+    /* Design System: Modular type scale (base: 16px) */
+    --font-size-base: 1rem;      /* 16px */
+    --font-size-lg: 1.25rem;     /* 20px */
+    --font-size-xl: 1.5rem;      /* 24px */
+    --font-size-2xl: 2rem;       /* 32px */
+    --font-size-3xl: 3rem;       /* 48px */
+
+    /* Design System: Line height tokens */
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.75;
   }
 
   .dark {
@@ -117,6 +137,26 @@ Swiss/EU Brand Colors:
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Design System: 4-point spacing scale (same in dark mode) */
+    --spacing-1: 0.25rem; /* 4px */
+    --spacing-2: 0.5rem;  /* 8px */
+    --spacing-4: 1rem;    /* 16px */
+    --spacing-6: 1.5rem;  /* 24px */
+    --spacing-8: 2rem;    /* 32px */
+    --spacing-12: 3rem;   /* 48px */
+
+    /* Design System: Modular type scale (base: 16px) */
+    --font-size-base: 1rem;      /* 16px */
+    --font-size-lg: 1.25rem;     /* 20px */
+    --font-size-xl: 1.5rem;      /* 24px */
+    --font-size-2xl: 2rem;       /* 32px */
+    --font-size-3xl: 3rem;       /* 48px */
+
+    /* Design System: Line height tokens */
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.75;
   }
 }
 
@@ -188,10 +228,10 @@ Swiss/EU Brand Colors:
   
   .card-hover {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
   }
   
   .card-hover:hover {
-    transform: translateY(-8px);
     box-shadow: 0 20px 40px -12px hsl(var(--primary) / 0.25);
   }
 
@@ -242,5 +282,93 @@ Swiss/EU Brand Colors:
 
   .animate-scale-in {
     animation: scaleIn 0.3s ease-out forwards;
+  }
+
+  @keyframes gradientShift {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+
+  @keyframes glow {
+    0%, 100% {
+      opacity: 0.5;
+      filter: blur(20px);
+    }
+    50% {
+      opacity: 0.8;
+      filter: blur(30px);
+    }
+  }
+
+  .animated-gradient {
+    background-size: 200% 200%;
+    animation: gradientShift 8s ease infinite;
+  }
+
+  .float-animation {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .glow-effect {
+    animation: glow 3s ease-in-out infinite;
+  }
+
+  /* Button micro-interaction utilities */
+  .btn-micro-interaction {
+    transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1), 
+                box-shadow 160ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+
+  .btn-micro-interaction:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  }
+
+  .btn-micro-interaction:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-micro-interaction:focus-visible {
+    outline: 1px solid hsl(var(--ring));
+    box-shadow: 0 0 0 1px hsl(var(--ring)), 0 0 8px hsl(var(--ring) / 0.5);
+  }
+
+  /* Input focus state utilities */
+  .input-focus-enhanced {
+    transition: outline 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  }
+
+  .input-focus-enhanced:focus-visible {
+    outline: 1px solid hsl(var(--ring));
+    box-shadow: 0 0 0 1px hsl(var(--ring)), 0 0 8px hsl(var(--ring) / 0.3);
+    border-color: hsl(var(--ring));
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .btn-micro-interaction:hover {
+      transform: none;
+    }
   }
 }
