@@ -142,30 +142,47 @@ export async function checkVisionCache(
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   
   if (!supabaseUrl || !supabaseKey) {
+    console.log('Vision cache check skipped: missing Supabase config');
     return null;
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const { data, error } = await supabase
-    .from('vision_analysis_cache')
-    .select('id, process_description, bpmn_xml')
-    .eq('image_hash', imageHash)
-    .eq('diagram_type', diagramType)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('vision_analysis_cache')
+      .select('id, process_description, bpmn_xml, hit_count')
+      .eq('image_hash', imageHash)
+      .eq('diagram_type', diagramType)
+      .maybeSingle();
 
-  if (error || !data) {
+    if (error) {
+      console.error('Vision cache lookup error:', error);
+      return null;
+    }
+
+    if (!data) {
+      console.log('Vision cache: No match found for image hash');
+      return null;
+    }
+
+    console.log('Vision cache: Found match! Cache ID:', data.id, 'Hit count:', data.hit_count);
+
+    // Update hit count and last accessed time
+    const { error: updateError } = await supabase.rpc('update_vision_cache_access', { cache_id: data.id });
+    if (updateError) {
+      console.error('Failed to update vision cache hit count:', updateError);
+    }
+
+    return {
+      processDescription: data.process_description,
+      bpmnXml: data.bpmn_xml || undefined,
+      cacheId: data.id,
+    };
+  } catch (err) {
+    console.error('Vision cache check exception:', err);
     return null;
   }
-
-  // Update hit count and last accessed time
-  await supabase.rpc('update_vision_cache_access', { cache_id: data.id });
-
-  return {
-    processDescription: data.process_description,
-    bpmnXml: data.bpmn_xml || undefined,
-    cacheId: data.id,
-  };
 }
 
 /**
@@ -181,25 +198,41 @@ export async function storeVisionCache(
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   
   if (!supabaseUrl || !supabaseKey) {
+    console.log('Vision cache storage skipped: missing Supabase config');
     return;
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const { error } = await supabase
-    .from('vision_analysis_cache')
-    .upsert({
-      image_hash: imageHash,
-      diagram_type: diagramType,
-      process_description: processDescription,
-      bpmn_xml: bpmnXml || null,
-      last_accessed_at: new Date().toISOString(),
-    }, {
-      onConflict: 'image_hash,diagram_type',
+  try {
+    console.log('Storing vision cache entry:', {
+      hashPrefix: imageHash.substring(0, 16) + '...',
+      diagramType,
+      descriptionLength: processDescription.length,
+      hasBpmnXml: !!bpmnXml,
+      bpmnXmlLength: bpmnXml?.length || 0
     });
 
-  if (error) {
-    console.error('Failed to store vision cache:', error);
+    const { error } = await supabase
+      .from('vision_analysis_cache')
+      .upsert({
+        image_hash: imageHash,
+        diagram_type: diagramType,
+        process_description: processDescription,
+        bpmn_xml: bpmnXml || null,
+        last_accessed_at: new Date().toISOString(),
+      }, {
+        onConflict: 'image_hash,diagram_type',
+      });
+
+    if (error) {
+      console.error('Failed to store vision cache:', error);
+      throw error;
+    }
+
+    console.log('Vision cache stored successfully');
+  } catch (err) {
+    console.error('Vision cache storage exception:', err);
   }
 }
 
