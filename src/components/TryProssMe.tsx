@@ -664,14 +664,21 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   };
 
   return (
-    <section className="py-24 bg-muted/20 relative" data-section="try-prossmind">
+    <motion.section 
+      className="py-24 bg-muted/20 relative" 
+      data-section="try-prossmind"
+      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 50 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.7 }}
+    >
       <div className="container mx-auto px-6">
         <motion.div 
           className="text-center mb-12"
-          initial="hidden"
-          whileInView="visible"
+          initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, amount: 0.3 }}
-          variants={scrollRevealVariants}
+          transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6, delay: 0.2 }}
         >
           <h2 className="text-4xl md:text-5xl font-bold mb-6">
             Try <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">ProssMind!</span>
@@ -1240,7 +1247,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           ) : null}
         </div>
       </div>
-    </section>
+    </motion.section>
   );
 };
 

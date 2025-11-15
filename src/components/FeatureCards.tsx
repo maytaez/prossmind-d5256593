@@ -27,14 +27,20 @@ const FeatureCards = () => {
   const { ref, isInView } = useScrollReveal({ threshold: 0.1 });
 
   return (
-    <section className="py-24 bg-muted/30 relative">
+    <motion.section 
+      className="py-24 bg-muted/30 relative"
+      initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 50 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.7 }}
+    >
       <div className="container mx-auto px-6">
         <motion.div 
           className="text-center mb-16"
-          initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, amount: 0.3 }}
-          transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6 }}
+          transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6, delay: 0.2 }}
         >
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
             Powerful Features
@@ -135,7 +141,7 @@ const FeatureCards = () => {
           ))}
         </motion.div>
       </div>
-    </section>
+    </motion.section>
   );
 };
 
