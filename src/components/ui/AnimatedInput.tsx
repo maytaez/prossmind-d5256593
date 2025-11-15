@@ -125,7 +125,7 @@ const AnimatedInput = React.forwardRef<HTMLInputElement, AnimatedInputProps>(
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
 
         {/* Error message */}
         <AnimatePresence>

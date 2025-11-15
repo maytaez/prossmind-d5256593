@@ -125,7 +125,7 @@ const AnimatedTextarea = React.forwardRef<HTMLTextAreaElement, AnimatedTextareaP
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </motion.div>
 
         {/* Error message */}
         <AnimatePresence>
