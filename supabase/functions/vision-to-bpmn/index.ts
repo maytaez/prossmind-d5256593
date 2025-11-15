@@ -1,5 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
+import { generateHash, checkVisionCache, storeVisionCache } from '../_shared/cache.ts';
+import { logPerformanceMetric } from '../_shared/metrics.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,6 +87,49 @@ Deno.serve(async (req) => {
         const isText = imageBase64.startsWith('data:text/');
 
         let processDescription = '';
+        const startTime = Date.now();
+
+        // Generate image hash for caching (for images and PDFs)
+        let imageHash: string | null = null;
+        if (isImage || isPDF || isDocument) {
+          // Extract base64 data (remove data URL prefix)
+          const base64Data = imageBase64.includes(',') 
+            ? imageBase64.split(',')[1] 
+            : imageBase64;
+          imageHash = await generateHash(`${base64Data}:${diagramType}`);
+
+          // Check vision cache
+          const visionCache = await checkVisionCache(imageHash, diagramType);
+          if (visionCache) {
+            console.log('Vision cache hit - using cached analysis');
+            processDescription = visionCache.processDescription;
+
+            // If we have cached BPMN XML, use it and skip generation
+            if (visionCache.bpmnXml) {
+              console.log('Using cached BPMN XML');
+              await supabase
+                .from('vision_bpmn_jobs')
+                .update({
+                  status: 'completed',
+                  bpmn_xml: visionCache.bpmnXml,
+                  completed_at: new Date().toISOString()
+                })
+                .eq('id', job.id);
+
+              const responseTime = Date.now() - startTime;
+              await logPerformanceMetric({
+                function_name: 'vision-to-bpmn',
+                cache_type: 'exact_hash',
+                response_time_ms: responseTime,
+                cache_hit: true,
+                error_occurred: false,
+              });
+
+              return;
+            }
+            // Otherwise, continue with BPMN generation using cached description
+          }
+        }
 
         if (isImage) {
           // Step 1: Analyze the image with vision AI
@@ -652,7 +697,15 @@ When combined with your **PidRenderer.js**, this updated prompt will:
 
 - Produce a true engineering-style **P&ID** in BPMN.io`;
         
-        const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
+        // Use optimized prompts from shared module if available
+        let systemPrompt: string;
+        try {
+          const { getBpmnSystemPrompt, getPidSystemPrompt } = await import('../_shared/prompts.ts');
+          systemPrompt = diagramType === 'pid' ? getPidSystemPrompt() : getBpmnSystemPrompt();
+        } catch {
+          // Fallback to local prompts if shared module not available
+          systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
+        }
         
         const bpmnResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GOOGLE_API_KEY}`,
@@ -728,6 +781,17 @@ When combined with your **PidRenderer.js**, this updated prompt will:
 
         console.log('Vision-to-BPMN processing complete');
 
+        // Store in vision cache (async, don't wait)
+        if (imageHash && processDescription) {
+          (async () => {
+            try {
+              await storeVisionCache(imageHash, diagramType, processDescription, bpmnXml);
+            } catch (cacheError) {
+              console.error('Failed to store vision cache:', cacheError);
+            }
+          })();
+        }
+
         // Update job with success
         await supabase
           .from('vision_bpmn_jobs')
@@ -740,10 +804,31 @@ When combined with your **PidRenderer.js**, this updated prompt will:
           })
           .eq('id', job.id);
 
+        const responseTime = Date.now() - startTime;
+        await logPerformanceMetric({
+          function_name: 'vision-to-bpmn',
+          cache_type: imageHash && processDescription ? 'exact_hash' : 'none',
+          model_used: selectedModel,
+          complexity_score: complexityScore,
+          response_time_ms: responseTime,
+          cache_hit: false, // This was a new generation
+          error_occurred: false,
+        });
+
         console.log('Job completed:', job.id);
       } catch (error) {
         console.error('Error processing job:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        
+        const responseTime = Date.now() - startTime;
+        await logPerformanceMetric({
+          function_name: 'vision-to-bpmn',
+          cache_type: 'none',
+          response_time_ms: responseTime,
+          cache_hit: false,
+          error_occurred: true,
+          error_message: errorMessage,
+        });
         
         // Update job with error
         await supabase
