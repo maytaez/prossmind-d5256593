@@ -133,41 +133,28 @@ Deno.serve(async (req) => {
         }
 
         if (isImage) {
-          // Step 1: Analyze the image with vision AI
-          const bpmnVisionPrompt = `Analyze the uploaded brainstorming image and generate a professional BPMN process diagram representing the full workflow as one continuous process with a single Start and single End event.
+          // Single-pass: Generate BPMN/P&ID directly from image
+          const bpmnDirectPrompt = `Generate a professional BPMN 2.0 XML diagram directly from this image.
 
-## STRUCTURE RULES:
-- **Infer swimlanes dynamically** from headers, columns, or logical clusters (no fixed lane names)
-- **All swimlanes must form a single unified flow** (no isolated segments)
-- **Maintain logical order** (top→bottom or left→right) and connect tasks accordingly
-- **Use diamond-shaped gateways (decisions)** wherever the image implies conditions, comparisons, or branching options
+## OUTPUT: Return ONLY valid BPMN 2.0 XML starting with <?xml version="1.0" encoding="UTF-8"?>. No markdown, no explanations.
 
-## GUIDELINES FOR DECISION LOGIC:
+## STRUCTURE:
+- Infer swimlanes from visual clusters/headers
+- Create single unified flow (one Start, one End)
+- Use gateways (diamonds) for any branching/decisions
+- Preserve exact text from image (including typos)
+- Connect all elements logically (top→bottom or left→right)
 
-Use gateways (diamonds) in these cases:
+## ELEMENTS:
+- Start Event: Circle labeled "Start Process"
+- End Event: Bold circle labeled "End Process"  
+- Tasks: Rectangles with extracted text
+- Gateways: Diamonds with yes/no labels
+- Swimlanes: One per major topic/group
 
-1. **When there's choice or comparison** — e.g., "Testing for comparison; final alloy to be decided after"
-2. **When price or feature-based branching is implied** — e.g., "Advanced features increase price"
-3. **When market targeting or persona definition implies strategic choices**
+Return ONLY the XML, no other text.`;
 
-## DIAGRAM FORMATTING RULES:
-- **Start Event**: Single rounded circle labeled "Start Process"
-- **End Event**: Single rounded bold circle labeled "End Process"
-- **Tasks**: Rectangles with extracted text
-- **Gateways**: Diamonds with clear yes/no or alternative flow labels
-- **Annotations**: Handwritten notes, sticky notes, and comments appear as text annotations
-- **Connectors**: Use straight lines with even spacing
-- **Swimlanes**: One horizontal lane per major topic
-
-## CRITICAL RULES:
-1. **UNIFIED PROCESS**: All lanes must connect into ONE continuous workflow
-2. **EXACT WORDING**: Preserve original text including typos
-3. **MARK UNCERTAINTY**: Use brackets [ ] for low-confidence OCR
-4. **COMPREHENSIVE**: Include all visible details
-5. **VISUAL CUES**: Note colors, positions, groupings
-6. **DECISION POINTS**: Explicitly identify and mark gateways for branching logic`;
-
-          const pidVisionPrompt = `Analyze the uploaded P&ID (Process and Instrumentation Diagram) image and extract complete process engineering information.
+          const pidDirectPrompt = `Generate a complete P&ID diagram in BPMN 2.0 XML format directly from this image.
 
 ## STRUCTURE RULES FOR P&ID:
 - **Extract ALL equipment** with tag IDs (TK-xxx, P-xxx, V-xxx, E-xxx, R-xxx, C-xxx, K-xxx, S-xxx, D-xxx)
