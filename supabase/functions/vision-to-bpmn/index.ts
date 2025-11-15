@@ -65,6 +65,8 @@ Deno.serve(async (req) => {
 
     // Start background processing
     const processJob = async () => {
+      const startTime = Date.now();
+      
       try {
         // Update status to processing
         await supabase
@@ -87,7 +89,6 @@ Deno.serve(async (req) => {
         const isText = imageBase64.startsWith('data:text/');
 
         let processDescription = '';
-        const startTime = Date.now();
 
         // Generate image hash for caching (for images and PDFs)
         let imageHash: string | null = null;
@@ -251,30 +252,46 @@ Use gateways (diamonds) in these cases:
           const imageData = imageBase64.split(',')[1];
           const mimeType = imageBase64.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
           
-          const visionResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_API_KEY}`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: visionPrompt },
-                    { inline_data: { mime_type: mimeType, data: imageData } }
-                  ]
-                }],
-                generationConfig: {
-                  maxOutputTokens: 8192,
-                  temperature: 0.7
-                }
-              }),
-            }
-          );
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+          
+          let visionResponse;
+          try {
+            visionResponse = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_API_KEY}`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  contents: [{
+                    parts: [
+                      { text: visionPrompt },
+                      { inline_data: { mime_type: mimeType, data: imageData } }
+                    ]
+                  }],
+                  generationConfig: {
+                    maxOutputTokens: 8192,
+                    temperature: 0.7
+                  }
+                }),
+                signal: controller.signal
+              }
+            );
 
-          if (!visionResponse.ok) {
-            throw new Error(`AI API error: ${visionResponse.status}`);
+            clearTimeout(timeout);
+
+            if (!visionResponse.ok) {
+              const errorText = await visionResponse.text();
+              throw new Error(`AI API error: ${visionResponse.status} - ${errorText}`);
+            }
+          } catch (err) {
+            clearTimeout(timeout);
+            if (err instanceof Error && err.name === 'AbortError') {
+              throw new Error('Vision analysis timed out. Please try with a simpler image.');
+            }
+            throw err;
           }
 
           const visionData = await visionResponse.json();
@@ -707,29 +724,45 @@ When combined with your **PidRenderer.js**, this updated prompt will:
           systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
         }
         
-        const bpmnResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GOOGLE_API_KEY}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: `${systemPrompt}\n\nProcess description:\n${processDescription}` }
-                ]
-              }],
-              generationConfig: {
-                maxOutputTokens: maxTokens,
-                temperature: temperature
-              }
-            }),
-          }
-        );
+        const bpmnController = new AbortController();
+        const bpmnTimeout = setTimeout(() => bpmnController.abort(), 180000); // 3 minute timeout
+        
+        let bpmnResponse;
+        try {
+          bpmnResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${GOOGLE_API_KEY}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: `${systemPrompt}\n\nProcess description:\n${processDescription}` }
+                  ]
+                }],
+                generationConfig: {
+                  maxOutputTokens: maxTokens,
+                  temperature: temperature
+                }
+              }),
+              signal: bpmnController.signal
+            }
+          );
 
-        if (!bpmnResponse.ok) {
-          throw new Error('Failed to generate BPMN');
+          clearTimeout(bpmnTimeout);
+
+          if (!bpmnResponse.ok) {
+            const errorText = await bpmnResponse.text();
+            throw new Error(`Failed to generate BPMN: ${bpmnResponse.status} - ${errorText}`);
+          }
+        } catch (err) {
+          clearTimeout(bpmnTimeout);
+          if (err instanceof Error && err.name === 'AbortError') {
+            throw new Error('BPMN generation timed out. Please try with a simpler process description.');
+          }
+          throw err;
         }
 
         const bpmnData = await bpmnResponse.json();

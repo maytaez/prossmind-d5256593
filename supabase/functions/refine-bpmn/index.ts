@@ -20,6 +20,7 @@ serve(async (req) => {
   let similarityScore: number | undefined;
   let errorOccurred = false;
   let errorMessage: string | undefined;
+  let requestData: any;
 
   try {
     // Validate request has body
@@ -31,9 +32,10 @@ serve(async (req) => {
       );
     }
 
-    let requestData;
+    let reqData;
     try {
-      requestData = await req.json();
+      reqData = await req.json();
+      requestData = reqData; // Store for error logging
     } catch (jsonError) {
       console.error('Failed to parse JSON:', jsonError);
       return new Response(
@@ -42,7 +44,7 @@ serve(async (req) => {
       );
     }
 
-    const { currentBpmnXml, instructions, userId, diagramType = 'bpmn' } = requestData;
+    const { currentBpmnXml, instructions, userId, diagramType = 'bpmn' } = reqData;
     console.log(`Refining ${diagramType.toUpperCase()} with instructions:`, instructions);
     
     // SECURITY: Validate userId
@@ -281,7 +283,6 @@ electrical	Power line	Dotted`;
     const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
 
     // Use XML summary instead of full XML to reduce token usage
-    const xmlSummary = extractXmlSummary(currentBpmnXml);
     const userPrompt = `Current BPMN Diagram Summary:
 ${xmlSummary}
 
