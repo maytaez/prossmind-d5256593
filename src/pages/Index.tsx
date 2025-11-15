@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import Navigation from "@/components/Navigation";
 import Hero from "@/components/Hero";
+import DataStory from "@/components/DataStory";
 import TryProssMe from "@/components/TryProssMe";
 import FeatureCards from "@/components/FeatureCards";
 import ProductTiers from "@/components/ProductTiers";
@@ -62,6 +63,7 @@ const Index = () => {
       <Navigation user={user} />
       <TrustStrip />
       <Hero />
+      <DataStory />
       <TryProssMe user={user} />
       <FeatureCards />
       <ProductTiers />

@@ -3,6 +3,7 @@ import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { AnimatedTabs, AnimatedTabsList, AnimatedTabsTrigger, AnimatedTabsContent } from "@/components/ui/AnimatedTabs";
 import { Progress } from "@/components/ui/progress";
 import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon, Video } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -427,7 +428,7 @@ const VisionAI = () => {
 
           <div className="grid md:grid-cols-2 gap-12 items-center mb-20">
             <div className="space-y-6">
-              <h2 className="text-3xl font-bold">Self-Learning Vision System</h2>
+              <h2 className="text-2xl font-bold">Self-Learning Vision System</h2>
               <p className="text-lg text-muted-foreground">
                 Our Vision AI continuously learns and adapts to your specific use cases, improving accuracy and performance over time without manual intervention.
               </p>
@@ -435,21 +436,21 @@ const VisionAI = () => {
                 <li className="flex items-start gap-3">
                   <Camera className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
                   <div>
-                    <h3 className="font-semibold mb-1">Real-time Processing</h3>
+                    <h3 className="text-sm font-semibold mb-1">Real-time Processing</h3>
                     <p className="text-sm text-muted-foreground">Process images and video streams in real-time with minimal latency</p>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <Scan className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
                   <div>
-                    <h3 className="font-semibold mb-1">Object Detection</h3>
+                    <h3 className="text-sm font-semibold mb-1">Object Detection</h3>
                     <p className="text-sm text-muted-foreground">Identify and track multiple objects across frames</p>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <ImageIcon className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
                   <div>
-                    <h3 className="font-semibold mb-1">Image Classification</h3>
+                    <h3 className="text-sm font-semibold mb-1">Image Classification</h3>
                     <p className="text-sm text-muted-foreground">Automatically categorize and tag visual content</p>
                   </div>
                 </li>
@@ -461,7 +462,7 @@ const VisionAI = () => {
 
             <div className="bg-gradient-to-br from-primary/10 to-accent/10 rounded-2xl p-12 text-center">
               <Eye className="h-32 w-32 mx-auto text-primary mb-6" />
-              <h3 className="text-2xl font-bold mb-4">100% Client-Side Processing</h3>
+              <h3 className="text-xl font-bold mb-4">100% Client-Side Processing</h3>
               <p className="text-muted-foreground">
                 All vision processing happens on your device. Your data never leaves your control, ensuring maximum privacy and security.
               </p>
@@ -469,7 +470,7 @@ const VisionAI = () => {
           </div>
 
           <div className="bg-hero-bg text-hero-foreground rounded-2xl p-12 text-center">
-            <h2 className="text-3xl font-bold mb-4">Ready to See the Future?</h2>
+            <h2 className="text-2xl font-bold mb-4">Ready to See the Future?</h2>
             <p className="text-xl text-hero-foreground/80 mb-8 max-w-2xl mx-auto">
               Join thousands of companies already using ProssMind Vision AI to transform their automation workflows
             </p>
@@ -522,12 +523,12 @@ const VisionAI = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
-            <Tabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="bpmn">BPMN Diagram</TabsTrigger>
-                <TabsTrigger value="pid">P&ID Diagram</TabsTrigger>
-              </TabsList>
-              <TabsContent value="bpmn" className="mt-6 space-y-6">
+            <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
+              <AnimatedTabsList className="grid w-full grid-cols-2">
+                <AnimatedTabsTrigger value="bpmn">BPMN Diagram</AnimatedTabsTrigger>
+                <AnimatedTabsTrigger value="pid">P&ID Diagram</AnimatedTabsTrigger>
+              </AnimatedTabsList>
+              <AnimatedTabsContent value="bpmn" className="mt-6 space-y-6">
             <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
               <input
                 type="file"
@@ -596,8 +597,8 @@ const VisionAI = () => {
                   {processing ? "Generating..." : "Generate BPMN"}
                 </Button>
               </div>
-              </TabsContent>
-              <TabsContent value="pid" className="mt-6 space-y-6">
+              </AnimatedTabsContent>
+              <AnimatedTabsContent value="pid" className="mt-6 space-y-6">
                 <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                   <input
                     type="file"
@@ -666,8 +667,8 @@ const VisionAI = () => {
                     {processing ? "Generating..." : "Generate P&ID"}
                   </Button>
                 </div>
-              </TabsContent>
-            </Tabs>
+              </AnimatedTabsContent>
+            </AnimatedTabs>
           </div>
         </DialogContent>
       </Dialog>

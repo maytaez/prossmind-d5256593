@@ -14,6 +14,26 @@ export default {
       },
     },
     extend: {
+      spacing: {
+        '1': 'var(--spacing-1)',  // 4px
+        '2': 'var(--spacing-2)',  // 8px
+        '4': 'var(--spacing-4)',  // 16px
+        '6': 'var(--spacing-6)',  // 24px
+        '8': 'var(--spacing-8)',  // 32px
+        '12': 'var(--spacing-12)', // 48px
+      },
+      fontSize: {
+        'base': ['var(--font-size-base)', { lineHeight: 'var(--line-height-normal)' }],      // 16px
+        'lg': ['var(--font-size-lg)', { lineHeight: 'var(--line-height-normal)' }],          // 20px
+        'xl': ['var(--font-size-xl)', { lineHeight: 'var(--line-height-tight)' }],           // 24px
+        '2xl': ['var(--font-size-2xl)', { lineHeight: 'var(--line-height-tight)' }],         // 32px
+        '3xl': ['var(--font-size-3xl)', { lineHeight: 'var(--line-height-tight)' }],         // 48px
+      },
+      lineHeight: {
+        'tight': 'var(--line-height-tight)',
+        'normal': 'var(--line-height-normal)',
+        'relaxed': 'var(--line-height-relaxed)',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -35,15 +35,15 @@ export const theme = {
   
   spacing: {
     0: '0',
-    1: '0.25rem', // 4px
-    2: '0.5rem', // 8px
+    1: '0.25rem', // 4px - Design System 4-point scale
+    2: '0.5rem', // 8px - Design System 4-point scale
     3: '0.75rem', // 12px
-    4: '1rem', // 16px
+    4: '1rem', // 16px - Design System 4-point scale
     5: '1.25rem', // 20px
-    6: '1.5rem', // 24px
-    8: '2rem', // 32px
+    6: '1.5rem', // 24px - Design System 4-point scale
+    8: '2rem', // 32px - Design System 4-point scale
     10: '2.5rem', // 40px
-    12: '3rem', // 48px
+    12: '3rem', // 48px - Design System 4-point scale
     16: '4rem', // 64px
     20: '5rem', // 80px
     24: '6rem', // 96px
@@ -56,14 +56,14 @@ export const theme = {
     size: {
       xs: '0.75rem', // 12px
       sm: '0.875rem', // 14px
-      base: '1rem', // 16px
-      lg: '1.125rem', // 18px
-      xl: '1.25rem', // 20px
-      '2xl': '1.5rem', // 24px
-      '3xl': '1.875rem', // 30px
+      base: '1rem', // 16px - Design System modular scale base
+      lg: '1.25rem', // 20px - Design System modular scale
+      xl: '1.5rem', // 24px - Design System modular scale
+      '2xl': '2rem', // 32px - Design System modular scale
+      '3xl': '3rem', // 48px - Design System modular scale
       '4xl': '2.25rem', // 36px
-      '5xl': '3rem', // 48px
-      '6xl': '3.75rem', // 60px
+      '5xl': '3.75rem', // 60px
+      '6xl': '4.5rem', // 72px
       '7xl': '4.5rem', // 72px
     },
     weight: {

@@ -7,6 +7,7 @@ import { User } from "@supabase/supabase-js";
 import { useAdminStatus } from "@/hooks/useAdminStatus";
 import prossmindLogo from "@/assets/prossmind-logo-transparent.png";
 import { useState, useEffect, useRef } from "react";
+import { motion, useScroll, useTransform } from "framer-motion";
 import {
   Sheet,
   SheetContent,
@@ -15,6 +16,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
 
 const Navigation = ({ user: userProp }: { user?: User | null }) => {
   const location = useLocation();
@@ -33,8 +35,11 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
     return initialUser;
   });
   const { isAdmin } = useAdminStatus(user);
+  const prefersReducedMotion = useReducedMotion();
   const [isMobile, setIsMobile] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const { scrollY } = useScroll();
 
   // Fetch user session on mount and listen for auth changes - run only once
   useEffect(() => {
@@ -99,6 +104,13 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = scrollY.on("change", (latest) => {
+      setIsScrolled(latest > 50);
+    });
+    return () => unsubscribe();
+  }, [scrollY]);
+
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     
@@ -131,35 +143,78 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-b border-border/50 shadow-sm h-16">
+    <motion.nav 
+      className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 h-16 bg-background/95 backdrop-blur-lg"
+      style={{
+        backgroundColor: useTransform(scrollY, [0, 100], ["hsl(var(--background) / 0.95)", "hsl(var(--background) / 1)"]),
+        backdropFilter: useTransform(scrollY, [0, 100], ["blur(16px)", "blur(24px)"]),
+        boxShadow: useTransform(
+          scrollY,
+          [0, 100],
+          [
+            "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+            "0 4px 30px rgba(37, 99, 235, 0.1)"
+          ]
+        ),
+      }}
+      initial={prefersReducedMotion ? { y: 0 } : { y: -100 }}
+      animate={{ y: 0 }}
+      transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
+    >
       <div className="container mx-auto px-6 h-full">
         <div className="flex items-center justify-between h-full">
-                    <Link to="/" className="flex items-center space-x-3 group flex-shrink-0" aria-label="ProssMind Home">
-            <img src={prossmindLogo} alt="ProssMind Logo" className="h-10 w-auto group-hover:scale-105 transition-transform" />
-            <div className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent whitespace-nowrap">
-              ProssMind
-            </div>
-          </Link>
+          <motion.div
+            animate={prefersReducedMotion ? { scale: 1 } : { scale: isScrolled ? 0.95 : 1 }}
+            transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
+          >
+            <Link to="/" className="flex items-center space-x-3 group flex-shrink-0" aria-label="ProssMind Home">
+              <motion.img 
+                src={prossmindLogo} 
+                alt="ProssMind Logo" 
+                className="h-10 w-auto"
+                whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
+                transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.2 }}
+              />
+              <div className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent whitespace-nowrap">
+                ProssMind
+              </div>
+            </Link>
+          </motion.div>
 
           {/* Desktop Navigation */}
           {!isMobile && (
             <>
-              <div className="flex items-center space-x-1 bg-secondary/50 rounded-full px-2 py-1.5 shadow-sm flex-shrink-0">
+              <motion.div 
+                className="flex items-center space-x-1 bg-secondary/50 rounded-full px-2 py-1.5 shadow-sm flex-shrink-0 relative border border-border/30"
+                style={{ borderRadius: "40px" }}
+                animate={prefersReducedMotion ? {} : {
+                  paddingTop: isScrolled ? "0.25rem" : "0.375rem",
+                  paddingBottom: isScrolled ? "0.25rem" : "0.375rem",
+                }}
+                transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
+              >
                 {navItems.map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap ${
+                    className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap relative ${
                       location.pathname === item.path
-                        ? "bg-primary text-primary-foreground shadow-md"
+                        ? "text-primary-foreground"
                         : "text-foreground/70 hover:text-foreground hover:bg-muted/80 hover:scale-[1.02]"
                     }`}
                     aria-label={`Navigate to ${item.name} page`}
                   >
-                    {item.name}
+                    {location.pathname === item.path && (
+                      <motion.div
+                        layoutId={prefersReducedMotion ? undefined : "activeNavIndicator"}
+                        className="absolute inset-0 bg-primary rounded-full shadow-md"
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
+                      />
+                    )}
+                    <span className="relative z-10">{item.name}</span>
                   </Link>
                 ))}
-              </div>
+              </motion.div>
 
               {user ? (
                 <div className="flex items-center gap-3 flex-shrink-0">
@@ -196,34 +251,54 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
           {isMobile && (
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation menu">
-                  <Menu className="h-6 w-6" aria-hidden="true" />
-                  <span className="sr-only">Open menu</span>
-                </Button>
+                <motion.div
+                  whileTap={prefersReducedMotion ? {} : { scale: 0.95 }}
+                >
+                  <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation menu">
+                    <motion.div
+                      animate={prefersReducedMotion ? { rotate: isSheetOpen ? 90 : 0 } : { rotate: isSheetOpen ? 90 : 0 }}
+                      transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
+                    >
+                      <Menu className="h-6 w-6" aria-hidden="true" />
+                    </motion.div>
+                    <span className="sr-only">Open menu</span>
+                  </Button>
+                </motion.div>
               </SheetTrigger>
               <SheetContent side="right" className="w-[300px] sm:w-[400px]">
                 <SheetHeader>
                   <SheetTitle>Menu</SheetTitle>
                 </SheetHeader>
                 <nav className="flex flex-col gap-4 mt-6">
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-border mb-2">
+                  <motion.div 
+                    className="flex items-center justify-between px-4 py-2 border-b border-border mb-2"
+                    initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.1 }}
+                  >
                     <span className="text-sm font-medium">Theme</span>
                     <ThemeToggle />
-                  </div>
-                  {navItems.map((item) => (
-                    <Link
+                  </motion.div>
+                  {navItems.map((item, index) => (
+                    <motion.div
                       key={item.path}
-                      to={item.path}
-                      onClick={() => setIsSheetOpen(false)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        location.pathname === item.path
-                          ? "bg-primary text-primary-foreground"
-                          : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
-                      }`}
-                      aria-label={`Navigate to ${item.name} page`}
+                      initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.1 + index * 0.05 }}
                     >
-                      {item.name}
-                    </Link>
+                      <Link
+                        to={item.path}
+                        onClick={() => setIsSheetOpen(false)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 block ${
+                          location.pathname === item.path
+                            ? "bg-primary text-primary-foreground"
+                            : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
+                        }`}
+                        aria-label={`Navigate to ${item.name} page`}
+                      >
+                        {item.name}
+                      </Link>
+                    </motion.div>
                   ))}
                   {user ? (
                     <>
@@ -265,7 +340,7 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
           )}
         </div>
       </div>
-    </nav>
+    </motion.nav>
   );
 };
 
