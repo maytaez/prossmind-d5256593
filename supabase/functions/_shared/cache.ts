@@ -186,13 +186,74 @@ export async function checkVisionCache(
 }
 
 /**
+ * Check semantic similarity cache for images
+ */
+export async function checkSemanticImageCache(
+  embedding: number[],
+  diagramType: string,
+  threshold: number = 0.80
+): Promise<{ processDescription: string; bpmnXml?: string; similarity: number; cacheId: string } | null> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.log('Semantic image cache check skipped: missing Supabase config');
+    return null;
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    // Convert embedding array to PostgreSQL vector format
+    const embeddingVector = `[${embedding.join(',')}]`;
+
+    const { data, error } = await supabase.rpc('match_similar_images', {
+      query_embedding: embeddingVector,
+      match_threshold: threshold,
+      match_count: 1,
+      diagram_type_filter: diagramType,
+    });
+
+    if (error) {
+      console.error('Semantic image cache lookup error:', error);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('Semantic image cache: No similar images found');
+      return null;
+    }
+
+    const bestMatch = data[0];
+    console.log('Semantic image cache: Found similar image! Similarity:', bestMatch.similarity, 'Cache ID:', bestMatch.id);
+    
+    // Update hit count
+    const { error: updateError } = await supabase.rpc('update_vision_cache_access', { cache_id: bestMatch.id });
+    if (updateError) {
+      console.error('Failed to update vision cache hit count:', updateError);
+    }
+
+    return {
+      processDescription: bestMatch.process_description,
+      bpmnXml: bestMatch.bpmn_xml || undefined,
+      similarity: bestMatch.similarity,
+      cacheId: bestMatch.id,
+    };
+  } catch (err) {
+    console.error('Semantic image cache check exception:', err);
+    return null;
+  }
+}
+
+/**
  * Store vision analysis result in cache
  */
 export async function storeVisionCache(
   imageHash: string,
   diagramType: string,
   processDescription: string,
-  bpmnXml?: string
+  bpmnXml?: string,
+  embedding?: number[]
 ): Promise<void> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -210,8 +271,12 @@ export async function storeVisionCache(
       diagramType,
       descriptionLength: processDescription.length,
       hasBpmnXml: !!bpmnXml,
-      bpmnXmlLength: bpmnXml?.length || 0
+      bpmnXmlLength: bpmnXml?.length || 0,
+      hasEmbedding: !!embedding
     });
+
+    // Convert embedding array to PostgreSQL vector format
+    const embeddingVector = embedding ? `[${embedding.join(',')}]` : null;
 
     const { error } = await supabase
       .from('vision_analysis_cache')
@@ -220,6 +285,7 @@ export async function storeVisionCache(
         diagram_type: diagramType,
         process_description: processDescription,
         bpmn_xml: bpmnXml || null,
+        image_embedding: embeddingVector,
         last_accessed_at: new Date().toISOString(),
       }, {
         onConflict: 'image_hash,diagram_type',

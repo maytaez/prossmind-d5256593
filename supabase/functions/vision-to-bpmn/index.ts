@@ -1,7 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
-import { generateHash, checkVisionCache, storeVisionCache } from '../_shared/cache.ts';
+import { generateHash, checkVisionCache, storeVisionCache, checkSemanticImageCache } from '../_shared/cache.ts';
 import { logPerformanceMetric } from '../_shared/metrics.ts';
+import { generateEmbedding, isSemanticCacheEnabled } from '../_shared/embeddings.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,6 +78,8 @@ Deno.serve(async (req) => {
         console.log('Processing document for BPMN generation for user:', user.id);
 
         const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+        
         if (!GOOGLE_API_KEY) {
           throw new Error('Google API key not configured');
         }
@@ -103,10 +106,10 @@ Deno.serve(async (req) => {
           imageHash = await generateHash(`${base64Data}:${diagramType}`);
           console.log('Generated image hash for cache lookup:', imageHash.substring(0, 16) + '...');
 
-          // Check vision cache
+          // Check exact hash cache first
           const visionCache = await checkVisionCache(imageHash, diagramType);
           if (visionCache) {
-            console.log('✅ VISION CACHE HIT - Found cached data for image hash:', imageHash.substring(0, 16) + '...');
+            console.log('✅ EXACT VISION CACHE HIT - Found cached data for image hash:', imageHash.substring(0, 16) + '...');
             console.log('Cache entry ID:', visionCache.cacheId);
             cacheHit = true;
             cacheType = 'exact_hash';
@@ -136,11 +139,94 @@ Deno.serve(async (req) => {
                 error_occurred: false,
               });
               
-              console.log('Job completed from cache:', job.id, 'in', responseTime, 'ms');
+              console.log('Job completed from exact cache:', job.id, 'in', responseTime, 'ms');
               return; // Exit early with cached result
             }
           } else {
-            console.log('❌ Vision cache miss - No cached data found for hash:', imageHash.substring(0, 16) + '...');
+            console.log('❌ Exact vision cache miss - No cached data found for hash:', imageHash.substring(0, 16) + '...');
+            
+            // Try semantic similarity search if enabled
+            if (isSemanticCacheEnabled() && isImage) {
+              console.log('🔍 Attempting semantic image cache search...');
+              try {
+                // Generate embedding from image description for semantic search
+                // First, get a quick description of the image
+                const descriptionPrompt = `Describe this image briefly in 2-3 sentences focusing on: processes, workflows, diagrams, symbols, connections, and flow patterns.`;
+                
+                const quickDescResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    model: 'google/gemini-2.5-flash',
+                    messages: [
+                      {
+                        role: 'user',
+                        content: [
+                          { type: 'text', text: descriptionPrompt },
+                          { type: 'image_url', image_url: { url: imageBase64 } }
+                        ]
+                      }
+                    ],
+                    max_tokens: 200
+                  }),
+                });
+
+                if (quickDescResponse.ok) {
+                  const descData = await quickDescResponse.json();
+                  const imageDescription = descData.choices?.[0]?.message?.content || '';
+                  
+                  if (imageDescription) {
+                    console.log('Generated image description for embedding:', imageDescription.substring(0, 100) + '...');
+                    
+                    // Generate embedding from description
+                    const embedding = await generateEmbedding(imageDescription);
+                    
+                    // Check semantic cache
+                    const semanticCache = await checkSemanticImageCache(embedding, diagramType, 0.80);
+                    
+                    if (semanticCache && semanticCache.bpmnXml) {
+                      console.log('✅ SEMANTIC VISION CACHE HIT - Found similar image! Similarity:', semanticCache.similarity);
+                      console.log('Cache entry ID:', semanticCache.cacheId);
+                      cacheHit = true;
+                      cacheType = 'semantic';
+                      bpmnXml = semanticCache.bpmnXml;
+                      
+                      await supabase
+                        .from('vision_bpmn_jobs')
+                        .update({
+                          bpmn_xml: semanticCache.bpmnXml,
+                          status: 'completed',
+                          model_used: 'cached',
+                          completed_at: new Date().toISOString()
+                        })
+                        .eq('id', job.id);
+
+                      const responseTime = Date.now() - startTime;
+                      await logPerformanceMetric({
+                        function_name: 'vision-to-bpmn',
+                        cache_type: cacheType,
+                        response_time_ms: responseTime,
+                        cache_hit: true,
+                        similarity_score: semanticCache.similarity,
+                        model_used: 'cached',
+                        error_occurred: false,
+                      });
+                      
+                      console.log('Job completed from semantic cache:', job.id, 'in', responseTime, 'ms');
+                      return; // Exit early with cached result
+                    } else {
+                      console.log('❌ Semantic vision cache miss - No similar images found');
+                    }
+                  }
+                }
+              } catch (embedError) {
+                console.error('Error in semantic image cache search:', embedError);
+                // Continue with normal generation if semantic search fails
+              }
+            }
           }
 
           // Single-pass: Generate BPMN/P&ID directly from image
@@ -360,7 +446,20 @@ Return ONLY the XML, no other text.`;
           // Extract a brief description from the first few elements for cache
           const descMatch = bpmnXml.match(/<bpmn:textAnnotation[^>]*>.*?<bpmn:text>(.*?)<\/bpmn:text>/s);
           const briefDesc = descMatch ? descMatch[1].substring(0, 200) : 'BPMN diagram from image';
-          await storeVisionCache(imageHash, diagramType, briefDesc, bpmnXml);
+          
+          // Generate embedding for semantic search
+          let embedding: number[] | undefined;
+          if (isSemanticCacheEnabled()) {
+            try {
+              embedding = await generateEmbedding(briefDesc);
+              console.log('✅ Generated embedding for semantic cache');
+            } catch (embedError) {
+              console.error('Failed to generate embedding for cache:', embedError);
+              // Continue without embedding
+            }
+          }
+          
+          await storeVisionCache(imageHash, diagramType, briefDesc, bpmnXml, embedding);
           console.log('✅ Vision cache stored successfully');
         }
 
