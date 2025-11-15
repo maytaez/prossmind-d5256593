@@ -146,12 +146,15 @@ Deno.serve(async (req) => {
             console.log('❌ Exact vision cache miss - No cached data found for hash:', imageHash.substring(0, 16) + '...');
             
             // Try semantic similarity search if enabled
-            if (isSemanticCacheEnabled() && isImage) {
+            if (isSemanticCacheEnabled() && isImage && LOVABLE_API_KEY) {
               console.log('🔍 Attempting semantic image cache search...');
               try {
                 // Generate embedding from image description for semantic search
                 // First, get a quick description of the image
                 const descriptionPrompt = `Describe this image briefly in 2-3 sentences focusing on: processes, workflows, diagrams, symbols, connections, and flow patterns.`;
+                
+                const semanticController = new AbortController();
+                const semanticTimeoutId = setTimeout(() => semanticController.abort(), 15000); // 15s timeout
                 
                 const quickDescResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
                   method: 'POST',
@@ -172,7 +175,10 @@ Deno.serve(async (req) => {
                     ],
                     max_tokens: 200
                   }),
+                  signal: semanticController.signal
                 });
+                
+                clearTimeout(semanticTimeoutId);
 
                 if (quickDescResponse.ok) {
                   const descData = await quickDescResponse.json();
@@ -280,7 +286,7 @@ Return ONLY the XML, no other text.`;
           
           try {
             const directController = new AbortController();
-            const directTimeoutId = setTimeout(() => directController.abort(), 180000); // 3 minute timeout
+            const directTimeoutId = setTimeout(() => directController.abort(), 120000); // 2 minute timeout
             
             console.log('Generating BPMN XML directly from image...');
             const modelEndpoint = 'gemini-2.0-flash-exp';
@@ -511,8 +517,9 @@ Return ONLY the XML, no other text.`;
       }
     };
 
-    // Use EdgeRuntime.waitUntil to keep the function alive for background processing
-    (req as any).waitUntil?.(processJob());
+    // Use proper EdgeRuntime.waitUntil for background processing
+    // @ts-ignore - EdgeRuntime is available in Deno Deploy
+    EdgeRuntime.waitUntil(processJob());
 
     // Return immediately with job ID
     return new Response(
