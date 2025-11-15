@@ -340,16 +340,18 @@ Return ONLY the XML, no other text.`;
           throw new Error('Generated content is not valid XML');
         }
 
-        // Store complete result in vision cache if from image
-        if (imageHash && isImage) {
+        // Store complete result in vision cache if from image (and not already cached)
+        if (imageHash && isImage && !cacheHit) {
+          console.log('💾 Storing result in vision cache for hash:', imageHash.substring(0, 16) + '...');
           // Extract a brief description from the first few elements for cache
           const descMatch = bpmnXml.match(/<bpmn:textAnnotation[^>]*>.*?<bpmn:text>(.*?)<\/bpmn:text>/s);
           const briefDesc = descMatch ? descMatch[1].substring(0, 200) : 'BPMN diagram from image';
           await storeVisionCache(imageHash, diagramType, briefDesc, bpmnXml);
+          console.log('✅ Vision cache stored successfully');
         }
 
         // Update job with success
-        const modelUsed = isImage ? 'gemini-2.5-flash' : 'gemini-2.5-flash';
+        const modelUsed = cacheHit ? 'cached' : (isImage ? 'gemini-2.5-flash' : 'gemini-2.5-flash');
         await supabase
           .from('vision_bpmn_jobs')
           .update({
@@ -365,9 +367,9 @@ Return ONLY the XML, no other text.`;
         const responseTime = Date.now() - startTime;
         await logPerformanceMetric({
           function_name: 'vision-to-bpmn',
-          cache_type: 'none',
+          cache_type: cacheHit ? cacheType : 'none',
           response_time_ms: responseTime,
-          cache_hit: false,
+          cache_hit: cacheHit,
           model_used: modelUsed,
           error_occurred: false,
         });
