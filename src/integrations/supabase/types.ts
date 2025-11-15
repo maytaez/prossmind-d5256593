@@ -254,6 +254,90 @@ export type Database = {
         }
         Relationships: []
       }
+      bpmn_prompt_cache: {
+        Row: {
+          bpmn_xml: string
+          created_at: string | null
+          diagram_type: string
+          hit_count: number | null
+          id: string
+          last_accessed_at: string | null
+          prompt_embedding: string | null
+          prompt_hash: string
+          prompt_text: string
+        }
+        Insert: {
+          bpmn_xml: string
+          created_at?: string | null
+          diagram_type: string
+          hit_count?: number | null
+          id?: string
+          last_accessed_at?: string | null
+          prompt_embedding?: string | null
+          prompt_hash: string
+          prompt_text: string
+        }
+        Update: {
+          bpmn_xml?: string
+          created_at?: string | null
+          diagram_type?: string
+          hit_count?: number | null
+          id?: string
+          last_accessed_at?: string | null
+          prompt_embedding?: string | null
+          prompt_hash?: string
+          prompt_text?: string
+        }
+        Relationships: []
+      }
+      performance_metrics: {
+        Row: {
+          cache_hit: boolean | null
+          cache_type: string | null
+          complexity_score: number | null
+          created_at: string | null
+          error_message: string | null
+          error_occurred: boolean | null
+          function_name: string
+          id: string
+          model_used: string | null
+          prompt_length: number | null
+          response_time_ms: number | null
+          similarity_score: number | null
+          token_usage: number | null
+        }
+        Insert: {
+          cache_hit?: boolean | null
+          cache_type?: string | null
+          complexity_score?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          error_occurred?: boolean | null
+          function_name: string
+          id?: string
+          model_used?: string | null
+          prompt_length?: number | null
+          response_time_ms?: number | null
+          similarity_score?: number | null
+          token_usage?: number | null
+        }
+        Update: {
+          cache_hit?: boolean | null
+          cache_type?: string | null
+          complexity_score?: number | null
+          created_at?: string | null
+          error_message?: string | null
+          error_occurred?: boolean | null
+          function_name?: string
+          id?: string
+          model_used?: string | null
+          prompt_length?: number | null
+          response_time_ms?: number | null
+          similarity_score?: number | null
+          token_usage?: number | null
+        }
+        Relationships: []
+      }
       screen_recording_jobs: {
         Row: {
           bpmn_xml: string | null
@@ -350,6 +434,39 @@ export type Database = {
         }
         Relationships: []
       }
+      vision_analysis_cache: {
+        Row: {
+          bpmn_xml: string | null
+          created_at: string | null
+          diagram_type: string
+          hit_count: number | null
+          id: string
+          image_hash: string
+          last_accessed_at: string | null
+          process_description: string
+        }
+        Insert: {
+          bpmn_xml?: string | null
+          created_at?: string | null
+          diagram_type: string
+          hit_count?: number | null
+          id?: string
+          image_hash: string
+          last_accessed_at?: string | null
+          process_description: string
+        }
+        Update: {
+          bpmn_xml?: string | null
+          created_at?: string | null
+          diagram_type?: string
+          hit_count?: number | null
+          id?: string
+          image_hash?: string
+          last_accessed_at?: string | null
+          process_description?: string
+        }
+        Relationships: []
+      }
       vision_bpmn_jobs: {
         Row: {
           bpmn_xml: string | null
@@ -397,6 +514,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      clean_old_cache_entries: {
+        Args: { days_old?: number; min_hit_count?: number }
+        Returns: {
+          deleted_prompt_cache_count: number
+          deleted_vision_cache_count: number
+        }[]
+      }
+      get_cache_hit_rate_stats: {
+        Args: { end_date?: string; start_date?: string }
+        Returns: {
+          avg_response_time_ms: number
+          cache_misses: number
+          exact_hash_hits: number
+          exact_hit_rate: number
+          function_name: string
+          semantic_hit_rate: number
+          semantic_hits: number
+          total_hit_rate: number
+          total_requests: number
+        }[]
+      }
+      get_cache_statistics: {
+        Args: never
+        Returns: {
+          avg_prompt_cache_hits: number
+          avg_vision_cache_hits: number
+          total_prompt_cache_entries: number
+          total_prompt_cache_hits: number
+          total_vision_cache_entries: number
+          total_vision_cache_hits: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -405,6 +554,27 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      match_similar_prompts: {
+        Args: {
+          diagram_type_filter?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          bpmn_xml: string
+          diagram_type: string
+          hit_count: number
+          id: string
+          prompt_text: string
+          similarity: number
+        }[]
+      }
+      update_cache_access: { Args: { cache_id: string }; Returns: undefined }
+      update_vision_cache_access: {
+        Args: { cache_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "user"
