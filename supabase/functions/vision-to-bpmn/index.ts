@@ -96,6 +96,7 @@ Deno.serve(async (req) => {
         let bpmnXml = '';
         let cacheHit = false;
         let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
+        let selectedModel = 'gemini-2.5-pro'; // Track which model succeeded
 
         if (isImage || isPDF || isDocument) {
           // Extract base64 data (remove data URL prefix) and normalize
@@ -235,7 +236,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Single-pass: Generate BPMN/P&ID directly from image
+          // Prompts for generation
           const bpmnDirectPrompt = `Generate a professional BPMN 2.0 XML diagram directly from this image.
 
 ## OUTPUT: Return ONLY valid BPMN 2.0 XML starting with <?xml version="1.0" encoding="UTF-8"?>. No markdown, no explanations.
@@ -272,23 +273,19 @@ Return ONLY the XML, no other text.`;
 
 Return ONLY the XML, no other text.`;
 
-          // Use gemini-2.5-pro for high quality generation
-          const selectedModel = 'gemini-2.5-pro';
-          const maxTokens = 32768;
-          const temperature = 0.3;
-          
-          console.log(`Using ${selectedModel} for direct BPMN generation from image`);
-          
           const directPrompt = diagramType === 'pid' ? pidDirectPrompt : bpmnDirectPrompt;
           const systemPrompt = diagramType === 'pid' 
             ? `You are a P&ID expert. Generate complete BPMN 2.0 XML with pid:type, pid:symbol, pid:category attributes for P&ID elements.`
             : `You are a BPMN 2.0 expert. Generate valid BPMN 2.0 XML with horizontal swimlanes and decision gateways.`;
+
+          // Fallback chain: Gemini Pro -> Gemini Flash (native) -> Lovable AI (GPT-5) -> Lovable AI (Gemini Flash)
           
+          // Try Gemini 2.0 Flash Thinking (Pro-level)
           try {
+            console.log('Attempting with gemini-2.0-flash-thinking-exp-01-21...');
             const directController = new AbortController();
-            const directTimeoutId = setTimeout(() => directController.abort(), 120000); // 2 minute timeout
+            const directTimeoutId = setTimeout(() => directController.abort(), 120000);
             
-            console.log('Generating BPMN XML directly from image...');
             const modelEndpoint = 'gemini-2.0-flash-thinking-exp-01-21';
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelEndpoint}:generateContent?key=${GOOGLE_API_KEY}`;
             
@@ -305,8 +302,8 @@ Return ONLY the XML, no other text.`;
                 ]
               }],
               generationConfig: {
-                temperature,
-                maxOutputTokens: maxTokens,
+                temperature: 0.3,
+                maxOutputTokens: 32768,
               }
             };
 
@@ -319,19 +316,170 @@ Return ONLY the XML, no other text.`;
 
             clearTimeout(directTimeoutId);
 
-            if (!directResponse.ok) {
-              const errorText = await directResponse.text();
-              console.error('Gemini API error:', directResponse.status, errorText);
-              throw new Error(`AI API error: ${directResponse.status}`);
+            if (directResponse.ok) {
+              const directResult = await directResponse.json();
+              bpmnXml = directResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (bpmnXml) {
+                console.log('✅ Success with gemini-2.0-flash-thinking-exp-01-21');
+                selectedModel = 'gemini-2.5-pro';
+              } else {
+                throw new Error('Empty response from primary model');
+              }
+            } else {
+              throw new Error(`Primary model failed: ${directResponse.status}`);
             }
+          } catch (primaryErr) {
+            console.error('Primary model failed:', primaryErr);
+            
+            // Fallback 1: Try Gemini 2.5 Flash (native API)
+            try {
+              console.log('Falling back to gemini-2.5-flash (native)...');
+              const fallbackController = new AbortController();
+              const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 90000);
+              
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_API_KEY}`;
+              
+              const fallbackRequestBody = {
+                contents: [{
+                  parts: [
+                    { text: `${systemPrompt}\n\n${directPrompt}` },
+                    {
+                      inline_data: {
+                        mime_type: imageBase64.split(';')[0].split(':')[1],
+                        data: imageBase64.split(',')[1]
+                      }
+                    }
+                  ]
+                }],
+                generationConfig: {
+                  temperature: 0.5,
+                  maxOutputTokens: 12288,
+                }
+              };
 
-            const directResult = await directResponse.json();
-            bpmnXml = directResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          } catch (err) {
-            if (err instanceof Error && err.name === 'AbortError') {
-              throw new Error('BPMN generation timeout - please try with a simpler image');
+              const fallbackResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fallbackRequestBody),
+                signal: fallbackController.signal
+              });
+
+              clearTimeout(fallbackTimeoutId);
+
+              if (fallbackResponse.ok) {
+                const fallbackResult = await fallbackResponse.json();
+                bpmnXml = fallbackResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (bpmnXml) {
+                  console.log('✅ Success with gemini-2.5-flash (native)');
+                  selectedModel = 'gemini-2.5-flash';
+                } else {
+                  throw new Error('Empty response from Gemini Flash');
+                }
+              } else {
+                throw new Error(`Gemini Flash failed: ${fallbackResponse.status}`);
+              }
+            } catch (flashErr) {
+              console.error('Gemini Flash failed:', flashErr);
+              
+              // Fallback 2: Try Lovable AI with OpenAI GPT-5
+              if (LOVABLE_API_KEY) {
+                try {
+                  console.log('Falling back to Lovable AI (openai/gpt-5)...');
+                  const lovableController = new AbortController();
+                  const lovableTimeoutId = setTimeout(() => lovableController.abort(), 90000);
+
+                  const lovableResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      model: 'openai/gpt-5',
+                      messages: [
+                        { role: 'system', content: systemPrompt },
+                        {
+                          role: 'user',
+                          content: [
+                            { type: 'text', text: directPrompt },
+                            { type: 'image_url', image_url: { url: imageBase64 } }
+                          ]
+                        }
+                      ],
+                      max_completion_tokens: 16000
+                    }),
+                    signal: lovableController.signal
+                  });
+
+                  clearTimeout(lovableTimeoutId);
+
+                  if (lovableResponse.ok) {
+                    const lovableResult = await lovableResponse.json();
+                    bpmnXml = lovableResult.choices?.[0]?.message?.content || '';
+                    if (bpmnXml) {
+                      console.log('✅ Success with Lovable AI (openai/gpt-5)');
+                      selectedModel = 'openai/gpt-5';
+                    } else {
+                      throw new Error('Empty response from Lovable AI GPT-5');
+                    }
+                  } else {
+                    throw new Error(`Lovable AI GPT-5 failed: ${lovableResponse.status}`);
+                  }
+                } catch (lovableErr) {
+                  console.error('Lovable AI GPT-5 failed:', lovableErr);
+                  
+                  // Fallback 3: Try Lovable AI with Gemini Flash as last resort
+                  try {
+                    console.log('Falling back to Lovable AI (google/gemini-2.5-flash) as last resort...');
+                    const lastController = new AbortController();
+                    const lastTimeoutId = setTimeout(() => lastController.abort(), 90000);
+
+                    const lastResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        model: 'google/gemini-2.5-flash',
+                        messages: [
+                          { role: 'system', content: systemPrompt },
+                          {
+                            role: 'user',
+                            content: [
+                              { type: 'text', text: directPrompt },
+                              { type: 'image_url', image_url: { url: imageBase64 } }
+                            ]
+                          }
+                        ],
+                        max_tokens: 12000
+                      }),
+                      signal: lastController.signal
+                    });
+
+                    clearTimeout(lastTimeoutId);
+
+                    if (lastResponse.ok) {
+                      const lastResult = await lastResponse.json();
+                      bpmnXml = lastResult.choices?.[0]?.message?.content || '';
+                      if (bpmnXml) {
+                        console.log('✅ Success with Lovable AI (google/gemini-2.5-flash)');
+                        selectedModel = 'google/gemini-2.5-flash';
+                      } else {
+                        throw new Error('Empty response from Lovable AI Gemini Flash');
+                      }
+                    } else {
+                      throw new Error(`All fallbacks exhausted: ${lastResponse.status}`);
+                    }
+                  } catch (lastErr) {
+                    console.error('All AI models failed:', lastErr);
+                    throw new Error('All AI models failed to generate diagram. Please try again later or with a simpler image.');
+                  }
+                }
+              } else {
+                throw new Error('Gemini models failed and Lovable AI not configured');
+              }
             }
-            throw err;
           }
 
           console.log('Direct BPMN generation complete');
@@ -360,12 +508,7 @@ Return ONLY the XML, no other text.`;
             (complexityMetrics.taskCount > 15 ? 2 : complexityMetrics.taskCount > 8 ? 1 : 0) +
             (complexityMetrics.hasDecisionPoints ? 1 : 0);
           
-          // Use gemini-2.5-pro for all text-based generation
-          const selectedModel = 'gemini-2.5-pro';
-          const maxTokens = 32768;
-          const temperature = 0.3;
-          
-          console.log(`Text complexity: ${complexityScore}/8, using ${selectedModel}`);
+          console.log(`Text complexity: ${complexityScore}/8, using fallback chain`);
 
           const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
           console.log(`Generating ${diagramLabel} XML from text...`);
@@ -377,7 +520,10 @@ Return ONLY the XML, no other text.`;
           const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
           const userPrompt = `Generate a complete ${diagramType.toUpperCase()} diagram from this text:\n\n${textContent}\n\nReturn ONLY the XML.`;
 
+          // Fallback chain for text: Gemini Thinking -> Gemini Flash -> Lovable AI (GPT-5) -> Lovable AI (Gemini)
+          // Try Gemini 2.0 Flash Thinking first
           try {
+            console.log('Attempting text generation with gemini-2.0-flash-thinking-exp-01-21...');
             const textController = new AbortController();
             const textTimeoutId = setTimeout(() => textController.abort(), 180000);
             
@@ -392,8 +538,8 @@ Return ONLY the XML, no other text.`;
                 ]
               }],
               generationConfig: {
-                temperature,
-                maxOutputTokens: maxTokens,
+                temperature: 0.3,
+                maxOutputTokens: 32768,
               }
             };
 
@@ -406,19 +552,153 @@ Return ONLY the XML, no other text.`;
 
             clearTimeout(textTimeoutId);
 
-            if (!textResponse.ok) {
-              const errorText = await textResponse.text();
-              console.error('Gemini API error:', textResponse.status, errorText);
-              throw new Error(`AI API error: ${textResponse.status}`);
+            if (textResponse.ok) {
+              const textResult = await textResponse.json();
+              bpmnXml = textResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (bpmnXml) {
+                console.log('✅ Success with gemini-2.0-flash-thinking-exp-01-21 (text)');
+                selectedModel = 'gemini-2.5-pro';
+              } else {
+                throw new Error('Empty response from primary model');
+              }
+            } else {
+              throw new Error(`Primary model failed: ${textResponse.status}`);
             }
+          } catch (primaryErr) {
+            console.error('Primary model failed (text):', primaryErr);
+            
+            // Fallback 1: Try Gemini 2.5 Flash
+            try {
+              console.log('Falling back to gemini-2.5-flash for text...');
+              const fallbackController = new AbortController();
+              const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 120000);
+              
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_API_KEY}`;
+              
+              const fallbackRequestBody = {
+                contents: [{
+                  parts: [
+                    { text: systemPrompt },
+                    { text: userPrompt }
+                  ]
+                }],
+                generationConfig: {
+                  temperature: 0.5,
+                  maxOutputTokens: 12288,
+                }
+              };
 
-            const textResult = await textResponse.json();
-            bpmnXml = textResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          } catch (err) {
-            if (err instanceof Error && err.name === 'AbortError') {
-              throw new Error('BPMN generation timeout');
+              const fallbackResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fallbackRequestBody),
+                signal: fallbackController.signal
+              });
+
+              clearTimeout(fallbackTimeoutId);
+
+              if (fallbackResponse.ok) {
+                const fallbackResult = await fallbackResponse.json();
+                bpmnXml = fallbackResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (bpmnXml) {
+                  console.log('✅ Success with gemini-2.5-flash (text)');
+                  selectedModel = 'gemini-2.5-flash';
+                } else {
+                  throw new Error('Empty response from Gemini Flash');
+                }
+              } else {
+                throw new Error(`Gemini Flash failed: ${fallbackResponse.status}`);
+              }
+            } catch (flashErr) {
+              console.error('Gemini Flash failed (text):', flashErr);
+              
+              // Fallback 2: Try Lovable AI with OpenAI
+              if (LOVABLE_API_KEY) {
+                try {
+                  console.log('Falling back to Lovable AI (openai/gpt-5) for text...');
+                  const lovableController = new AbortController();
+                  const lovableTimeoutId = setTimeout(() => lovableController.abort(), 120000);
+
+                  const lovableResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      model: 'openai/gpt-5',
+                      messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                      ],
+                      max_completion_tokens: 16000
+                    }),
+                    signal: lovableController.signal
+                  });
+
+                  clearTimeout(lovableTimeoutId);
+
+                  if (lovableResponse.ok) {
+                    const lovableResult = await lovableResponse.json();
+                    bpmnXml = lovableResult.choices?.[0]?.message?.content || '';
+                    if (bpmnXml) {
+                      console.log('✅ Success with Lovable AI (openai/gpt-5) for text');
+                      selectedModel = 'openai/gpt-5';
+                    } else {
+                      throw new Error('Empty response from Lovable AI GPT-5');
+                    }
+                  } else {
+                    throw new Error(`Lovable AI GPT-5 failed: ${lovableResponse.status}`);
+                  }
+                } catch (lovableErr) {
+                  console.error('Lovable AI GPT-5 failed (text):', lovableErr);
+                  
+                  // Fallback 3: Try Lovable AI with Gemini as last resort
+                  try {
+                    console.log('Falling back to Lovable AI (google/gemini-2.5-flash) for text as last resort...');
+                    const lastController = new AbortController();
+                    const lastTimeoutId = setTimeout(() => lastController.abort(), 120000);
+
+                    const lastResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        model: 'google/gemini-2.5-flash',
+                        messages: [
+                          { role: 'system', content: systemPrompt },
+                          { role: 'user', content: userPrompt }
+                        ],
+                        max_tokens: 12000
+                      }),
+                      signal: lastController.signal
+                    });
+
+                    clearTimeout(lastTimeoutId);
+
+                    if (lastResponse.ok) {
+                      const lastResult = await lastResponse.json();
+                      bpmnXml = lastResult.choices?.[0]?.message?.content || '';
+                      if (bpmnXml) {
+                        console.log('✅ Success with Lovable AI (google/gemini-2.5-flash) for text');
+                        selectedModel = 'google/gemini-2.5-flash';
+                      } else {
+                        throw new Error('Empty response from Lovable AI Gemini Flash');
+                      }
+                    } else {
+                      throw new Error(`All fallbacks exhausted: ${lastResponse.status}`);
+                    }
+                  } catch (lastErr) {
+                    console.error('All AI models failed (text):', lastErr);
+                    throw new Error('All AI models failed to generate diagram from text. Please try again later.');
+                  }
+                }
+              } else {
+                throw new Error('Gemini models failed and Lovable AI not configured');
+              }
             }
-            throw err;
           }
 
           if (!bpmnXml) {
@@ -468,7 +748,7 @@ Return ONLY the XML, no other text.`;
         }
 
         // Update job with success
-        const modelUsed = cacheHit ? 'cached' : 'gemini-2.5-pro';
+        const modelUsed = cacheHit ? 'cached' : selectedModel;
         await supabase
           .from('vision_bpmn_jobs')
           .update({
