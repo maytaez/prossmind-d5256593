@@ -1,5 +1,9 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
+import { logPerformanceMetric } from '../_shared/metrics.ts';
+import { extractXmlSummary } from '../_shared/xml-utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +15,13 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
+  let similarityScore: number | undefined;
+  let errorOccurred = false;
+  let errorMessage: string | undefined;
+  let requestData: any;
+
   try {
     // Validate request has body
     if (!req.body) {
@@ -21,9 +32,10 @@ serve(async (req) => {
       );
     }
 
-    let requestData;
+    let reqData;
     try {
-      requestData = await req.json();
+      reqData = await req.json();
+      requestData = reqData; // Store for error logging
     } catch (jsonError) {
       console.error('Failed to parse JSON:', jsonError);
       return new Response(
@@ -32,7 +44,7 @@ serve(async (req) => {
       );
     }
 
-    const { currentBpmnXml, instructions, userId, diagramType = 'bpmn' } = requestData;
+    const { currentBpmnXml, instructions, userId, diagramType = 'bpmn' } = reqData;
     console.log(`Refining ${diagramType.toUpperCase()} with instructions:`, instructions);
     
     // SECURITY: Validate userId
@@ -49,6 +61,77 @@ serve(async (req) => {
         JSON.stringify({ error: 'Current diagram XML and instructions are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Generate hash for refinement cache (XML summary + instructions)
+    const xmlSummary = extractXmlSummary(currentBpmnXml);
+    const refinementHash = await generateHash(`${xmlSummary}:${instructions}:${diagramType}`);
+
+    // Check exact hash cache
+    const exactCache = await checkExactHashCache(refinementHash, diagramType);
+    if (exactCache) {
+      console.log('Exact hash cache hit for refinement');
+      cacheType = 'exact_hash';
+      const responseTime = Date.now() - startTime;
+
+      await logPerformanceMetric({
+        function_name: 'refine-bpmn',
+        cache_type: 'exact_hash',
+        prompt_length: instructions.length,
+        response_time_ms: responseTime,
+        cache_hit: true,
+        error_occurred: false,
+      });
+
+      return new Response(
+        JSON.stringify({
+          bpmnXml: exactCache.bpmnXml,
+          instructions,
+          cached: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check semantic cache for refinements (higher threshold: 0.9)
+    if (isSemanticCacheEnabled()) {
+      try {
+        const embedding = await generateEmbedding(`${xmlSummary}:${instructions}`);
+        const semanticCache = await checkSemanticCache(
+          embedding,
+          diagramType,
+          0.9 // Higher threshold for refinements
+        );
+
+        if (semanticCache) {
+          console.log(`Semantic cache hit for refinement (similarity: ${semanticCache.similarity})`);
+          cacheType = 'semantic';
+          similarityScore = semanticCache.similarity;
+          const responseTime = Date.now() - startTime;
+
+          await logPerformanceMetric({
+            function_name: 'refine-bpmn',
+            cache_type: 'semantic',
+            prompt_length: instructions.length,
+            response_time_ms: responseTime,
+            cache_hit: true,
+            similarity_score: semanticCache.similarity,
+            error_occurred: false,
+          });
+
+          return new Response(
+            JSON.stringify({
+              bpmnXml: semanticCache.bpmnXml,
+              instructions,
+              cached: true,
+              similarity: semanticCache.similarity,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (embeddingError) {
+        console.warn('Semantic cache check failed for refinement, continuing:', embeddingError);
+      }
     }
 
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
@@ -199,8 +282,9 @@ electrical	Power line	Dotted`;
 
     const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
 
-    const userPrompt = `Current BPMN XML:
-${currentBpmnXml}
+    // Use XML summary instead of full XML to reduce token usage
+    const userPrompt = `Current BPMN Diagram Summary:
+${xmlSummary}
 
 User instructions:
 ${instructions}
@@ -218,12 +302,12 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: `${systemPrompt}\n\nCurrent BPMN XML:\n${currentBpmnXml}\n\nUser instructions:\n${instructions}\n\nApply these modifications to the BPMN diagram and return the complete updated XML.` }
+              { text: `${systemPrompt}\n\n${userPrompt}` }
             ]
           }],
           generationConfig: {
             maxOutputTokens: 16000,
-            temperature: 0.3
+            temperature: 0.2 // Lower temperature for refinements (more deterministic)
           }
         }),
       }
@@ -272,18 +356,64 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
     console.log('BPMN refinement complete - XML validated');
     console.log('Refined XML length:', refinedBpmnXml.length);
 
+    // Store in cache (async, don't wait)
+    (async () => {
+      try {
+        const xmlSummary = extractXmlSummary(currentBpmnXml);
+        let embedding: number[] | undefined;
+        if (isSemanticCacheEnabled()) {
+          try {
+            embedding = await generateEmbedding(`${xmlSummary}:${instructions}`);
+          } catch (e) {
+            console.warn('Failed to generate embedding for refinement cache storage:', e);
+          }
+        }
+        await storeExactHashCache(refinementHash, `${xmlSummary}:${instructions}`, diagramType, refinedBpmnXml, embedding);
+      } catch (cacheError) {
+        console.error('Failed to store refinement in cache:', cacheError);
+      }
+    })();
+
+    const responseTime = Date.now() - startTime;
+
+    // Log performance metric
+    await logPerformanceMetric({
+      function_name: 'refine-bpmn',
+      cache_type: cacheType,
+      prompt_length: instructions.length,
+      response_time_ms: responseTime,
+      cache_hit: cacheType !== 'none',
+      similarity_score: similarityScore,
+      error_occurred: false,
+    });
+
     return new Response(
       JSON.stringify({ 
         bpmnXml: refinedBpmnXml,
         instructions,
+        cached: false,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
+    errorOccurred = true;
+    errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in refine-bpmn function:', error);
+
+    const responseTime = Date.now() - startTime;
+    await logPerformanceMetric({
+      function_name: 'refine-bpmn',
+      cache_type: cacheType,
+      prompt_length: requestData?.instructions?.length || 0,
+      response_time_ms: responseTime,
+      cache_hit: false,
+      error_occurred: true,
+      error_message: errorMessage,
+    });
+
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

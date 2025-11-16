@@ -249,6 +249,8 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
     }, [currentJobId, diagramType, uploadedFile]);
 
     const handleGenerate = async (prompt: string) => {
+        if (isGenerating) return; // Prevent duplicate requests
+        
         if (!prompt.trim()) {
             toast.error("Please enter a process description");
             return;
@@ -281,9 +283,11 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
         setGenerationStep("generating");
 
         try {
-            const { data, error } = await supabase.functions.invoke('generate-bpmn', {
-                body: { prompt, diagramType }
-            });
+            const { invokeFunction } = await import('@/utils/api-client');
+            const { data, error } = await invokeFunction('generate-bpmn', {
+                prompt,
+                diagramType
+            }, { deduplicate: true });
 
             if (error) {
                 console.error('Function error:', error);

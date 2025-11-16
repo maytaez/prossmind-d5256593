@@ -1,6 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
+import { generateHash, checkExactHashCache, storeExactHashCache } from '../_shared/cache.ts';
+import { logPerformanceMetric } from '../_shared/metrics.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +14,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let startTime: number | undefined;
   try {
+    startTime = Date.now();
     const { fileBase64, fileName, fileType, userId, diagramType = 'bpmn' } = await req.json();
     console.log(`Processing document for ${diagramType.toUpperCase()}:`, fileName, 'Type:', fileType);
     
@@ -591,6 +595,32 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
     const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
 
+    // Check cache for document analysis result
+    const documentHash = await generateHash(`${documentAnalysis}:${diagramType}`);
+    const cachedResult = await checkExactHashCache(documentHash, diagramType);
+    
+    if (cachedResult) {
+      console.log('Cache hit for document analysis');
+      const cacheResponseTime = Date.now() - (startTime || Date.now());
+      await logPerformanceMetric({
+        function_name: 'analyze-document-to-bpmn',
+        cache_type: 'exact_hash',
+        prompt_length: documentAnalysis.length,
+        response_time_ms: cacheResponseTime,
+        cache_hit: true,
+        error_occurred: false,
+      });
+
+      return new Response(
+        JSON.stringify({ 
+          bpmnXml: cachedResult.bpmnXml,
+          cached: true 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const generationStartTime = Date.now();
     console.log(`Generating ${diagramLabel} XML...`);
     const bpmnResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_API_KEY}`,
@@ -622,6 +652,25 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     const bpmnData = await bpmnResponse.json();
     let bpmnXml = bpmnData.candidates[0].content.parts[0].text;
     bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+
+    // Store in cache (async, don't wait)
+    (async () => {
+      try {
+        await storeExactHashCache(documentHash, documentAnalysis, diagramType, bpmnXml);
+      } catch (cacheError) {
+        console.error('Failed to store document analysis in cache:', cacheError);
+      }
+    })();
+
+    const responseTime = Date.now() - (startTime || generationStartTime);
+    await logPerformanceMetric({
+      function_name: 'analyze-document-to-bpmn',
+      cache_type: 'none',
+      prompt_length: documentAnalysis.length,
+      response_time_ms: responseTime,
+      cache_hit: false,
+      error_occurred: false,
+    });
 
     // Generate alternative models
     console.log('Generating alternatives...');

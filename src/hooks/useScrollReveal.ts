@@ -24,7 +24,7 @@ export const scrollRevealVariants = {
     y: 0,
     transition: {
       duration: 0.6,
-      ease: "easeOut",
+      ease: "easeOut" as const,
     },
   },
 };
@@ -43,14 +43,14 @@ export const staggerContainerVariants = {
 export const staggerItemVariants = {
   hidden: {
     opacity: 0,
-    y: 18, // Slight slide up from below
+    y: 18,
   },
   visible: {
     opacity: 1,
     y: 0,
     transition: {
       duration: 0.6,
-      ease: [0.2, 0.9, 0.3, 1], // cubic-bezier for smooth easing
+      ease: [0.2, 0.9, 0.3, 1] as const,
     },
   },
 };

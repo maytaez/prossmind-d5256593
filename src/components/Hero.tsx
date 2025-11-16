@@ -36,7 +36,12 @@ const Hero = () => {
   }, []);
 
   return (
-    <section className="relative min-h-[700px] bg-gradient-to-b from-gray-50 to-white dark:from-background dark:to-card text-hero-foreground dark:text-foreground overflow-hidden">
+    <motion.section 
+      className="relative min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-background dark:to-card text-hero-foreground dark:text-foreground overflow-hidden"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.8 }}
+    >
       {/* Particle background */}
       <ParticleBackground />
       
@@ -204,7 +209,7 @@ const Hero = () => {
 
       {/* Bottom gradient fade */}
       <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-background to-transparent" />
-    </section>
+    </motion.section>
   );
 };
 

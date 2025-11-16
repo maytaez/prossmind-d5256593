@@ -4,7 +4,7 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
 import { Button } from "@/components/ui/button";
-import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image, AlertTriangle, Plus, ChevronLeft, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch } from "lucide-react";
+import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -843,16 +843,18 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         const totalVariants = variantsToGenerate.length;
         setAlternativeProgress({ completed: 0, total: totalVariants, current: undefined });
 
-        // Generate variants sequentially to avoid rate-limiting issues
+        // Generate variants in parallel (limit to 3 concurrent requests to avoid rate limiting)
         const generated: AlternativeModel[] = [];
-        for (const [index, variant] of variantsToGenerate.entries()) {
-          setAlternativeProgress({
-            completed: index,
-            total: totalVariants,
-            current: variant.title,
-          });
+        let completedCount = 0;
 
+        const generateVariant = async (variant: typeof variantsToGenerate[0], index: number) => {
           try {
+            setAlternativeProgress({
+              completed: completedCount,
+              total: totalVariants,
+              current: variant.title,
+            });
+
             const instructions =
               diagramType === "pid"
                 ? variant.instructions.pid
@@ -887,20 +889,45 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             };
             
             generated.push(newModel);
+            completedCount++;
             
             // Update UI with the new model as it becomes available
             setAlternativeModels([...generated]);
+            setAlternativeProgress({
+              completed: completedCount,
+              total: totalVariants,
+              current: undefined,
+            });
+
             if (!selectedAlternativeId) {
               setSelectedAlternativeId(newModel.id);
             }
 
+            return newModel;
           } catch (error) {
+            completedCount++;
+            setAlternativeProgress({
+              completed: completedCount,
+              total: totalVariants,
+              current: undefined,
+            });
             console.error(`Failed to generate alternative "${variant.title}":`, error);
             toast.error(
               `Could not generate: ${variant.title}`,
               { description: error instanceof Error ? error.message : "An unknown error occurred. The AI model might be overloaded or the request may have timed out." }
             );
+            throw error;
           }
+        };
+
+        // Execute in parallel with concurrency limit of 3
+        const concurrencyLimit = 3;
+        const tasks = variantsToGenerate.map((variant, index) => () => generateVariant(variant, index));
+        
+        // Process in batches
+        for (let i = 0; i < tasks.length; i += concurrencyLimit) {
+          const batch = tasks.slice(i, i + concurrencyLimit);
+          await Promise.allSettled(batch.map(task => task()));
         }
 
         setAlternativeProgress({ completed: totalVariants, total: totalVariants });
@@ -2278,26 +2305,29 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         return;
       }
 
-      // Convert image to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
+      // Compress and convert image to base64
+      let fileToProcess = file;
+      const { shouldCompressImage, compressImage } = await import('@/utils/image-compression');
+      if (shouldCompressImage(file)) {
+        try {
+          fileToProcess = await compressImage(file);
+        } catch (compressionError) {
+          console.warn('Image compression failed, using original:', compressionError);
+        }
+      }
 
-      await new Promise((resolve, reject) => {
-        reader.onload = resolve;
-        reader.onerror = reject;
-      });
-
-      const imageBase64 = reader.result as string;
+      const { fileToBase64 } = await import('@/utils/image-compression');
+      const base64Content = await fileToBase64(fileToProcess, false);
+      const imageBase64 = `data:${fileToProcess.type};base64,${base64Content}`;
 
       toast.info("Uploading image for analysis...");
 
       // Call vision-to-BPMN edge function - returns job ID
-      const { data, error } = await supabase.functions.invoke('vision-to-bpmn', {
-        body: {
-          imageBase64,
-          diagramType: diagramType
-        }
-      });
+      const { invokeFunction } = await import('@/utils/api-client');
+      const { data, error } = await invokeFunction('vision-to-bpmn', {
+        imageBase64,
+        diagramType: diagramType
+      }, { deduplicate: true });
 
       if (error) {
         throw error;
@@ -2784,7 +2814,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 Export as .xml
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleDownloadWithFormat('svg')}>
-                <Image className="h-4 w-4 mr-2" />
+                <ImageIcon className="h-4 w-4 mr-2" />
                 Export as .svg
               </DropdownMenuItem>
             </DropdownMenuContent>

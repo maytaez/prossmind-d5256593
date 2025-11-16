@@ -8,6 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon, Video } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { fileToBase64, shouldCompressImage } from "@/utils/image-compression";
+import { invokeFunction } from "@/utils/api-client";
 
 const VisionAI = () => {
   const [showDemo, setShowDemo] = useState(false);
@@ -234,6 +236,8 @@ const VisionAI = () => {
   };
 
   const handleUpload = async () => {
+    if (processing) return; // Prevent duplicate uploads
+    
     if (!selectedFile) {
       toast.error("Please select a file");
       return;
@@ -276,24 +280,35 @@ const VisionAI = () => {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Content = reader.result as string;
-        
-        toast.dismiss(loadingToast);
-        setUploadProgress(20);
-        setProgressText("Uploading file...");
-        
-        const processingToast = toast.loading("Starting diagram generation...", {
-          description: "This will continue in the background"
-        });
-        
+      // Compress image if needed before upload
+      let fileToProcess = selectedFile;
+      if (shouldCompressImage(selectedFile)) {
+        toast.info("Compressing image for faster upload...");
         try {
-          const { data, error } = await supabase.functions.invoke('vision-to-bpmn', {
-            body: {
-              imageBase64: base64Content
-            }
-          });
+          const { compressImage } = await import('@/utils/image-compression');
+          fileToProcess = await compressImage(selectedFile);
+        } catch (compressionError) {
+          console.warn('Image compression failed, using original:', compressionError);
+        }
+      }
+
+      // Convert to base64
+      const base64Content = await fileToBase64(fileToProcess, false);
+      const dataUrl = `data:${fileToProcess.type};base64,${base64Content}`;
+      
+      toast.dismiss(loadingToast);
+      setUploadProgress(20);
+      setProgressText("Uploading file...");
+      
+      const processingToast = toast.loading("Starting diagram generation...", {
+        description: "This will continue in the background"
+      });
+      
+      try {
+        const { data, error } = await invokeFunction('vision-to-bpmn', {
+          imageBase64: dataUrl,
+          diagramType
+        }, { deduplicate: true });
 
           toast.dismiss(processingToast);
 
@@ -364,29 +379,6 @@ const VisionAI = () => {
           });
           setProcessing(false);
         }
-      };
-      
-      reader.onerror = () => {
-        const errorMsg = "Failed to read file";
-        setErrorMessage(errorMsg);
-        setUploadProgress(0);
-        setProgressText("");
-        toast.dismiss(loadingToast);
-        toast.error("Upload failed – retry or contact support", {
-          description: errorMsg,
-          action: {
-            label: "Retry",
-            onClick: () => {
-              setErrorMessage(null);
-              handleUpload();
-            }
-          },
-          duration: 10000
-        });
-        setProcessing(false);
-      };
-      
-      reader.readAsDataURL(selectedFile);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Failed to generate diagram";
       setErrorMessage(errorMsg);

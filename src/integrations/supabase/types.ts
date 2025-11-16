@@ -441,6 +441,7 @@ export type Database = {
           diagram_type: string
           hit_count: number | null
           id: string
+          image_embedding: string | null
           image_hash: string
           last_accessed_at: string | null
           process_description: string
@@ -451,6 +452,7 @@ export type Database = {
           diagram_type: string
           hit_count?: number | null
           id?: string
+          image_embedding?: string | null
           image_hash: string
           last_accessed_at?: string | null
           process_description: string
@@ -461,6 +463,7 @@ export type Database = {
           diagram_type?: string
           hit_count?: number | null
           id?: string
+          image_embedding?: string | null
           image_hash?: string
           last_accessed_at?: string | null
           process_description?: string
@@ -554,6 +557,23 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      match_similar_images: {
+        Args: {
+          diagram_type_filter?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          bpmn_xml: string
+          diagram_type: string
+          hit_count: number
+          id: string
+          image_hash: string
+          process_description: string
+          similarity: number
+        }[]
+      }
       match_similar_prompts: {
         Args: {
           diagram_type_filter?: string
