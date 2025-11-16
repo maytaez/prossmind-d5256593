@@ -77,11 +77,10 @@ Deno.serve(async (req) => {
 
         console.log('Processing document for BPMN generation for user:', user.id);
 
-        const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
         const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
         
-        if (!GOOGLE_API_KEY) {
-          throw new Error('Google API key not configured');
+        if (!LOVABLE_API_KEY) {
+          throw new Error('Lovable API key not configured');
         }
 
         // Determine if this is an image or text/document
@@ -272,12 +271,12 @@ Return ONLY the XML, no other text.`;
 
 Return ONLY the XML, no other text.`;
 
-          // Use flash model for speed (it's still very capable)
-          const selectedModel = 'gemini-2.5-flash';
+          // Use Lovable AI with gemini-2.5-flash
+          const selectedModel = 'google/gemini-2.5-flash';
           const maxTokens = 16384;
           const temperature = 0.3;
           
-          console.log(`Using ${selectedModel} for direct BPMN generation from image`);
+          console.log(`Using ${selectedModel} via Lovable AI for direct BPMN generation from image`);
           
           const directPrompt = diagramType === 'pid' ? pidDirectPrompt : bpmnDirectPrompt;
           const systemPrompt = diagramType === 'pid' 
@@ -288,31 +287,29 @@ Return ONLY the XML, no other text.`;
             const directController = new AbortController();
             const directTimeoutId = setTimeout(() => directController.abort(), 120000); // 2 minute timeout
             
-            console.log('Generating BPMN XML directly from image...');
-            const modelEndpoint = 'gemini-2.0-flash-exp';
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelEndpoint}:generateContent?key=${GOOGLE_API_KEY}`;
+            console.log('Generating BPMN XML directly from image via Lovable AI...');
             
             const directRequestBody = {
-              contents: [{
-                parts: [
-                  { text: `${systemPrompt}\n\n${directPrompt}` },
-                  {
-                    inline_data: {
-                      mime_type: imageBase64.split(';')[0].split(':')[1],
-                      data: imageBase64.split(',')[1]
-                    }
-                  }
-                ]
-              }],
-              generationConfig: {
-                temperature,
-                maxOutputTokens: maxTokens,
-              }
+              model: selectedModel,
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: `${systemPrompt}\n\n${directPrompt}` },
+                    { type: 'image_url', image_url: { url: imageBase64 } }
+                  ]
+                }
+              ],
+              max_tokens: maxTokens,
+              temperature
             };
 
-            const directResponse = await fetch(apiUrl, {
+            const directResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
               body: JSON.stringify(directRequestBody),
               signal: directController.signal
             });
@@ -321,12 +318,12 @@ Return ONLY the XML, no other text.`;
 
             if (!directResponse.ok) {
               const errorText = await directResponse.text();
-              console.error('Gemini API error:', directResponse.status, errorText);
+              console.error('Lovable AI error:', directResponse.status, errorText);
               throw new Error(`AI API error: ${directResponse.status}`);
             }
 
             const directResult = await directResponse.json();
-            bpmnXml = directResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            bpmnXml = directResult.choices?.[0]?.message?.content || '';
           } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
               throw new Error('BPMN generation timeout - please try with a simpler image');
@@ -360,12 +357,12 @@ Return ONLY the XML, no other text.`;
             (complexityMetrics.taskCount > 15 ? 2 : complexityMetrics.taskCount > 8 ? 1 : 0) +
             (complexityMetrics.hasDecisionPoints ? 1 : 0);
           
-          const useProModel = complexityScore >= 3; // More aggressive with flash
-          const selectedModel = useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+          const useProModel = complexityScore >= 3;
+          const selectedModel = useProModel ? 'google/gemini-2.5-pro' : 'google/gemini-2.5-flash';
           const maxTokens = useProModel ? 32768 : 16384;
           const temperature = 0.3;
           
-          console.log(`Text complexity: ${complexityScore}/8, using ${selectedModel}`);
+          console.log(`Text complexity: ${complexityScore}/8, using ${selectedModel} via Lovable AI`);
 
           const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
           console.log(`Generating ${diagramLabel} XML from text...`);
@@ -379,29 +376,24 @@ Return ONLY the XML, no other text.`;
 
           try {
             const textController = new AbortController();
-            const textTimeoutId = setTimeout(() => textController.abort(), 180000);
-            
-            const modelEndpoint = selectedModel === 'gemini-2.5-pro' 
-              ? 'gemini-2.0-flash-thinking-exp-01-21' 
-              : 'gemini-2.0-flash-exp';
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelEndpoint}:generateContent?key=${GOOGLE_API_KEY}`;
+            const textTimeoutId = setTimeout(() => textController.abort(), 120000); // 2 min timeout
             
             const textRequestBody = {
-              contents: [{
-                parts: [
-                  { text: systemPrompt },
-                  { text: userPrompt }
-                ]
-              }],
-              generationConfig: {
-                temperature,
-                maxOutputTokens: maxTokens,
-              }
+              model: selectedModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              max_tokens: maxTokens,
+              temperature
             };
 
-            const textResponse = await fetch(apiUrl, {
+            const textResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
               body: JSON.stringify(textRequestBody),
               signal: textController.signal
             });
@@ -410,12 +402,12 @@ Return ONLY the XML, no other text.`;
 
             if (!textResponse.ok) {
               const errorText = await textResponse.text();
-              console.error('Gemini API error:', textResponse.status, errorText);
+              console.error('Lovable AI error:', textResponse.status, errorText);
               throw new Error(`AI API error: ${textResponse.status}`);
             }
 
             const textResult = await textResponse.json();
-            bpmnXml = textResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            bpmnXml = textResult.choices?.[0]?.message?.content || '';
           } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
               throw new Error('BPMN generation timeout');
@@ -470,7 +462,7 @@ Return ONLY the XML, no other text.`;
         }
 
         // Update job with success
-        const modelUsed = cacheHit ? 'cached' : (isImage ? 'gemini-2.5-flash' : 'gemini-2.5-flash');
+        const modelUsed = cacheHit ? 'cached' : 'google/gemini-2.5-flash';
         await supabase
           .from('vision_bpmn_jobs')
           .update({
