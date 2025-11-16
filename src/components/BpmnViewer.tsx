@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { motion } from "framer-motion";
 import BpmnModeler from "bpmn-js/lib/Modeler";
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
 import { Button } from "@/components/ui/button";
-import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch } from "lucide-react";
+import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -47,7 +48,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1047,11 +1048,48 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Palette panel state
-  const [showPalette, setShowPalette] = useState(true);
+  const [showPalette, setShowPalette] = useState(false);
+  const [palettePosition, setPalettePosition] = useState({ x: 0, y: 0 });
+  // Calculate default height to fit within canvas (viewport height minus headers ~8rem = 128px)
+  const defaultPaletteHeight = typeof window !== 'undefined' ? Math.min(700, window.innerHeight - 300) : 600;
+  const [paletteSize, setPaletteSize] = useState({ width: 280, height: defaultPaletteHeight });
+  const [paletteSearch, setPaletteSearch] = useState('');
+  const [expandedSections, setExpandedSections] = useState({
+    quickDraw: true,
+    startEvents: true,
+    activities: true,
+    intermediateEvents: false,
+    endEvents: false,
+    gateways: false,
+    subprocesses: true,
+    pools: true,
+    dataObjects: true,
+    artifacts: true,
+  });
+  const dragStartPosition = useRef({ x: 0, y: 0 });
+  const resizeStartState = useRef({ 
+    width: 0, 
+    height: 0, 
+    x: 0, 
+    y: 0, 
+    clientX: 0, 
+    clientY: 0, 
+    edge: '' as 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right',
+    startLeft: 0,
+    startTop: 0,
+    startRight: 0,
+    startBottom: 0,
+  });
+  const isResizingRef = useRef(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const paletteRef = useRef<HTMLDivElement>(null);
+  const containerPositionRef = useRef({ top: 0, left: 0 });
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [showGrid, setShowGrid] = useState(false);
   const [showRuler, setShowRuler] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(true);
   const [isPanMode, setIsPanMode] = useState(false);
   const [showPropertiesPanel, setShowPropertiesPanel] = useState(false);
   const [showParticipantsPanel, setShowParticipantsPanel] = useState(false);
@@ -2106,11 +2144,24 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   // Fullscreen handler
   const handleToggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(() => {
-        toast.error("Failed to enter fullscreen mode");
-      });
+      // Enter fullscreen on the entire component, not just canvas
+      const rootElement = document.querySelector('.bpmn-viewer-root') as HTMLElement;
+      if (rootElement) {
+        rootElement.requestFullscreen().then(() => {
+          setIsFullscreen(true);
+          setShowToolbar(true); // Ensure toolbar is visible in fullscreen
+        }).catch(() => {
+          toast.error("Failed to enter fullscreen mode");
+        });
+      } else {
+        // Fallback to container if root not found
+        containerRef.current?.requestFullscreen().then(() => {
+          setIsFullscreen(true);
+          setShowToolbar(true);
+        }).catch(() => {
+          toast.error("Failed to enter fullscreen mode");
+        });
+      }
     } else {
       document.exitFullscreen().then(() => {
         setIsFullscreen(false);
@@ -2720,10 +2771,214 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Update container position when scrolling or resizing
+  useEffect(() => {
+    const updateContainerPosition = () => {
+      if (canvasContainerRef.current) {
+        const rect = canvasContainerRef.current.getBoundingClientRect();
+        containerPositionRef.current = {
+          top: rect.top,
+          left: rect.left,
+        };
+      }
+    };
+
+    updateContainerPosition();
+    window.addEventListener('scroll', updateContainerPosition, true);
+    window.addEventListener('resize', updateContainerPosition);
+    
+    // Also listen for scroll events on the container itself
+    const container = canvasContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', updateContainerPosition);
+    }
+
+    return () => {
+      window.removeEventListener('scroll', updateContainerPosition, true);
+      window.removeEventListener('resize', updateContainerPosition);
+      if (container) {
+        container.removeEventListener('scroll', updateContainerPosition);
+      }
+    };
+  }, [showPalette]);
+
+  // Adjust palette height based on canvas container when available
+  useEffect(() => {
+    if (!showPalette) return;
+    
+    const adjustHeight = () => {
+      if (canvasContainerRef.current) {
+        const containerHeight = canvasContainerRef.current.offsetHeight;
+        // Reserve space for header (~90px) and footer (~50px)
+        const availableHeight = containerHeight - 140;
+        if (availableHeight > 400) {
+          setPaletteSize(prev => {
+            // Only update if current height exceeds available space or is much smaller
+            if (prev.height > availableHeight || prev.height < 400) {
+              return { ...prev, height: Math.max(400, Math.min(700, availableHeight)) };
+            }
+            return prev;
+          });
+        }
+      }
+    };
+
+    // Adjust on mount and window resize
+    adjustHeight();
+    window.addEventListener('resize', adjustHeight);
+    
+    return () => {
+      window.removeEventListener('resize', adjustHeight);
+    };
+  }, [showPalette]);
+
+  // Handle resize for Elements palette
+  const handleResizeStart = useCallback((edge: 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right', e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!paletteRef.current || !canvasContainerRef.current) return;
+    
+    isResizingRef.current = true;
+    setIsResizing(true);
+    
+    const container = canvasContainerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const paletteRect = paletteRef.current.getBoundingClientRect();
+    
+    // Calculate initial positions relative to container
+    const initialLeft = paletteRect.left - containerRect.left;
+    const initialTop = paletteRect.top - containerRect.top;
+    const initialRight = paletteRect.right - containerRect.left;
+    const initialBottom = paletteRect.bottom - containerRect.top;
+    const initialWidth = paletteRect.width;
+    const initialHeight = paletteRect.height;
+    
+    resizeStartState.current = {
+      width: initialWidth,
+      height: initialHeight,
+      x: initialLeft,
+      y: initialTop,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      edge: edge as any,
+      startLeft: initialLeft,
+      startTop: initialTop,
+      startRight: initialRight,
+      startBottom: initialBottom,
+    };
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!canvasContainerRef.current || !paletteRef.current) return;
+      
+      const container = canvasContainerRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const mouseX = e.clientX - containerRect.left;
+      const mouseY = e.clientY - containerRect.top;
+      
+      const minWidth = 200;
+      const minHeight = 300;
+      const maxWidth = container.offsetWidth;
+      const maxHeight = container.offsetHeight;
+      
+      let newWidth = resizeStartState.current.width;
+      let newHeight = resizeStartState.current.height;
+      let newX = resizeStartState.current.startLeft;
+      let newY = resizeStartState.current.startTop;
+      
+      const edge = resizeStartState.current.edge;
+      
+      // Handle horizontal resize
+      if (edge === 'right' || edge === 'top-right' || edge === 'bottom-right') {
+        // Resize from right edge - mouse moves right edge
+        const maxRight = Math.min(maxWidth, mouseX);
+        const minRight = resizeStartState.current.startLeft + minWidth;
+        const newRight = Math.max(minRight, Math.min(maxWidth, maxRight));
+        newWidth = newRight - resizeStartState.current.startLeft;
+        newX = resizeStartState.current.startLeft;
+      } else if (edge === 'left' || edge === 'top-left' || edge === 'bottom-left') {
+        // Resize from left edge - mouse moves left edge
+        const maxLeft = Math.max(0, mouseX);
+        const minLeft = resizeStartState.current.startRight - minWidth;
+        const newLeft = Math.max(0, Math.min(minLeft, maxLeft));
+        newWidth = resizeStartState.current.startRight - newLeft;
+        newX = newLeft;
+      }
+      
+      // Handle vertical resize
+      if (edge === 'bottom' || edge === 'bottom-left' || edge === 'bottom-right') {
+        // Resize from bottom edge - mouse moves bottom edge
+        const maxBottom = Math.min(maxHeight, mouseY);
+        const minBottom = resizeStartState.current.startTop + minHeight;
+        const newBottom = Math.max(minBottom, Math.min(maxHeight, maxBottom));
+        newHeight = newBottom - resizeStartState.current.startTop;
+        newY = resizeStartState.current.startTop;
+      } else if (edge === 'top' || edge === 'top-left' || edge === 'top-right') {
+        // Resize from top edge - mouse moves top edge
+        const maxTop = Math.max(0, mouseY);
+        const minTop = resizeStartState.current.startBottom - minHeight;
+        const newTop = Math.max(0, Math.min(minTop, maxTop));
+        newHeight = resizeStartState.current.startBottom - newTop;
+        newY = newTop;
+      }
+      
+      // Ensure we don't exceed container bounds
+      if (newX + newWidth > maxWidth) {
+        newWidth = maxWidth - newX;
+      }
+      if (newY + newHeight > maxHeight) {
+        newHeight = maxHeight - newY;
+      }
+      
+      // Ensure minimum sizes
+      newWidth = Math.max(minWidth, newWidth);
+      newHeight = Math.max(minHeight, newHeight);
+      
+      // Update state
+      setPaletteSize({ width: newWidth, height: newHeight });
+      setPalettePosition({ x: newX, y: newY });
+    };
+    
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    
+    document.body.style.cursor = edge.includes('left') && edge.includes('top') ? 'nwse-resize' :
+                                 edge.includes('right') && edge.includes('top') ? 'nesw-resize' :
+                                 edge.includes('left') && edge.includes('bottom') ? 'nesw-resize' :
+                                 edge.includes('right') && edge.includes('bottom') ? 'nwse-resize' :
+                                 edge === 'left' || edge === 'right' ? 'ew-resize' : 'ns-resize';
+    document.body.style.userSelect = 'none';
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
   const isPid = diagramType === "pid";
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] bg-background">
+    <>
+      <style>{`
+        .shape-repository-scroll::-webkit-scrollbar {
+          width: 8px;
+        }
+        .shape-repository-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .shape-repository-scroll::-webkit-scrollbar-thumb {
+          background-color: rgba(0, 0, 0, 0.5);
+          border-radius: 4px;
+        }
+        .shape-repository-scroll::-webkit-scrollbar-thumb:hover {
+          background-color: rgba(0, 0, 0, 0.7);
+        }
+      `}</style>
+      <div className="bpmn-viewer-root flex flex-col h-[calc(100vh-8rem)] bg-background">
       {/* Top Header Bar - Flowable Style */}
       <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
         {/* Left: Logo/Branding */}
@@ -2770,6 +3025,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       </div>
 
       {/* Secondary Toolbar - Flowable Style */}
+      {(showToolbar || !isFullscreen) && (
       <div className={`flex items-center gap-0.5 px-1 py-1 border-b bg-muted/30 overflow-x-auto ${isPid ? 'border-engineering-green/20' : 'border-border'}`}>
         {/* Left: Action Icons */}
         <div className="flex items-center gap-0.5 shrink-0">
@@ -2896,6 +3152,15 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             <Ruler className="h-3.5 w-3.5" />
           </Button>
           <Button
+            variant={showPalette ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setShowPalette(!showPalette)}
+            className="h-7 w-7 p-0 shrink-0"
+            title="Toggle Elements Palette"
+          >
+            <Palette className="h-3.5 w-3.5" />
+          </Button>
+          <Button
             variant="ghost"
             size="sm"
             onClick={handleFitToScreen}
@@ -2925,6 +3190,22 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
           <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+          
+          {/* Toolbar Toggle for Fullscreen */}
+          {isFullscreen && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowToolbar(!showToolbar)}
+                className="h-7 w-7 p-0 shrink-0"
+                title={showToolbar ? "Hide Toolbar" : "Show Toolbar"}
+              >
+                {showToolbar ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5 rotate-180" />}
+              </Button>
+              <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+            </>
+          )}
           
           {/* Advanced Tools Dropdown */}
           <DropdownMenu>
@@ -3080,287 +3361,539 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           </div>
         </div>
       </div>
+      )}
 
       {/* Main Board Layout - Flowable Style */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Fixed Palette */}
+      <div ref={canvasContainerRef} className="flex flex-1 overflow-hidden relative" style={{ position: 'relative', isolation: 'isolate', overflow: 'hidden' }}>
+        {/* Draggable Elements Palette */}
         {showPalette && (
-          <div className="w-64 border-r border-border bg-muted/30 flex flex-col">
-            <div className="flex items-center justify-between p-3 border-b border-border bg-background">
-              <div className="flex items-center gap-2">
-                <Palette className="h-4 w-4" />
-                <span className="font-semibold text-sm">Elements</span>
+          <motion.div
+            ref={paletteRef}
+            className="absolute z-50 bg-white border border-border rounded-lg shadow-lg flex flex-col"
+            style={{
+              width: `${paletteSize.width}px`,
+              height: `${paletteSize.height}px`,
+              minWidth: '240px',
+              minHeight: '400px',
+              maxWidth: canvasContainerRef.current ? `${canvasContainerRef.current.offsetWidth - palettePosition.x}px` : 'none',
+              maxHeight: canvasContainerRef.current ? `${canvasContainerRef.current.offsetHeight - palettePosition.y}px` : 'none',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            drag={!isResizing}
+            dragMomentum={false}
+            dragElastic={0}
+            dragConstraints={canvasContainerRef}
+            dragPropagation={false}
+            dragListener={true}
+            onDragStart={(e, info) => {
+              // Don't start drag if clicking on resize handles or if already resizing
+              if (isResizingRef.current) {
+                return false;
+              }
+              const target = e.target as HTMLElement;
+              if (target.closest('.resize-handle')) {
+                return false;
+              }
+              // Also check if the event originated from a resize handle
+              const originalTarget = (e as any).originalEvent?.target as HTMLElement;
+              if (originalTarget?.closest('.resize-handle')) {
+                return false;
+              }
+              dragStartPosition.current = { ...palettePosition };
+            }}
+            onDrag={(event, info) => {
+              // Constrain during drag in real-time
+              if (!canvasContainerRef.current || !paletteRef.current) return;
+              
+              const container = canvasContainerRef.current;
+              const palette = paletteRef.current;
+              const paletteWidth = palette.offsetWidth;
+              const paletteHeight = palette.offsetHeight;
+              
+              const maxX = Math.max(0, container.offsetWidth - paletteWidth);
+              const maxY = Math.max(0, container.offsetHeight - paletteHeight);
+              
+              const constrainedX = Math.max(0, Math.min(maxX, dragStartPosition.current.x + info.offset.x));
+              const constrainedY = Math.max(0, Math.min(maxY, dragStartPosition.current.y + info.offset.y));
+              
+              // Update position immediately during drag
+              setPalettePosition({ x: constrainedX, y: constrainedY });
+            }}
+            onDragEnd={(event, info) => {
+              if (!canvasContainerRef.current || !paletteRef.current) return;
+              
+              const container = canvasContainerRef.current;
+              const palette = paletteRef.current;
+              const paletteWidth = palette.offsetWidth;
+              const paletteHeight = palette.offsetHeight;
+              
+              // Calculate constrained position relative to container
+              const maxX = Math.max(0, container.offsetWidth - paletteWidth);
+              const maxY = Math.max(0, container.offsetHeight - paletteHeight);
+              
+              // Final constrained position
+              const newX = Math.max(0, Math.min(maxX, dragStartPosition.current.x + info.offset.x));
+              const newY = Math.max(0, Math.min(maxY, dragStartPosition.current.y + info.offset.y));
+              
+              setPalettePosition({ x: newX, y: newY });
+            }}
+            initial={false}
+            animate={{ 
+              x: palettePosition.x, 
+              y: palettePosition.y 
+            }}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              willChange: 'transform',
+            }}
+          >
+            {/* Header */}
+            <div className="p-3 border-b border-border bg-white rounded-t-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-sm text-foreground">Shape repository</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setShowPalette(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => setShowPalette(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Enter text to filter"
+                  value={paletteSearch}
+                  onChange={(e) => setPaletteSearch(e.target.value)}
+                  className="pl-8 pr-8 h-8 text-xs"
+                />
+                <List className="absolute right-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              </div>
             </div>
-            <ScrollArea className="flex-1 p-3">
-              <div className="space-y-3">
-                {/* Start Events */}
+            <div 
+              className="flex-1 bg-white overflow-y-auto shape-repository-scroll" 
+              style={{ 
+                minHeight: 0,
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(0, 0, 0, 0.5) transparent'
+              }}
+            >
+              <div className="p-2 space-y-1">
+                {/* Quick Draw Section */}
                 <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">START EVENTS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start Event">
-                    <div className="w-7 h-7 rounded-full border-2 border-green-600" />
-                    <span className="text-[9px] text-center">Start</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('start-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer Start">
-                    <div className="w-7 h-7 rounded-full border-2 border-green-600 flex items-center justify-center text-[10px]">⏱️</div>
-                    <span className="text-[9px] text-center">Timer</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('start-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message Start">
-                    <div className="w-7 h-7 rounded-full border-2 border-green-600 flex items-center justify-center text-[10px]">✉️</div>
-                    <span className="text-[9px] text-center">Msg</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('start-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal Start">
-                    <div className="w-7 h-7 rounded-full border-2 border-green-600 flex items-center justify-center text-[10px]">📡</div>
-                    <span className="text-[9px] text-center">Signal</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Intermediate Events */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">INTERMEDIATE EVENTS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('intermediate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Intermediate">
-                    <div className="w-7 h-7 rounded-full border-2 border-blue-600" />
-                    <span className="text-[9px] text-center">Inter.</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('intermediate-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer">
-                    <div className="w-7 h-7 rounded-full border-2 border-blue-600 flex items-center justify-center text-[10px]">⏱️</div>
-                    <span className="text-[9px] text-center">Timer</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('intermediate-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message">
-                    <div className="w-7 h-7 rounded-full border-2 border-blue-600 flex items-center justify-center text-[10px]">✉️</div>
-                    <span className="text-[9px] text-center">Msg</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('intermediate-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal">
-                    <div className="w-7 h-7 rounded-full border-2 border-blue-600 flex items-center justify-center text-[10px]">📡</div>
-                    <span className="text-[9px] text-center">Signal</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* End Events */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">END EVENTS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('end-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="End Event">
-                    <div className="w-7 h-7 rounded-full border-4 border-red-600" />
-                    <span className="text-[9px] text-center">End</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('end-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message End">
-                    <div className="w-7 h-7 rounded-full border-4 border-red-600 flex items-center justify-center text-[10px]">✉️</div>
-                    <span className="text-[9px] text-center">Msg</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('end-error-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Error End">
-                    <div className="w-7 h-7 rounded-full border-4 border-red-600 flex items-center justify-center text-[10px]">⚠️</div>
-                    <span className="text-[9px] text-center">Error</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('end-terminate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Terminate">
-                    <div className="w-7 h-7 rounded-full border-4 border-red-600 flex items-center justify-center text-[10px]">⬛</div>
-                    <span className="text-[9px] text-center">Term</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tasks */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">TASKS & ACTIVITIES</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded" />
-                    <span className="text-[9px] text-center">Task</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="User Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">👤</div>
-                    <span className="text-[9px] text-center">User</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('service-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Service Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">⚙️</div>
-                    <span className="text-[9px] text-center">Service</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('manual-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Manual Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">✋</div>
-                    <span className="text-[9px] text-center">Manual</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('script-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Script Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">📜</div>
-                    <span className="text-[9px] text-center">Script</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('send-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Send Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">📤</div>
-                    <span className="text-[9px] text-center">Send</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('receive-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Receive Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">📥</div>
-                    <span className="text-[9px] text-center">Receive</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('business-rule-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Business Rule Task">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">📋</div>
-                    <span className="text-[9px] text-center">Rule</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('call-activity')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Call Activity">
-                    <div className="w-7 h-7 border-4 border-foreground rounded" />
-                    <span className="text-[9px] text-center">Call</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Gateways */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">GATEWAYS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('xor-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Exclusive Gateway (XOR)">
-                    <div className="w-7 h-7 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">X</span>
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, quickDraw: !expandedSections.quickDraw })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Quick draw</span>
+                    {expandedSections.quickDraw ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.quickDraw && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start event">
+                        <div className="w-8 h-8 rounded-full border-2 border-green-600" />
+                        <span className="text-[10px] text-center leading-tight">Start event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="User task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">👤</div>
+                        <span className="text-[10px] text-center leading-tight">User task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Case task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">💼</div>
+                        <span className="text-[10px] text-center leading-tight">Case task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('service-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Service task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">⚙️</div>
+                        <span className="text-[10px] text-center leading-tight">Service task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('collapsed-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Subprocess">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center">
+                          <div className="w-3 h-0.5 bg-foreground" />
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Subpro...</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('call-activity')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Call activity">
+                        <div className="w-8 h-8 border-4 border-foreground rounded" />
+                        <span className="text-[10px] text-center leading-tight">Call activity</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('xor-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Exclusive gateway">
+                        <div className="w-8 h-8 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs font-bold">X</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Exclusive gateway</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('intermediate-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer boundary event">
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">⏱️</div>
+                        <span className="text-[10px] text-center leading-tight">Timer boundary event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('end-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="End event">
+                        <div className="w-8 h-8 rounded-full border-4 border-red-600" />
+                        <span className="text-[10px] text-center leading-tight">End event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Pool">
+                        <div className="w-10 h-8 border-2 border-foreground rounded">
+                          <div className="w-1 h-full bg-foreground" />
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Pool</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Lane">
+                        <div className="w-10 h-8 border-2 border-foreground rounded" />
+                        <span className="text-[10px] text-center leading-tight">Lane</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-center">XOR</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('and-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Parallel Gateway (AND)">
-                    <div className="w-7 h-7 border-2 border-purple-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">+</span>
+                  )}
+                </div>
+
+                {/* Start Events Section */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, startEvents: !expandedSections.startEvents })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Start events</span>
+                    {expandedSections.startEvents ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.startEvents && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start event">
+                        <div className="w-8 h-8 rounded-full border-2 border-green-600" />
+                        <span className="text-[10px] text-center leading-tight">Start event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('start-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer start event">
+                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">⏱️</div>
+                        <span className="text-[10px] text-center leading-tight">Timer start event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('start-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message start event">
+                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">✉️</div>
+                        <span className="text-[10px] text-center leading-tight">Message start event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('start-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal start event">
+                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">📡</div>
+                        <span className="text-[10px] text-center leading-tight">Signal start event</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-center">AND</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('or-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Inclusive Gateway (OR)">
-                    <div className="w-7 h-7 border-2 border-indigo-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">O</span>
+                  )}
+                </div>
+
+                {/* Activities Section */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, activities: !expandedSections.activities })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Activities</span>
+                    {expandedSections.activities ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.activities && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="User task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">👤</div>
+                        <span className="text-[10px] text-center leading-tight">User task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Case task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">💼</div>
+                        <span className="text-[10px] text-center leading-tight">Case task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('service-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Service task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">⚙️</div>
+                        <span className="text-[10px] text-center leading-tight">Service task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('script-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Script task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📜</div>
+                        <span className="text-[10px] text-center leading-tight">Script task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('business-rule-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Business rule task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📋</div>
+                        <span className="text-[10px] text-center leading-tight">Business rule task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('receive-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Receive task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📥</div>
+                        <span className="text-[10px] text-center leading-tight">Receive task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('manual-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Manual task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">✋</div>
+                        <span className="text-[10px] text-center leading-tight">Manual task</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('send-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Email task">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📧</div>
+                        <span className="text-[10px] text-center leading-tight">Email task</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-center">OR</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('event-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event-based Gateway">
-                    <div className="w-7 h-7 border-2 border-cyan-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px]">⬡</span>
+                  )}
+                </div>
+
+                {/* Gateways Section - Collapsed by default like in image */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, gateways: !expandedSections.gateways })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Gateways</span>
+                    {expandedSections.gateways ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.gateways && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('xor-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Exclusive gateway">
+                        <div className="w-8 h-8 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs font-bold">X</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Exclusive gateway</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('and-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Parallel gateway">
+                        <div className="w-8 h-8 border-2 border-purple-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs font-bold">+</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Parallel gateway</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('or-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Inclusive gateway">
+                        <div className="w-8 h-8 border-2 border-indigo-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs font-bold">O</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Inclusive gateway</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('event-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event-based gateway">
+                        <div className="w-8 h-8 border-2 border-cyan-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs">⬡</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Event-based gateway</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('complex-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Complex gateway">
+                        <div className="w-8 h-8 border-2 border-pink-600 transform rotate-45 flex items-center justify-center">
+                          <span className="transform -rotate-45 text-xs font-bold">*</span>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Complex gateway</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-center">Event</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('complex-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Complex Gateway">
-                    <div className="w-7 h-7 border-2 border-pink-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">*</span>
+                  )}
+                </div>
+
+                {/* Intermediate Events */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, intermediateEvents: !expandedSections.intermediateEvents })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Intermediate events</span>
+                    {expandedSections.intermediateEvents ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.intermediateEvents && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('intermediate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Intermediate event">
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-600" />
+                        <span className="text-[10px] text-center leading-tight">Intermediate event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('intermediate-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer event">
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">⏱️</div>
+                        <span className="text-[10px] text-center leading-tight">Timer event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('intermediate-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message event">
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">✉️</div>
+                        <span className="text-[10px] text-center leading-tight">Message event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('intermediate-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal event">
+                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">📡</div>
+                        <span className="text-[10px] text-center leading-tight">Signal event</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-center">Complex</span>
-                  </div>
+                  )}
+                </div>
+
+                {/* End Events */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, endEvents: !expandedSections.endEvents })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>End events</span>
+                    {expandedSections.endEvents ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.endEvents && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('end-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="End event">
+                        <div className="w-8 h-8 rounded-full border-4 border-red-600" />
+                        <span className="text-[10px] text-center leading-tight">End event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('end-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message end event">
+                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">✉️</div>
+                        <span className="text-[10px] text-center leading-tight">Message end event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('end-error-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Error end event">
+                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">⚠️</div>
+                        <span className="text-[10px] text-center leading-tight">Error end event</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('end-terminate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Terminate end event">
+                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">⬛</div>
+                        <span className="text-[10px] text-center leading-tight">Terminate end event</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Subprocesses */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, subprocesses: !expandedSections.subprocesses })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Subprocesses</span>
+                    {expandedSections.subprocesses ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.subprocesses && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Subprocess">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">+</div>
+                        <span className="text-[10px] text-center leading-tight">Subprocess</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('collapsed-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Collapsed subprocess">
+                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center">
+                          <div className="w-3 h-0.5 bg-foreground" />
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Collapsed subprocess</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('event-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event subprocess">
+                        <div className="w-8 h-8 border-2 border-dashed border-foreground rounded flex items-center justify-center text-xs">+</div>
+                        <span className="text-[10px] text-center leading-tight">Event subprocess</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('transaction')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Transaction">
+                        <div className="w-8 h-8 border-4 border-double border-foreground rounded" />
+                        <span className="text-[10px] text-center leading-tight">Transaction</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pools & Lanes */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, pools: !expandedSections.pools })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Pools & Lanes</span>
+                    {expandedSections.pools ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.pools && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Pool">
+                        <div className="w-10 h-8 border-2 border-foreground rounded">
+                          <div className="w-1 h-full bg-foreground" />
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Pool</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Lane">
+                        <div className="w-10 h-8 border-2 border-foreground rounded" />
+                        <span className="text-[10px] text-center leading-tight">Lane</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Data Objects */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, dataObjects: !expandedSections.dataObjects })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Data Objects</span>
+                    {expandedSections.dataObjects ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.dataObjects && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('data-object')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data object">
+                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }} />
+                        <span className="text-[10px] text-center leading-tight">Data object</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('data-store')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data store">
+                        <div className="w-8 h-7 border-2 border-foreground rounded-sm" />
+                        <span className="text-[10px] text-center leading-tight">Data store</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('data-input')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data input">
+                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
+                          <div className="text-[8px] mt-2 ml-1">→</div>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Data input</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('data-output')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data output">
+                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
+                          <div className="text-[8px] mt-2 ml-1">←</div>
+                        </div>
+                        <span className="text-[10px] text-center leading-tight">Data output</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Artifacts */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setExpandedSections({ ...expandedSections, artifacts: !expandedSections.artifacts })}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
+                  >
+                    <span>Artifacts</span>
+                    {expandedSections.artifacts ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {expandedSections.artifacts && (
+                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+                      <div onClick={() => addBpmnElement('text-annotation')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Text annotation">
+                        <div className="w-8 h-7 border-l-2 border-t-2 border-b-2 border-foreground" />
+                        <span className="text-[10px] text-center leading-tight">Text annotation</span>
+                      </div>
+                      <div onClick={() => addBpmnElement('group')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Group">
+                        <div className="w-8 h-8 border-2 border-dashed border-foreground rounded" />
+                        <span className="text-[10px] text-center leading-tight">Group</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Subprocesses */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">SUBPROCESSES</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Expanded Subprocess">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center text-[10px]">+</div>
-                    <span className="text-[9px] text-center">Sub</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('collapsed-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Collapsed Subprocess">
-                    <div className="w-7 h-7 border-2 border-foreground rounded flex items-center justify-center">
-                      <div className="w-3 h-0.5 bg-foreground" />
-                    </div>
-                    <span className="text-[9px] text-center">Coll.</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('event-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event Subprocess">
-                    <div className="w-7 h-7 border-2 border-dashed border-foreground rounded flex items-center justify-center text-[10px与">+</div>
-                    <span className="text-[9px] text-center">Event</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('transaction')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Transaction">
-                    <div className="w-7 h-7 border-4 border-double border-foreground rounded" />
-                    <span className="text-[9px] text-center">Trans.</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pools & Lanes */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">POOLS & LANES</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Pool/Participant">
-                    <div className="w-8 h-6 border-2 border-foreground rounded">
-                      <div className="w-1 h-full bg-foreground" />
-                    </div>
-                    <span className="text-[9px] text-center">Pool</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Data Objects */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">DATA OBJECTS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('data-object')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data Object">
-                    <div className="w-6 h-7 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }} />
-                    <span className="text-[9px] text-center">Object</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('data-store')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data Store">
-                    <div className="w-7 h-6 border-2 border-foreground rounded-sm" />
-                    <span className="text-[9px] text-center">Store</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('data-input')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data Input">
-                    <div className="w-6 h-7 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
-                      <div className="text-[8px] mt-2 ml-1">→</div>
-                    </div>
-                    <span className="text-[9px] text-center">Input</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('data-output')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data Output">
-                    <div className="w-6 h-7 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
-                      <div className="text-[8px] mt-2 ml-1">←</div>
-                    </div>
-                    <span className="text-[9px] text-center">Output</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Artifacts & Connections */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-foreground">ARTIFACTS</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div onClick={() => addBpmnElement('text-annotation')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Text Annotation">
-                    <div className="w-7 h-6 border-l-2 border-t-2 border-b-2 border-foreground" />
-                    <span className="text-[9px] text-center">Note</span>
-                  </div>
-                  <div onClick={() => addBpmnElement('group')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Group">
-                    <div className="w-7 h-7 border-2 border-dashed border-foreground rounded" />
-                    <span className="text-[9px] text-center">Group</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Connection Instructions */}
-              <div className="space-y-2 pt-2 border-t">
-                <p className="text-xs font-bold text-foreground">CONNECTIONS</p>
-                <div className="space-y-1 text-[10px] text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-0.5 bg-foreground" />
-                    <span>Sequence Flow</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-0.5 border-t-2 border-dashed border-foreground" />
-                    <span>Message Flow</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-0.5 border-t-2 border-dotted border-foreground" />
-                    <span>Association</span>
-                  </div>
-                  <p className="pt-1 text-muted-foreground">
-                    Drag from any element's anchor points to create connections
-                  </p>
-                </div>
-              </div>
-
-                <p className="text-xs text-muted-foreground pt-2 border-t">
-                  💡 Click elements to add them. Double-click shapes to edit labels. Use context menu (right-click) for more options.
-                </p>
-              </div>
-            </ScrollArea>
+            </div>
             
             {/* Zoom Controls at Bottom - Flowable Style */}
-            <div className="border-t border-border p-2 flex items-center justify-center gap-1 bg-background">
+            <div className="border-t border-border p-2 flex items-center justify-center gap-1 bg-white rounded-b-lg">
               <Button
                 variant="ghost"
                 size="sm"
@@ -3398,11 +3931,124 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 <Settings className="h-3.5 w-3.5" />
               </Button>
             </div>
-          </div>
+            
+            {/* Resize Handles - More visible and easier to grab */}
+            {/* Left edge */}
+            <div
+              className="resize-handle absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('left', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from left"
+            />
+            
+            {/* Right edge */}
+            <div
+              className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('right', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from right"
+            />
+            
+            {/* Top edge */}
+            <div
+              className="resize-handle absolute top-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('top', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from top"
+            />
+            
+            {/* Bottom edge */}
+            <div
+              className="resize-handle absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('bottom', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from bottom"
+            />
+            
+            {/* Corner handles for diagonal resize */}
+            {/* Top-left */}
+            <div
+              className="resize-handle absolute top-0 left-0 w-8 h-8 cursor-nwse-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-tl-lg transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('top-left', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from top-left"
+            />
+            
+            {/* Top-right */}
+            <div
+              className="resize-handle absolute top-0 right-0 w-8 h-8 cursor-nesw-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-tr-lg transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('top-right', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from top-right"
+            />
+            
+            {/* Bottom-left */}
+            <div
+              className="resize-handle absolute bottom-0 left-0 w-8 h-8 cursor-nesw-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-bl-lg transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('bottom-left', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from bottom-left"
+            />
+            
+            {/* Bottom-right */}
+            <div
+              className="resize-handle absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-br-lg transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleResizeStart('bottom-right', e);
+              }}
+              style={{ touchAction: 'none', pointerEvents: 'auto' }}
+              title="Resize from bottom-right"
+            />
+          </motion.div>
         )}
 
         {/* Main Canvas Area */}
         <div className="flex-1 relative flex flex-col overflow-hidden">
+          {/* Floating Toolbar Toggle Button (when toolbar is hidden in fullscreen) */}
+          {isFullscreen && !showToolbar && (
+            <div className="absolute top-4 left-4 z-40">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowToolbar(true)}
+                className="h-8 w-8 p-0 shadow-lg"
+                title="Show Toolbar"
+              >
+                <ChevronLeft className="h-4 w-4 rotate-180" />
+              </Button>
+            </div>
+          )}
+          
           {/* Floating Undo/Redo Toolbar */}
           <div className="absolute top-4 right-4 z-40 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-2">
             <Button
@@ -4875,7 +5521,8 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         </Dialog>
       )}
 
-    </div>
+      </div>
+    </>
   );
 };
 

@@ -5,14 +5,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AnimatedTabs, AnimatedTabsList, AnimatedTabsTrigger, AnimatedTabsContent } from "@/components/ui/AnimatedTabs";
 import { Progress } from "@/components/ui/progress";
-import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon, Video } from "lucide-react";
+import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64, shouldCompressImage } from "@/utils/image-compression";
 import { invokeFunction } from "@/utils/api-client";
 
 const VisionAI = () => {
-  const [showDemo, setShowDemo] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -206,11 +205,6 @@ const VisionAI = () => {
   }, [currentJobId, diagramType, selectedFile]);
 
   const handleGetStarted = () => {
-    setShowDemo(true);
-  };
-
-  const handleDemoComplete = () => {
-    setShowDemo(false);
     setShowUpload(true);
   };
 
@@ -473,38 +467,6 @@ const VisionAI = () => {
         </div>
       </main>
 
-      {/* Demo Video Dialog */}
-      <Dialog open={showDemo} onOpenChange={setShowDemo}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>See Vision AI in Action</DialogTitle>
-            <DialogDescription>
-              Watch how Vision AI transforms handwritten notes, whiteboard diagrams, and process sketches into professional BPMN diagrams
-            </DialogDescription>
-          </DialogHeader>
-          <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-            <iframe
-              width="100%"
-              height="100%"
-              src="https://www.youtube.com/embed/gvwvmUy_wrw"
-              title="BPMN Process Modeling Demo"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="rounded-lg"
-            />
-          </div>
-          <div className="flex justify-end gap-4">
-            <Button variant="outline" onClick={handleDemoComplete}>
-              Skip Demo
-            </Button>
-            <Button onClick={handleDemoComplete}>
-              Try It Now
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Upload Dialog */}
       <Dialog open={showUpload} onOpenChange={setShowUpload}>
         <DialogContent className="max-w-2xl">
@@ -524,7 +486,7 @@ const VisionAI = () => {
             <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
               <input
                 type="file"
-                accept="image/*,.pdf,.doc,.docx,.txt,video/*"
+                accept="image/*,.pdf,.doc,.docx,.txt"
                 onChange={handleFileSelect}
                 className="hidden"
                 id="file-upload"
@@ -532,17 +494,14 @@ const VisionAI = () => {
               />
               <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Video className="w-8 h-8 text-primary" />
+                  <ImageFileIcon className="w-8 h-8 text-primary" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold mb-1">
-                    {selectedFile ? selectedFile.name : "Drop or record your process video"}
+                    {selectedFile ? selectedFile.name : "Drop your process image or document"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Images, PDF, Word documents, text files, or videos
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    MP4/MOV ≤ 200 MB
+                    Images, PDF, Word documents, or text files
                   </p>
                 </div>
               </label>
@@ -594,7 +553,7 @@ const VisionAI = () => {
                 <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                   <input
                     type="file"
-                    accept="image/*,.pdf,.doc,.docx,.txt,video/*"
+                    accept="image/*,.pdf,.doc,.docx,.txt"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload-pid"
@@ -602,17 +561,14 @@ const VisionAI = () => {
                   />
                   <label htmlFor="file-upload-pid" className="cursor-pointer flex flex-col items-center gap-4">
                     <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Video className="w-8 h-8 text-primary" />
+                      <ImageFileIcon className="w-8 h-8 text-primary" />
                     </div>
                     <div>
                       <p className="text-lg font-semibold mb-1">
-                        {selectedFile ? selectedFile.name : "Drop or record your process video"}
+                        {selectedFile ? selectedFile.name : "Drop your process image or document"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Images, PDF, Word documents, text files, or videos
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        MP4/MOV ≤ 200 MB
+                        Images, PDF, Word documents, or text files
                       </p>
                     </div>
                   </label>

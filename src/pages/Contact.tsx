@@ -8,6 +8,7 @@ import { Mail, MessageSquare, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import PageContainer from "@/components/layout/PageContainer";
+import { featureFlags } from "@/config/featureFlags";
 
 const teamMembers = [
   {
@@ -96,37 +97,39 @@ const Contact = () => {
             </div>
           </div>
 
-          <div className="mb-16">
-            <div className="text-center mb-12">
-              <h2 className="text-4xl font-bold mb-4">
-                Meet Our{" "}
-                <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Team</span>
-              </h2>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                The passionate people behind ProssMind
-              </p>
-            </div>
+          {featureFlags.showTeamSection && (
+            <div className="mb-16">
+              <div className="text-center mb-12">
+                <h2 className="text-4xl font-bold mb-4">
+                  Meet Our{" "}
+                  <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Team</span>
+                </h2>
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                  The passionate people behind ProssMind
+                </p>
+              </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {teamMembers.map((member) => (
-                <Card key={member.name} className="text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.03] hover:-translate-y-2">
-                  <CardContent className="pt-6 pb-6">
-                    <Avatar className="w-24 h-24 mx-auto mb-4 transition-all duration-300">
-                      <AvatarImage src={member.image} alt={member.name} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-xl">
-                        {member.initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <h3 className="font-semibold text-lg mb-1">{member.name}</h3>
-                    <p className="text-sm text-primary mb-3">{member.role}</p>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {member.description}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+                {teamMembers.map((member) => (
+                  <Card key={member.name} className="text-center transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:shadow-blue-500/50 hover:scale-[1.03] hover:-translate-y-2">
+                    <CardContent className="pt-6 pb-6">
+                      <Avatar className="w-24 h-24 mx-auto mb-4 transition-all duration-300">
+                        <AvatarImage src={member.image} alt={member.name} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                          {member.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <h3 className="font-semibold text-lg mb-1">{member.name}</h3>
+                      <p className="text-sm text-primary mb-3">{member.role}</p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {member.description}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="max-w-2xl mx-auto">
             <form onSubmit={handleSubmit} className="bg-card border border-border rounded-2xl p-8 space-y-6 transition-all duration-300 hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-blue-500/30">

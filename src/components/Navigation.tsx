@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@supabase/supabase-js";
 import { useAdminStatus } from "@/hooks/useAdminStatus";
-import prossmindLogo from "@/assets/prossmind-logo-transparent.png";
+// Using public asset path for the logo
 import { useState, useEffect, useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import {
@@ -169,7 +169,7 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
           >
             <Link to="/" className="flex items-center space-x-3 group flex-shrink-0" aria-label="ProssMind Home">
               <motion.img 
-                src={prossmindLogo} 
+                src="/prossmind-logo.jpeg" 
                 alt="ProssMind Logo" 
                 className="h-10 w-auto"
                 whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
