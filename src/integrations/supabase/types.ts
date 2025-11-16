@@ -338,6 +338,42 @@ export type Database = {
         }
         Relationships: []
       }
+      projects: {
+        Row: {
+          bpmn_xml: string
+          created_at: string
+          description: string | null
+          diagram_type: string
+          id: string
+          last_accessed_at: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bpmn_xml: string
+          created_at?: string
+          description?: string | null
+          diagram_type: string
+          id?: string
+          last_accessed_at?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bpmn_xml?: string
+          created_at?: string
+          description?: string | null
+          diagram_type?: string
+          id?: string
+          last_accessed_at?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       screen_recording_jobs: {
         Row: {
           bpmn_xml: string | null
