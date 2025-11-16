@@ -383,6 +383,51 @@ export type Database = {
         }
         Relationships: []
       }
+      templates: {
+        Row: {
+          bpmn_xml: string
+          category: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          diagram_type: string
+          icon_name: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+          usage_count: number | null
+        }
+        Insert: {
+          bpmn_xml: string
+          category: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          diagram_type: string
+          icon_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+          usage_count?: number | null
+        }
+        Update: {
+          bpmn_xml?: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          diagram_type?: string
+          icon_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+          usage_count?: number | null
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           created_at: string
