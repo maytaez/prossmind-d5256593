@@ -16,3 +16,5 @@ ON public.screen_recording_jobs(user_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bpmn_generations_input_type 
 ON public.bpmn_generations(input_type, created_at DESC);
 
+
+

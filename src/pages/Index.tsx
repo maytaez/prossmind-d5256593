@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import Navigation from "@/components/Navigation";
 import Hero from "@/components/Hero";
 import DataStory from "@/components/DataStory";
-import TryProssMe from "@/components/TryProssMe";
 import FeatureCards from "@/components/FeatureCards";
 import ProductTiers from "@/components/ProductTiers";
 import ChatBot from "@/components/ChatBot";
@@ -13,7 +11,6 @@ import Footer from "@/components/Footer";
 import TrustStrip from "@/components/TrustStrip";
 
 const Index = () => {
-  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,16 +32,6 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Remove authentication redirect - allow public access with 5 free prompts
-  // Commenting out the auth redirect
-  /*
-  useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/auth");
-    }
-  }, [user, isLoading, navigate]);
-  */
-
   // Show loading state while checking auth
   if (isLoading) {
     return (
@@ -57,14 +44,13 @@ const Index = () => {
     );
   }
 
-  // Render content for both authenticated and unauthenticated users
+  // Render marketing content only - product features moved to app subdomain
   return (
     <div className="min-h-screen bg-background">
       <Navigation user={user} />
       <TrustStrip />
       <Hero />
       <DataStory />
-      <TryProssMe user={user} />
       <FeatureCards />
       <ProductTiers />
       <ChatBot />

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,8 +11,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64, shouldCompressImage } from "@/utils/image-compression";
 import { invokeFunction } from "@/utils/api-client";
+import { navigateWithSubdomain } from "@/utils/subdomain";
 
 const VisionAI = () => {
+  const navigate = useNavigate();
   const [showDemo, setShowDemo] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -52,19 +55,14 @@ const VisionAI = () => {
         setUploadProgress(100);
         setProgressText("Complete!");
         
-        // Auto-redirect after 2s with countdown
-        let countdown = 2;
-        const countdownInterval = setInterval(() => {
-          countdown--;
-          if (countdown > 0) {
-            toast.success(`${diagramName} diagram generated successfully!`, {
-              description: `Redirecting in ${countdown}s...`,
-              duration: 1000,
-            });
-          } else {
-            clearInterval(countdownInterval);
-            window.location.href = '/';
-          }
+        // Redirect to generator page where project saving will be handled
+        const route = diagramType === "bpmn" ? '/bpmn-generator' : '/pid-generator';
+        toast.success(`${diagramName} diagram generated successfully!`, {
+          description: "Redirecting to editor...",
+        });
+        
+        setTimeout(() => {
+          navigateWithSubdomain(navigate, route);
         }, 1000);
         
         setShowUpload(false);
@@ -121,19 +119,14 @@ const VisionAI = () => {
             setUploadProgress(100);
             setProgressText("Complete!");
             
-            // Auto-redirect after 2s with countdown
-            let countdown = 2;
-            const countdownInterval = setInterval(() => {
-              countdown--;
-              if (countdown > 0) {
-                toast.success(`${diagramName} diagram generated successfully!`, {
-                  description: `Redirecting in ${countdown}s...`,
-                  duration: 1000,
-                });
-              } else {
-                clearInterval(countdownInterval);
-                window.location.href = '/';
-              }
+            // Redirect to generator page where project saving will be handled
+            const route = diagramType === "bpmn" ? '/bpmn-generator' : '/pid-generator';
+            toast.success(`${diagramName} diagram generated successfully!`, {
+              description: "Redirecting to editor...",
+            });
+            
+            setTimeout(() => {
+              navigateWithSubdomain(navigate, route);
             }, 1000);
             
             setShowUpload(false);
@@ -276,7 +269,7 @@ const VisionAI = () => {
         setProcessing(false);
         setUploadProgress(0);
         setProgressText("");
-        window.location.href = '/auth';
+        navigateWithSubdomain(navigate, '/auth');
         return;
       }
 

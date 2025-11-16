@@ -113,3 +113,5 @@ export function shouldCompressImage(file: File, maxSizeKB: number = 500): boolea
   return file.size > maxSizeKB * 1024 && file.type.startsWith('image/');
 }
 
+
+

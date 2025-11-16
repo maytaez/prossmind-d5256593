@@ -23,3 +23,5 @@ const AnimatedGradient = ({ children, className = "", speed = 1 }: AnimatedGradi
 
 export default AnimatedGradient;
 
+
+

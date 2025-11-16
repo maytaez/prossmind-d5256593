@@ -25,3 +25,5 @@ CREATE POLICY "Allow service role to view metrics"
 -- 2. The service role key is never exposed to clients
 -- 3. Edge functions are server-side code
 
+
+
