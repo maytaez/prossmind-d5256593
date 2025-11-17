@@ -338,6 +338,42 @@ export type Database = {
         }
         Relationships: []
       }
+      projects: {
+        Row: {
+          bpmn_xml: string
+          created_at: string
+          description: string | null
+          diagram_type: string
+          id: string
+          last_accessed_at: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bpmn_xml: string
+          created_at?: string
+          description?: string | null
+          diagram_type: string
+          id?: string
+          last_accessed_at?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bpmn_xml?: string
+          created_at?: string
+          description?: string | null
+          diagram_type?: string
+          id?: string
+          last_accessed_at?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       screen_recording_jobs: {
         Row: {
           bpmn_xml: string | null
@@ -380,6 +416,51 @@ export type Database = {
           status?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      templates: {
+        Row: {
+          bpmn_xml: string
+          category: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          diagram_type: string
+          icon_name: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string
+          usage_count: number | null
+        }
+        Insert: {
+          bpmn_xml: string
+          category: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          diagram_type: string
+          icon_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string
+          usage_count?: number | null
+        }
+        Update: {
+          bpmn_xml?: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          diagram_type?: string
+          icon_name?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string
+          usage_count?: number | null
         }
         Relationships: []
       }

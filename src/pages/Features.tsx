@@ -22,7 +22,7 @@ const featuresDetailed = [
     icon: Eye,
     title: "Vision Automation",
     description: "Automate visual tasks with advanced computer vision and image processing powered by state-of-the-art AI.",
-    benefits: ["Image recognition", "OCR capabilities", "Video analysis"],
+    benefits: ["Image recognition", "OCR capabilities"],
   },
   {
     icon: Zap,
