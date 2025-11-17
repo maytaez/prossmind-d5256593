@@ -653,7 +653,16 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     let bpmnXml = bpmnData.candidates[0].content.parts[0].text;
     bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
 
-    // Store in cache (async, don't wait)
+    // Validate XML structure before caching (only cache valid responses)
+    if (!bpmnXml.startsWith('<?xml')) {
+      throw new Error('Generated content is not valid XML - missing XML declaration');
+    }
+    
+    if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
+      throw new Error('Generated BPMN XML is invalid or incomplete');
+    }
+
+    // Store in cache only after successful validation (200 response + valid XML)
     (async () => {
       try {
         await storeExactHashCache(documentHash, documentAnalysis, diagramType, bpmnXml);

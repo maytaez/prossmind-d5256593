@@ -34,3 +34,6 @@ const AnimatedText = ({ text, className = "", delay = 0, staggerDelay = 0.05 }: 
 
 export default AnimatedText;
 
+
+
+

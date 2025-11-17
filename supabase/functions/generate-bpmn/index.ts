@@ -211,7 +211,16 @@ serve(async (req) => {
 
         console.log('Cleaned BPMN XML:', bpmnXml);
 
-        // Store in cache (async, don't wait)
+        // Validate XML structure before caching (only cache valid responses)
+        if (!bpmnXml.startsWith('<?xml')) {
+          throw new Error('Generated content is not valid XML - missing XML declaration');
+        }
+        
+        if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
+          throw new Error('Generated BPMN XML is invalid or incomplete');
+        }
+
+        // Store in cache only after successful validation (async, don't wait)
         (async () => {
           try {
             let embedding: number[] | undefined;

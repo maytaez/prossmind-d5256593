@@ -2,6 +2,7 @@ import { Shield, MapPin, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useScrollReveal, staggerContainerVariants, staggerItemVariants } from "@/hooks/useScrollReveal";
+import { getSubdomainUrl } from "@/utils/subdomain";
 
 const Footer = () => {
   const { ref, isInView } = useScrollReveal({ threshold: 0.1 });
@@ -40,13 +41,22 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
-                <Link to="/vision-ai" className="hover:text-foreground transition-colors relative group">
-                  Vision AI
+                <a href={getSubdomainUrl('docs')} className="hover:text-foreground transition-colors relative group">
+                  Documentation
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}
                   />
-                </Link>
+                </a>
+              </li>
+              <li>
+                <a href={getSubdomainUrl('status')} className="hover:text-foreground transition-colors relative group">
+                  Status
+                  <motion.span
+                    className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
+                    whileHover={{ width: "100%" }}
+                  />
+                </a>
               </li>
             </ul>
           </motion.div>

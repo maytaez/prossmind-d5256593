@@ -97,3 +97,6 @@ export function analyzePrompt(prompt: string, diagramType: 'bpmn' | 'pid' = 'bpm
   };
 }
 
+
+
+

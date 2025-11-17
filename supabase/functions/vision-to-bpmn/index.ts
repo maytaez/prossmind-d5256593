@@ -430,8 +430,20 @@ Return ONLY the XML, no other text.`;
           throw new Error('Generation failed (Reason: failed to parse document as <bpmn:Definitions>). Try simplified prompt.');
         }
 
-        // Store complete result in vision cache if from image (and not already cached)
-        if (imageHash && isImage && !cacheHit) {
+        // Update job with success first (only cache if job update succeeds)
+        const modelUsed = cacheHit ? 'cached' : selectedModel;
+        const { error: updateError } = await supabase
+          .from('vision_bpmn_jobs')
+          .update({
+            bpmn_xml: bpmnXml,
+            status: 'completed',
+            model_used: modelUsed,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+
+        // Only cache if job update succeeded (200 response + valid XML + successful DB update)
+        if (!updateError && imageHash && isImage && !cacheHit) {
           console.log('💾 Storing result in vision cache for hash:', imageHash.substring(0, 16) + '...');
           // Extract a brief description from the first few elements for cache
           const descMatch = bpmnXml.match(/<bpmn:textAnnotation[^>]*>.*?<bpmn:text>(.*?)<\/bpmn:text>/s);
@@ -451,19 +463,10 @@ Return ONLY the XML, no other text.`;
           
           await storeVisionCache(imageHash, diagramType, briefDesc, bpmnXml, embedding);
           console.log('✅ Vision cache stored successfully');
+        } else if (updateError) {
+          console.error('Failed to update job status, skipping cache:', updateError);
+          throw new Error('Failed to update job status');
         }
-
-        // Update job with success
-        const modelUsed = cacheHit ? 'cached' : selectedModel;
-        await supabase
-          .from('vision_bpmn_jobs')
-          .update({
-            bpmn_xml: bpmnXml,
-            status: 'completed',
-            model_used: modelUsed,
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', job.id);
 
         console.log('Job completed:', job.id);
 

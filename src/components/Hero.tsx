@@ -9,13 +9,22 @@ import LottieAnimation from "@/components/animations/LottieAnimation";
 import { scrollRevealVariants } from "@/hooks/useScrollReveal";
 import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
 import { useRef, useEffect, useState } from "react";
+import { navigateToApp } from "@/utils/subdomain";
+import { supabase } from "@/integrations/supabase/client";
 
 const Hero = () => {
   const prefersReducedMotion = useReducedMotion();
   const heroImageRef = useRef<HTMLDivElement>(null);
-  const scrollToTry = () => {
-    const trySection = document.querySelector('[data-section="try-prossmind"]');
-    trySection?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+  }, []);
+
+  const handleTryItFree = () => {
+    navigateToApp(user ? '/dashboard' : '/auth');
   };
 
   const { scrollY } = useScroll();
@@ -95,7 +104,7 @@ const Hero = () => {
                 <Button 
                   size="lg" 
                   className="group text-base px-8 py-6 shadow-lg hover:shadow-xl transition-all focus-visible:outline-2 focus-visible:outline-offset-2 relative overflow-hidden"
-                  onClick={scrollToTry}
+                  onClick={handleTryItFree}
                   aria-label="Try ProssMind for free"
                   style={{
                     background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.9))",

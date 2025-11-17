@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, LogOut, Shield, Menu } from "lucide-react";
+import { ChevronRight, LogOut, Shield, Menu, LayoutDashboard, FolderKanban, FileText, Eye, User as UserIcon, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@supabase/supabase-js";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
+import { getSubdomainType, getSubdomainUrl, getSubdomainQuery, isLocalhost, getMainHomeUrl, getSubdomain } from "@/utils/subdomain";
 
 const Navigation = ({ user: userProp }: { user?: User | null }) => {
   const location = useLocation();
@@ -134,13 +135,27 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
     window.location.href = '/';
   };
   
-  const navItems = [
-    { name: "App", path: "/" },
+  const subdomainType = getSubdomainType();
+  const isAppSubdomain = subdomainType === 'app';
+  
+  // App subdomain navigation items
+  const appNavItems = [
+    { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    { name: "Projects", path: "/projects", icon: FolderKanban },
+    { name: "Templates", path: "/templates", icon: FileText },
+    { name: "Vision AI", path: "/vision-ai", icon: Eye },
+  ];
+  
+  // Main domain navigation items
+  const mainNavItems = [
     { name: "Features", path: "/features" },
     { name: "Vision AI", path: "/vision-ai" },
     { name: "Pricing", path: "/pricing" },
+    { name: "Documentation", path: getSubdomainUrl('docs'), external: true },
     { name: "Contact", path: "/contact" },
   ];
+  
+  const navItems = isAppSubdomain ? appNavItems : mainNavItems;
 
   return (
     <motion.nav 
@@ -167,7 +182,11 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
             animate={prefersReducedMotion ? { scale: 1 } : { scale: isScrolled ? 0.95 : 1 }}
             transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
           >
-            <Link to="/" className="flex items-center space-x-3 group flex-shrink-0" aria-label="ProssMind Home">
+            <a 
+              href={getMainHomeUrl()} 
+              className="flex items-center space-x-3 group flex-shrink-0" 
+              aria-label="ProssMind Home"
+            >
               <motion.img 
                 src="/prossmind-logo.jpeg" 
                 alt="ProssMind Logo" 
@@ -178,7 +197,7 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
               <div className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent whitespace-nowrap">
                 ProssMind
               </div>
-            </Link>
+            </a>
           </motion.div>
 
           {/* Desktop Navigation */}
@@ -193,34 +212,77 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                 }}
                 transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
               >
-                {navItems.map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap relative ${
-                      location.pathname === item.path
-                        ? "text-primary-foreground"
-                        : "text-foreground/70 hover:text-foreground hover:bg-muted/80 hover:scale-[1.02]"
-                    }`}
-                    aria-label={`Navigate to ${item.name} page`}
-                  >
-                    {location.pathname === item.path && (
-                      <motion.div
-                        layoutId={prefersReducedMotion ? undefined : "activeNavIndicator"}
-                        className="absolute inset-0 bg-primary rounded-full shadow-md"
-                        transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
-                    <span className="relative z-10">{item.name}</span>
-                  </Link>
-                ))}
+                {navItems.map((item) => {
+                  const Icon = (item as any).icon;
+                  const isExternal = (item as any).external;
+                  const isActive = !isExternal && (location.pathname === item.path || (item.path === "/dashboard" && location.pathname === "/"));
+                  
+                  const className = `px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap relative flex items-center gap-2 ${
+                    isActive
+                      ? "text-primary-foreground"
+                      : "text-foreground/70 hover:text-foreground hover:bg-muted/80 hover:scale-[1.02]"
+                  }`;
+                  
+                  if (isExternal) {
+                    return (
+                      <a
+                        key={item.path}
+                        href={item.path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={className}
+                        aria-label={`Navigate to ${item.name} page`}
+                      >
+                        {Icon && <Icon className="h-4 w-4 relative z-10" />}
+                        <span className="relative z-10">{item.name}</span>
+                      </a>
+                    );
+                  }
+                  
+                  const linkPath = !isExternal && isLocalhost() 
+                    ? `${item.path}${getSubdomainQuery()}`
+                    : item.path;
+                  
+                  return (
+                    <Link
+                      key={item.path}
+                      to={linkPath}
+                      className={className}
+                      aria-label={`Navigate to ${item.name} page`}
+                    >
+                      {isActive ? (
+                        <motion.div
+                          layoutId={prefersReducedMotion ? undefined : "activeNavIndicator"}
+                          className="absolute inset-0 bg-primary rounded-full shadow-md"
+                          transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      ) : null}
+                      {Icon && <Icon className="h-4 w-4 relative z-10" />}
+                      <span className="relative z-10">{item.name}</span>
+                    </Link>
+                  );
+                })}
               </motion.div>
 
               {user ? (
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <ThemeToggle />
+                  {isAppSubdomain && (
+                    <>
+                      <Link to={isLocalhost() ? `/account${getSubdomainQuery()}` : "/account"}>
+                        <Button variant="ghost" size="sm" className="gap-2" aria-label="Account">
+                          <UserIcon className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                      <Link to={isLocalhost() ? `/settings${getSubdomainQuery()}` : "/settings"}>
+                        <Button variant="ghost" size="sm" className="gap-2" aria-label="Settings">
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </>
+                  )}
                   {isAdmin && (
-                    <Link to="/admin">
+                    <Link to={isLocalhost() ? `/admin${getSubdomainQuery()}` : "/admin"}>
                       <Button variant="outline" size="sm" className="gap-2 hover:bg-primary/10 hover:border-primary/50 transition-all whitespace-nowrap" aria-label="Admin Dashboard">
                         <Shield className="h-4 w-4" aria-hidden="true" />
                         Admin
@@ -236,9 +298,9 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
               ) : (
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <ThemeToggle />
-                  <Link to="/auth" className="flex-shrink-0">
+                  <Link to={isLocalhost() ? `/auth${getSubdomainQuery()}` : "/auth"} className="flex-shrink-0">
                     <Button className="flex items-center gap-2 bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg transition-all whitespace-nowrap" aria-label="Sign up or log in">
-                      Sign Up
+                      {isAppSubdomain ? "Sign In" : "Sign Up"}
                       <ChevronRight className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </Link>
@@ -279,37 +341,99 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                     <span className="text-sm font-medium">Theme</span>
                     <ThemeToggle />
                   </motion.div>
-                  {navItems.map((item, index) => (
-                    <motion.div
-                      key={item.path}
-                      initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.1 + index * 0.05 }}
-                    >
-                      <Link
-                        to={item.path}
-                        onClick={() => setIsSheetOpen(false)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 block ${
-                          location.pathname === item.path
-                            ? "bg-primary text-primary-foreground"
-                            : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
-                        }`}
-                        aria-label={`Navigate to ${item.name} page`}
+                  {navItems.map((item, index) => {
+                    const Icon = (item as any).icon;
+                    const isExternal = (item as any).external;
+                    const isActive = !isExternal && (location.pathname === item.path || (item.path === "/dashboard" && location.pathname === "/"));
+                    
+                    const className = `px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
+                    }`;
+                    
+                    return (
+                      <motion.div
+                        key={item.path}
+                        initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.1 + index * 0.05 }}
                       >
-                        {item.name}
-                      </Link>
-                    </motion.div>
-                  ))}
+                        {isExternal ? (
+                          <a
+                            href={item.path}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={className}
+                            aria-label={`Navigate to ${item.name} page`}
+                          >
+                            {Icon && <Icon className="h-4 w-4" />}
+                            {item.name}
+                          </a>
+                        ) : (
+                          <Link
+                            to={isLocalhost() ? `${item.path}${getSubdomainQuery()}` : item.path}
+                            onClick={() => setIsSheetOpen(false)}
+                            className={className}
+                            aria-label={`Navigate to ${item.name} page`}
+                          >
+                            {Icon && <Icon className="h-4 w-4" />}
+                            {item.name}
+                          </Link>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                  {isAppSubdomain && user && (
+                    <>
+                      <motion.div
+                        initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.3 }}
+                      >
+                        <Link
+                          to={isLocalhost() ? `/account${getSubdomainQuery()}` : "/account"}
+                          onClick={() => setIsSheetOpen(false)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                            location.pathname === "/account"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          <UserIcon className="h-4 w-4" />
+                          Account
+                        </Link>
+                      </motion.div>
+                      <motion.div
+                        initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 0.35 }}
+                      >
+                        <Link
+                          to={isLocalhost() ? `/settings${getSubdomainQuery()}` : "/settings"}
+                          onClick={() => setIsSheetOpen(false)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                            location.pathname === "/settings"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-foreground/70 hover:text-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          <Settings className="h-4 w-4" />
+                          Settings
+                        </Link>
+                      </motion.div>
+                    </>
+                  )}
                   {user ? (
                     <>
-                      {isAdmin && (
-                        <Link to="/admin" onClick={() => setIsSheetOpen(false)}>
-                          <Button variant="outline" className="w-full justify-start gap-2" aria-label="Admin Dashboard">
-                            <Shield className="h-4 w-4" aria-hidden="true" />
-                            Admin
-                          </Button>
-                        </Link>
-                      )}
+                  {isAdmin && (
+                    <Link to={isLocalhost() ? `/admin${getSubdomainQuery()}` : "/admin"} onClick={() => setIsSheetOpen(false)}>
+                      <Button variant="outline" className="w-full justify-start gap-2" aria-label="Admin Dashboard">
+                        <Shield className="h-4 w-4" aria-hidden="true" />
+                        Admin
+                      </Button>
+                    </Link>
+                  )}
                       <div className="px-4 py-2 text-sm text-muted-foreground" aria-label={`Logged in as ${user.email}`}>
                         {user.email}
                       </div>
@@ -327,7 +451,7 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                       </Button>
                     </>
                   ) : (
-                    <Link to="/auth" onClick={() => setIsSheetOpen(false)}>
+                    <Link to={isLocalhost() ? `/auth${getSubdomainQuery()}` : "/auth"} onClick={() => setIsSheetOpen(false)}>
                       <Button className="w-full gap-2" aria-label="Sign up or log in">
                         Sign Up
                         <ChevronRight className="h-4 w-4" aria-hidden="true" />

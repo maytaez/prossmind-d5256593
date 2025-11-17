@@ -30,6 +30,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import { isAppSubdomain } from "@/utils/subdomain";
+import { ProjectNameDialog } from "@/components/ProjectNameDialog";
+import { createProject, updateProject, type Project } from "@/utils/projects-service";
 
 const suggestionPrompts = [
   "Create a customer onboarding process",
@@ -47,6 +50,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [bpmnXml, setBpmnXml] = useState<string | null>(null);
   const [diagramType, setDiagramType] = useState<"bpmn" | "pid">("bpmn");
+  const isApp = isAppSubdomain();
   const [isRecording, setIsRecording] = useState(false);
   const [language, setLanguage] = useState("en-US");
   const [uploadedFile, setUploadedFile] = useState<{
@@ -66,17 +70,26 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [showSaveProjectDialog, setShowSaveProjectDialog] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const [pendingXml, setPendingXml] = useState<string | null>(null);
 
   // Load generated BPMN or P&ID from localStorage on mount
   useEffect(() => {
     const diagramType = localStorage.getItem('diagramType') || 'bpmn';
     const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
     const generatedDiagram = localStorage.getItem(storageKey);
+    const projectId = localStorage.getItem('currentProjectId');
     
     if (generatedDiagram) {
       setBpmnXml(generatedDiagram);
+      setCurrentProjectId(projectId);
       localStorage.removeItem(storageKey);
       localStorage.removeItem('diagramType');
+      if (projectId) {
+        localStorage.removeItem('currentProjectId');
+      }
       
       const diagramName = diagramType === 'bpmn' ? 'BPMN' : 'P&ID';
       toast.success(`Your generated ${diagramName} diagram is ready!`, {
@@ -166,25 +179,31 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           const job = payload.new as { status: string; bpmn_xml?: string; error_message?: string };
           console.log('Realtime job status update:', job.status);
 
-          if (job.status === 'completed' && job.bpmn_xml) {
-            const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
-            setBpmnXml(job.bpmn_xml);
-            setGenerationStep("idle");
-            setIsGenerating(false);
-            setCurrentJobId(null);
-            setShowPreview(false);
-            setUploadedFile(null);
-            toast.success(`${diagramName} diagram generated successfully!`);
-            
-            // Scroll to the viewer
-            setTimeout(() => {
-              document.getElementById('bpmn-viewer')?.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'start' 
-              });
-            }, 500);
-            
-            if (pollInterval) clearInterval(pollInterval);
+                    if (job.status === 'completed' && job.bpmn_xml) {
+                        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+                        setBpmnXml(job.bpmn_xml);
+                        setGenerationStep("idle");
+                        setIsGenerating(false);
+                        setCurrentJobId(null);
+                        setShowPreview(false);
+                        setUploadedFile(null);
+                        toast.success(`${diagramName} diagram generated successfully!`);
+
+                        // Show save project dialog if user is authenticated
+                        if (user) {
+                          setPendingXml(job.bpmn_xml);
+                          setShowSaveProjectDialog(true);
+                        }
+
+                        // Scroll to the viewer
+                        setTimeout(() => {
+                            document.getElementById('bpmn-viewer')?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                            });
+                        }, 500);
+
+                        if (pollInterval) clearInterval(pollInterval);
           } else if (job.status === 'failed') {
             const errorMsg = job.error_message || "Processing failed. Please try again.";
             setGenerationStep("idle");
@@ -304,6 +323,12 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         setBpmnXml(data.bpmnXml);
         setGenerationStep("idle");
         toast.success(`${diagramName} model generated successfully!`);
+        
+        // Show save project dialog if user is authenticated
+        if (user) {
+          setPendingXml(data.bpmnXml);
+          setShowSaveProjectDialog(true);
+        }
       } else {
         setGenerationStep("idle");
         toast.error("No diagram data received");
@@ -665,7 +690,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
   return (
     <motion.section 
-      className="py-24 bg-muted/20 relative" 
+      className={`${isApp ? 'py-8' : 'py-24'} bg-muted/20 relative`}
       data-section="try-prossmind"
       initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 50 }}
       whileInView={{ opacity: 1, y: 0 }}
@@ -673,20 +698,22 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.7 }}
     >
       <div className="container mx-auto px-6">
-        <motion.div 
-          className="text-center mb-12"
-          initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
-          whileInView={{ opacity: 1, y: 0, scale: 1 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6, delay: 0.2 }}
-        >
-          <h2 className="text-4xl md:text-5xl font-bold mb-6">
-            Try <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">ProssMind!</span>
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            Describe your business process, upload an image, PDF, Word doc, or text file - AI will generate a BPMN or P&ID diagram for you
-          </p>
-        </motion.div>
+        {!isApp && (
+          <motion.div 
+            className="text-center mb-12"
+            initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.3 }}
+            transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6, delay: 0.2 }}
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+              Try <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">ProssMind!</span>
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
+              Describe your business process, upload an image, PDF, Word doc, or text file - AI will generate a BPMN or P&ID diagram for you
+            </p>
+          </motion.div>
+        )}
         
         <div className="max-w-5xl mx-auto mt-12 space-y-8">
           <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
@@ -1151,9 +1178,28 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                 <BpmnViewerComponent 
                   xml={bpmnXml}
                   diagramType={diagramType}
-                  onSave={(updatedXml) => {
+                  onSave={async (updatedXml) => {
                     setBpmnXml(updatedXml);
-                    toast.success("Diagram saved to workspace");
+                    
+                    // If we have a current project, update it
+                    if (currentProjectId && user) {
+                      const { error } = await updateProject(currentProjectId, user.id, {
+                        bpmn_xml: updatedXml
+                      });
+                      
+                      if (error) {
+                        toast.error("Failed to update project");
+                        console.error(error);
+                      } else {
+                        toast.success("Project updated successfully");
+                      }
+                    } else if (user && updatedXml) {
+                      // If no project exists, prompt to save
+                      setPendingXml(updatedXml);
+                      setShowSaveProjectDialog(true);
+                    } else {
+                      toast.success("Diagram saved to workspace");
+                    }
                   }}
                   onRefine={() => setShowRefineDialog(true)}
                 />
@@ -1225,6 +1271,40 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              {/* Save Project Dialog */}
+              {user && (
+                <ProjectNameDialog
+                  open={showSaveProjectDialog}
+                  onOpenChange={setShowSaveProjectDialog}
+                  onSave={async (name, description) => {
+                    if (!pendingXml || !user) return;
+
+                    setIsSavingProject(true);
+                    const { data, error } = await createProject({
+                      user_id: user.id,
+                      name,
+                      description: description || null,
+                      diagram_type: diagramType,
+                      bpmn_xml: pendingXml,
+                    });
+
+                    if (error) {
+                      toast.error("Failed to save project");
+                      console.error(error);
+                    } else if (data) {
+                      setCurrentProjectId(data.id);
+                      setPendingXml(null);
+                      toast.success("Project saved successfully!");
+                    }
+
+                    setIsSavingProject(false);
+                    setShowSaveProjectDialog(false);
+                  }}
+                  diagramType={diagramType}
+                  isLoading={isSavingProject}
+                />
+              )}
             </div>
           ) : isGenerating && generationStep === "drawing" ? (
             <motion.div 
