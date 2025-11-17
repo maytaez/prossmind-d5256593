@@ -129,104 +129,135 @@ serve(async (req) => {
     const systemMessage = messages.find((m: any) => m.role === 'system');
     const userMessages = messages.filter((m: any) => m.role === 'user');
     
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GOOGLE_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: userMessages.map((m: any) => ({
-            role: 'user',
-            parts: [{ text: m.content }]
-          })),
-          systemInstruction: systemMessage ? {
-            parts: [{ text: systemMessage.content }]
-          } : undefined,
-          generationConfig: {
-            maxOutputTokens: maxTokens,
-            temperature: temperature
-          }
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Google Gemini API error:', response.status, errorText);
-      
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Google API rate limit exceeded. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      if (response.status === 503) {
-        return new Response(
-          JSON.stringify({ error: 'Google Gemini service is temporarily overloaded. Please try again in a moment.' }),
-          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      return new Response(
-        JSON.stringify({ error: `Google API error: ${errorText}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const data = await response.json();
-    console.log('AI Response received');
+    // Retry mechanism for handling transient API failures
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    let lastError: string | undefined;
     
-    let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
-    if (!bpmnXml) {
-      console.error('Failed to extract BPMN XML from response. Full response:', JSON.stringify(data));
-      throw new Error('No content generated from AI model');
-    }
-
-    // Clean up the response - remove markdown code blocks if present
-    bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
-
-    console.log('Cleaned BPMN XML:', bpmnXml);
-
-    // Store in cache (async, don't wait)
-    (async () => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        console.log(`Retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      
       try {
-        let embedding: number[] | undefined;
-        if (isSemanticCacheEnabled()) {
-          try {
-            embedding = await generateEmbedding(prompt);
-          } catch (e) {
-            console.warn('Failed to generate embedding for cache storage:', e);
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GOOGLE_API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: userMessages.map((m: any) => ({
+                role: 'user',
+                parts: [{ text: m.content }]
+              })),
+              systemInstruction: systemMessage ? {
+                parts: [{ text: systemMessage.content }]
+              } : undefined,
+              generationConfig: {
+                maxOutputTokens: maxTokens,
+                temperature: temperature
+              }
+            }),
           }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Google Gemini API error:', response.status, errorText);
+          
+          // Rate limit - don't retry
+          if (response.status === 429) {
+            return new Response(
+              JSON.stringify({ error: 'Google API rate limit exceeded. Please try again later.' }),
+              { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          
+          // Service overloaded - retry with backoff
+          if (response.status === 503) {
+            lastError = 'Google Gemini service is temporarily overloaded.';
+            if (attempt < maxRetries - 1) {
+              continue; // Retry
+            }
+            return new Response(
+              JSON.stringify({ error: `${lastError} Please try again in a moment.` }),
+              { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          
+          // Other errors - don't retry
+          return new Response(
+            JSON.stringify({ error: `Google API error: ${errorText}` }),
+            { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
-        await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding);
-      } catch (cacheError) {
-        console.error('Failed to store in cache:', cacheError);
+
+        const data = await response.json();
+        console.log('AI Response received');
+        
+        let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        if (!bpmnXml) {
+          console.error('Failed to extract BPMN XML from response. Full response:', JSON.stringify(data));
+          throw new Error('No content generated from AI model');
+        }
+
+        // Clean up the response - remove markdown code blocks if present
+        bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+
+        console.log('Cleaned BPMN XML:', bpmnXml);
+
+        // Store in cache (async, don't wait)
+        (async () => {
+          try {
+            let embedding: number[] | undefined;
+            if (isSemanticCacheEnabled()) {
+              try {
+                embedding = await generateEmbedding(prompt);
+              } catch (e) {
+                console.warn('Failed to generate embedding for cache storage:', e);
+              }
+            }
+            await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding);
+          } catch (cacheError) {
+            console.error('Failed to store in cache:', cacheError);
+          }
+        })();
+
+        const responseTime = Date.now() - startTime;
+
+        // Log performance metric
+        await logPerformanceMetric({
+          function_name: 'generate-bpmn',
+          cache_type: cacheType,
+          model_used: modelUsed,
+          prompt_length: promptLength,
+          complexity_score: complexityScore,
+          response_time_ms: responseTime,
+          cache_hit: cacheType !== 'none',
+          similarity_score: similarityScore,
+          error_occurred: false,
+        });
+
+        return new Response(
+          JSON.stringify({ bpmnXml, cached: false }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (fetchError) {
+        console.error(`Fetch attempt ${attempt + 1} failed:`, fetchError);
+        lastError = fetchError instanceof Error ? fetchError.message : 'Network error';
+        if (attempt < maxRetries - 1) {
+          continue; // Retry
+        }
       }
-    })();
-
-    const responseTime = Date.now() - startTime;
-
-    // Log performance metric
-    await logPerformanceMetric({
-      function_name: 'generate-bpmn',
-      cache_type: cacheType,
-      model_used: modelUsed,
-      prompt_length: prompt.length,
-      complexity_score: complexityScore,
-      response_time_ms: responseTime,
-      cache_hit: cacheType !== 'none',
-      similarity_score: similarityScore,
-      error_occurred: false,
-    });
-
-    return new Response(
-      JSON.stringify({ bpmnXml, cached: false }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    }
+    
+    // If we get here, all retries failed
+    throw new Error(`Failed after ${maxRetries} attempts: ${lastError}`);
 
   } catch (error) {
     errorOccurred = true;
