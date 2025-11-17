@@ -22,9 +22,19 @@ serve(async (req) => {
   let modelUsed: string | undefined;
   let errorOccurred = false;
   let errorMessage: string | undefined;
+  let prompt: string | undefined;
+  let promptLength = 0;
 
   try {
-    const { prompt, diagramType = 'bpmn' } = await req.json();
+    const requestData = await req.json();
+    prompt = requestData.prompt;
+    const diagramType = requestData.diagramType || 'bpmn';
+    
+    if (!prompt) {
+      throw new Error('Prompt is required');
+    }
+    
+    promptLength = prompt.length;
     console.log('Generating BPMN for prompt:', prompt);
 
     // Generate hash for exact cache lookup
@@ -217,7 +227,7 @@ serve(async (req) => {
       function_name: 'generate-bpmn',
       cache_type: cacheType,
       model_used: modelUsed,
-      prompt_length: prompt?.length || 0,
+      prompt_length: promptLength,
       response_time_ms: responseTime,
       cache_hit: false,
       error_occurred: true,
