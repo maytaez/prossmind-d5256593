@@ -1,4 +1,4 @@
-export type SubdomainType = 'main' | 'app' | 'docs' | 'admin' | 'blog' | 'status' | 'api' | 'de' | 'fr' | 'bpmn' | 'pid' | 'partners';
+export type SubdomainType = 'main' | 'app' | 'docs' | 'admin' | 'status' | 'api' | 'de' | 'fr' | 'bpmn' | 'pid' | 'partners';
 
 export const getSubdomain = () => {
   // Check for query parameter first (for local development)
@@ -20,7 +20,7 @@ export const getSubdomainType = (): SubdomainType => {
   const subdomain = getSubdomain();
   if (!subdomain) return 'main';
   
-  const validSubdomains: SubdomainType[] = ['app', 'docs', 'admin', 'blog', 'status', 'api', 'de', 'fr', 'bpmn', 'pid', 'partners'];
+  const validSubdomains: SubdomainType[] = ['app', 'docs', 'admin', 'status', 'api', 'de', 'fr', 'bpmn', 'pid', 'partners'];
   if (validSubdomains.includes(subdomain as SubdomainType)) {
     return subdomain as SubdomainType;
   }

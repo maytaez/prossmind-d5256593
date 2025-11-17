@@ -107,7 +107,7 @@ const Templates = ({ user }: TemplatesProps) => {
     return (
       <div className="min-h-screen bg-background pt-24 pb-20">
         <PageContainer>
-          <Card>
+          <Card className="hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300">
             <CardContent className="flex flex-col items-center justify-center py-16">
               <Workflow className="h-16 w-16 text-muted-foreground mb-4 opacity-50" />
               <h3 className="text-xl font-semibold mb-2">Error loading templates</h3>
@@ -149,25 +149,30 @@ const Templates = ({ user }: TemplatesProps) => {
             {filteredTemplates.map((template) => {
               const Icon = getIcon(template.icon_name);
               return (
-                <Card key={template.id} className="hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <div className="flex items-start justify-between mb-2">
-                      <Icon className="h-8 w-8 text-primary" />
+                <Card key={template.id} className="flex flex-col hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300">
+                  <CardHeader className="flex-1">
+                    <div className="flex items-start justify-between mb-3">
+                      <Icon className="h-8 w-8 text-primary flex-shrink-0" />
                       <Badge variant={template.diagram_type === 'bpmn' ? 'default' : 'secondary'}>
                         {template.diagram_type.toUpperCase()}
                       </Badge>
                     </div>
-                    <CardTitle>{template.name}</CardTitle>
-                    <CardDescription>{template.description || 'No description available'}</CardDescription>
+                    <CardTitle className="mb-2 min-h-[3rem]">{template.name}</CardTitle>
+                    <CardDescription className="min-h-[4.5rem] max-h-[4.5rem] overflow-hidden">
+                      <div className="line-clamp-3">
+                        {template.description || 'No description available'}
+                      </div>
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className="capitalize">
+                  <CardContent className="mt-auto pt-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="outline" className="capitalize flex-shrink-0">
                         {template.category}
                       </Badge>
                       <Button
                         size="sm"
                         onClick={() => handleUseTemplate(template)}
+                        className="flex-shrink-0"
                       >
                         Use Template
                       </Button>
@@ -178,7 +183,7 @@ const Templates = ({ user }: TemplatesProps) => {
             })}
           </div>
         ) : (
-          <Card>
+          <Card className="hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300">
             <CardContent className="flex flex-col items-center justify-center py-16">
               <Workflow className="h-16 w-16 text-muted-foreground mb-4 opacity-50" />
               <h3 className="text-xl font-semibold mb-2">No templates found</h3>

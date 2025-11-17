@@ -152,7 +152,6 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
     { name: "Vision AI", path: "/vision-ai" },
     { name: "Pricing", path: "/pricing" },
     { name: "Documentation", path: getSubdomainUrl('docs'), external: true },
-    { name: "Blog", path: getSubdomainUrl('blog'), external: true },
     { name: "Contact", path: "/contact" },
   ];
   

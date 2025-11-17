@@ -356,7 +356,7 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
     console.log('BPMN refinement complete - XML validated');
     console.log('Refined XML length:', refinedBpmnXml.length);
 
-    // Store in cache (async, don't wait)
+    // Store in cache only after successful validation (200 response + valid XML)
     (async () => {
       try {
         const xmlSummary = extractXmlSummary(currentBpmnXml);

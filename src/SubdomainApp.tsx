@@ -5,7 +5,6 @@ import AppSubdomain from "./pages/AppSubdomain";
 import DocsSubdomain from "./pages/DocsSubdomain";
 import StatusSubdomain from "./pages/StatusSubdomain";
 import AdminSubdomain from "./pages/AdminSubdomain";
-import BlogSubdomain from "./pages/BlogSubdomain";
 import ApiSubdomain from "./pages/ApiSubdomain";
 import PartnersSubdomain from "./pages/PartnersSubdomain";
 import LocalizedSubdomain from "./pages/LocalizedSubdomain";
@@ -28,10 +27,6 @@ const SubdomainApp = () => {
 
   if (subdomain === "admin") {
     return <AdminSubdomain />;
-  }
-
-  if (subdomain === "blog") {
-    return <BlogSubdomain />;
   }
 
   if (subdomain === "api") {

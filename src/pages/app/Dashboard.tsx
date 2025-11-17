@@ -63,7 +63,7 @@ const Dashboard = ({ user }: DashboardProps) => {
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/bpmn-generator')}>
+          <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/bpmn-generator')}>
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
                 <Workflow className="h-10 w-10 text-primary mb-4" />
@@ -79,7 +79,7 @@ const Dashboard = ({ user }: DashboardProps) => {
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/pid-generator')}>
+          <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/pid-generator')}>
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
                 <Factory className="h-10 w-10 text-primary mb-4" />
@@ -95,7 +95,7 @@ const Dashboard = ({ user }: DashboardProps) => {
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/vision-ai')}>
+          <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/vision-ai')}>
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
                 <Eye className="h-10 w-10 text-primary mb-4" />
@@ -114,7 +114,7 @@ const Dashboard = ({ user }: DashboardProps) => {
 
         <div className="grid md:grid-cols-2 gap-8">
           {/* Usage Statistics */}
-          <Card className="flex flex-col">
+          <Card className="flex flex-col hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300">
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
                 <div className="h-10 w-10 mb-4 flex items-center justify-center">
@@ -152,7 +152,7 @@ const Dashboard = ({ user }: DashboardProps) => {
           </Card>
 
           {/* Recent Activity */}
-          <Card className="flex flex-col">
+          <Card className="flex flex-col hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300">
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
                 <div className="h-10 w-10 mb-4 flex items-center justify-center">
