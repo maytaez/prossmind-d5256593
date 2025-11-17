@@ -9,6 +9,137 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * Validate BPMN XML using the built-in DOMParser.
+ * Returns null when XML is valid, otherwise returns the parser error message.
+ */
+function validateBpmnXml(xml: string): string | null {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'application/xml');
+    const parserError = doc?.getElementsByTagName('parsererror')?.[0];
+    if (parserError) {
+      return parserError.textContent || 'Unknown BPMN XML parser error';
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Unknown BPMN XML validation error';
+  }
+}
+
+/**
+ * Apply quick sanitization fixes for common LLM BPMN XML mistakes.
+ */
+function sanitizeBpmnXml(xml: string): string {
+  let sanitized = xml;
+  
+  // Fix namespace issues: bpmns: -> bpmn:
+  sanitized = sanitized.replace(/bpmns:/gi, 'bpmn:');
+  
+  // Fix bpmndi namespace issues
+  sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, 'bpmndi:BPMNShape');
+  sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, 'bpmndi:BPMNEdge');
+  
+  // Remove invalid tags that don't exist in BPMN 2.0 (flowNodeRef is not a valid element)
+  sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmn:flowNodeRef\s*>/gi, '');
+  sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmns:flowNodeRef\s*>/gi, '');
+  sanitized = sanitized.replace(/<\/\s*bpmn:flowNodeRef\s*>/gi, '');
+  sanitized = sanitized.replace(/<\/\s*bpmns:flowNodeRef\s*>/gi, '');
+  sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*\/?\s*>/gi, '');
+  sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*\/?\s*>/gi, '');
+  
+  // Fix XML declaration issues
+  sanitized = sanitized.replace(/<\s*\/\?xml/gi, '<?xml');
+  
+  // Fix unescaped ampersands
+  sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+  
+  // Remove orphaned closing tags (tags that don't have matching opening tags)
+  // This is a simple heuristic - remove closing tags for elements that don't exist
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(sanitized, 'application/xml');
+  const parserError = doc?.getElementsByTagName('parsererror')?.[0];
+  
+  // If there's a parser error about closing tag mismatch, try to fix it
+  if (parserError) {
+    const errorText = parserError.textContent || '';
+    if (errorText.includes('closing tag mismatch') || errorText.includes('closing tag')) {
+      // Try to remove common problematic patterns
+      // Remove any closing tags that reference invalid elements
+      sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
+    }
+  }
+  
+  return sanitized.trim();
+}
+
+async function repairInvalidBpmnXml({
+  invalidXml,
+  validationError,
+  documentAnalysis,
+  systemPrompt,
+  googleApiKey,
+}: {
+  invalidXml: string;
+  validationError: string;
+  documentAnalysis: string;
+  systemPrompt: string;
+  googleApiKey: string;
+}): Promise<string | null> {
+  try {
+    const repairPrompt = `${systemPrompt}
+
+CRITICAL: The previously generated BPMN XML is invalid and failed to parse with this error:
+${validationError}
+
+IMPORTANT FIXES REQUIRED:
+1. Remove ALL invalid elements that don't exist in BPMN 2.0 (e.g., flowNodeRef, bpmns: namespace tags)
+2. Ensure ALL opening tags have matching closing tags
+3. Fix any namespace issues (use bpmn: not bpmns:)
+4. Ensure proper XML structure with valid BPMN 2.0 elements only
+5. Preserve the exact process logic, labels, gateways, and subprocesses
+
+Original (invalid) BPMN XML:
+${invalidXml}
+
+Process description to preserve:
+${documentAnalysis}
+
+Return ONLY the corrected, valid BPMN 2.0 XML that will parse without errors.`;
+
+    const repairResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${googleApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: repairPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: 8000,
+            temperature: 0.2,
+          },
+        }),
+      }
+    );
+
+    if (!repairResponse.ok) {
+      console.error('BPMN repair error:', await repairResponse.text());
+      return null;
+    }
+
+    const repairData = await repairResponse.json();
+    const repairedXml = repairData.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!repairedXml) {
+      return null;
+    }
+
+    return repairedXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+  } catch (error) {
+    console.error('Failed to repair BPMN XML:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -19,7 +150,7 @@ serve(async (req) => {
     startTime = Date.now();
     const { fileBase64, fileName, fileType, userId, diagramType = 'bpmn' } = await req.json();
     console.log(`Processing document for ${diagramType.toUpperCase()}:`, fileName, 'Type:', fileType);
-    
+
     // SECURITY: Validate userId
     if (!userId) {
       console.error('Missing userId in request');
@@ -35,16 +166,16 @@ serve(async (req) => {
     }
 
     let analysisPrompt = '';
-    let analysisContent: Array<{ type?: string; [key: string]: unknown }> = [];
+    let analysisContent: Array<{ type?: string;[key: string]: unknown }> = [];
     let inputDescription = '';
 
     // Determine file type and create appropriate analysis
     let extractedText = '';
-    
+
     if (fileType.startsWith('image/')) {
       // Image analysis - use OCR and vision
       inputDescription = `Image file: ${fileName}`;
-      
+
       const bpmnAnalysisPrompt = `Mission: Extract this image and produce a perfectly laid out BPMN 2.0 diagram with clean, non-overlapping connectors and readable labels.
 
 INPUT EXTRACTION (Image):
@@ -60,14 +191,30 @@ EXTRACT EVERY ELEMENT PRECISELY:
 - Start Event(s): Exact position, label (if any)
 - End Event(s): Exact position, type (normal/error/message), label
 - Tasks/Activities: EXACT text inside each box/rectangle
-- Gateways: Type (XOR/AND/Inclusive) and any labels or conditions on flows
-- Sequence Flows: Source→Target connections, labels on arrows
+- Gateways: Type (XOR/AND/Inclusive/OR) and any labels or conditions on flows
+  * XOR (Exclusive): Single path selection - "if/else", "either/or", "choose one"
+  * AND (Parallel): All paths execute simultaneously - "at the same time", "in parallel", "simultaneously"
+  * OR/Inclusive: Multiple paths can be taken - "one or more", "any combination", "select multiple"
+- Sequence Flows: Source→Target connections, labels on arrows, conditions
 - Pools/Swimlanes: Exact names, roles
 - Message Flows: Dotted lines between pools
-- Subprocesses: Grouped tasks
+- Subprocesses: Grouped related tasks that form a logical unit (e.g., "Order Processing", "Payment Verification", "Quality Check Process")
+
+GATEWAY DETECTION RULES:
+- Look for decision diamonds with multiple outgoing paths
+- Identify keywords: "if", "else", "either", "or", "and", "parallel", "simultaneous", "at the same time"
+- XOR: Single condition leading to one path (if X then A else B)
+- AND: Multiple activities happening together (A and B happen simultaneously)
+- OR/Inclusive: Multiple optional paths (can do A, B, or both)
+
+SUBPROCESS DETECTION RULES:
+- Identify grouped activities with a common purpose or theme
+- Look for phrases like "process", "procedure", "workflow", "sub-process", "nested"
+- Detect visual groupings: boxes containing multiple tasks, dashed borders around task groups
+- Common subprocess patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation"
 
 SEMANTIC MAPPING:
-Convert to BPMN primitives: Start/End Events, Tasks (User/Service), Gateways (XOR/AND/Inclusive), Sequence Flows, Pools, Swimlanes, Subprocesses, Message Flows.
+Convert to BPMN primitives: Start/End Events, Tasks (User/Service), Gateways (XOR/AND/Inclusive/OR), Sequence Flows, Pools, Swimlanes, Subprocesses (collapsed or expanded), Message Flows.
 Infer roles and swimlanes from headings or surrounding text.
 
 LAYOUT REQUIREMENTS (critical for clean output):
@@ -131,24 +278,24 @@ OUTPUT FORMAT:
 6. Layout and positioning information`;
 
       analysisPrompt = diagramType === 'pid' ? pidAnalysisPrompt : bpmnAnalysisPrompt;
-      
+
       analysisContent = [
         { type: 'text', text: analysisPrompt },
         { type: 'image_url', image_url: { url: fileBase64 } }
       ];
-      
-    } else if (fileType === 'application/pdf' || 
-               fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-               fileType === 'application/msword') {
+
+    } else if (fileType === 'application/pdf' ||
+      fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      fileType === 'application/msword') {
       // PDF or Word document - extract text with OCR emphasis
       inputDescription = `Document file: ${fileName}`;
-      
+
       // Decode base64 to get text content
       const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, '');
       const documentBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       const documentText = new TextDecoder().decode(documentBuffer);
       extractedText = documentText;
-      
+
       analysisPrompt = `Mission: Extract business process from this document and produce a perfectly laid out BPMN 2.0 diagram.
 
 INPUT EXTRACTION (PDF/DOCX):
@@ -158,14 +305,31 @@ INPUT EXTRACTION (PDF/DOCX):
 
 EXTRACT PROCESS ELEMENTS:
 1. Process steps and activities (exact names and labels)
-2. Decision points and their conditions (map to Gateways)
+2. Decision points and their conditions (map to Gateways - XOR/AND/OR/Inclusive)
 3. Process flow and sequence
 4. Roles or participants (map to Pools/Swimlanes)
 5. Start and end conditions
-6. Any subprocess groupings
+6. Subprocess groupings (related activities that form logical units)
+
+GATEWAY DETECTION:
+- XOR (Exclusive Gateway): Decision with single path selection
+  * Keywords: "if", "else", "either", "or", "choose one", "decide between"
+  * Pattern: "If condition X, then do A, else do B"
+- AND (Parallel Gateway): Multiple paths execute simultaneously
+  * Keywords: "at the same time", "in parallel", "simultaneously", "while", "concurrently"
+  * Pattern: "Do A and B simultaneously" or "While doing A, also do B"
+- OR/Inclusive Gateway: Multiple optional paths can be taken
+  * Keywords: "one or more", "any combination", "select multiple", "can do A, B, or both"
+  * Pattern: "Can perform A, B, or both A and B"
+
+SUBPROCESS DETECTION:
+- Identify grouped activities with common purpose
+- Look for: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage"
+- Common patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process"
+- Visual indicators: sections, chapters, numbered steps, grouped paragraphs
 
 SEMANTIC MAPPING:
-Convert to BPMN: Start/End Events, Tasks, Gateways (XOR/AND), Sequence Flows, Pools/Swimlanes, Subprocesses.
+Convert to BPMN: Start/End Events, Tasks (User/Service/Manual), Gateways (XOR/AND/OR/Inclusive), Sequence Flows, Pools/Swimlanes, Subprocesses (collapsed or expanded with nested tasks).
 
 LAYOUT REQUIREMENTS:
 - Use hierarchical/layered layout with orthogonal routing
@@ -181,44 +345,56 @@ ${documentText.substring(0, 10000)} ${documentText.length > 10000 ? '...(truncat
 OUTPUT:
 1. Summarize extracted content
 2. Provide structured BPMN-ready process description with layout hints`;
-      
+
       analysisContent = [
         { type: 'text', text: analysisPrompt }
       ];
-      
+
     } else if (fileType === 'text/plain' || fileType.startsWith('text/')) {
       // Text file - direct analysis
       inputDescription = `Text file: ${fileName}`;
-      
+
       // Decode base64 text
       const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, '');
       const textContent = atob(base64Data);
       extractedText = textContent;
-      
+
       analysisPrompt = `Mission: Parse natural language text into a perfectly laid out BPMN 2.0 diagram.
 
 INPUT EXTRACTION (Text):
 - Parse sequential steps, decisions, and roles from natural language
 
 EXTRACT & MAP:
-1. Process steps → Tasks
-2. Decision points → Gateways (XOR/AND)
+1. Process steps → Tasks (User/Service/Manual)
+2. Decision points → Gateways (XOR/AND/OR/Inclusive)
 3. Flow sequence → Sequence Flows
 4. Roles/participants → Pools/Swimlanes
 5. Start/end conditions → Start/End Events
+6. Grouped activities → Subprocesses
+
+GATEWAY DETECTION RULES:
+- XOR (Exclusive): "if X then A else B", "either A or B", "choose one"
+- AND (Parallel): "A and B simultaneously", "at the same time", "in parallel", "while A, also do B"
+- OR/Inclusive: "can do A, B, or both", "one or more", "any combination"
+
+SUBPROCESS DETECTION RULES:
+- Look for grouped activities: "Order Processing includes...", "Payment workflow: ...", "Quality check process: ..."
+- Identify logical groupings of 2+ related tasks
+- Common patterns: processing, verification, approval, validation, review workflows
 
 LAYOUT REQUIREMENTS:
 - Use layered layout with orthogonal routing
 - No overlapping connectors or nodes
 - Clear labels, proper swimlane organization
 - Minimum edge crossings
+- Subprocesses should be visually grouped (collapsed or expanded)
 
 Text content:
 ${textContent}
 
 OUTPUT:
-Structured BPMN-ready process with layout hints (swimlanes, positioning, routing)`;
-      
+Structured BPMN-ready process with layout hints (swimlanes, positioning, routing, gateway types, subprocess groupings)`;
+
       analysisContent = [
         { type: 'text', text: analysisPrompt }
       ];
@@ -227,18 +403,18 @@ Structured BPMN-ready process with layout hints (swimlanes, positioning, routing
     }
 
     console.log('Analyzing document with Gemini...');
-    
+
     // Define proper types for content items
-    type ContentItem = 
+    type ContentItem =
       | { type: 'text'; text: string }
       | { type: 'image_url'; image_url: { url: string } };
-    
+
     const typedContent = analysisContent as ContentItem[];
-    
+
     // For image content, use vision model; for text, use standard model
     const isVisionContent = typedContent.some(item => item.type === 'image_url');
     const model = isVisionContent ? 'gemini-2.5-flash' : 'gemini-2.0-flash-exp';
-    
+
     // Format content for Gemini API
     let geminiParts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [];
     if (isVisionContent) {
@@ -264,16 +440,16 @@ Structured BPMN-ready process with layout hints (swimlanes, positioning, routing
         return { text: '' };
       });
     }
-    
-    const contentParts = isVisionContent 
+
+    const contentParts = isVisionContent
       ? typedContent.map(item => {
-          if (item.type === 'text') return { text: item.text };
-          const base64Data = item.image_url.url.split(',')[1];
-          const mimeType = item.image_url.url.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
-          return { inline_data: { mime_type: mimeType, data: base64Data } };
-        })
+        if (item.type === 'text') return { text: item.text };
+        const base64Data = item.image_url.url.split(',')[1];
+        const mimeType = item.image_url.url.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
+        return { inline_data: { mime_type: mimeType, data: base64Data } };
+      })
       : [{ text: analysisPrompt }];
-    
+
     const analysisResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_API_KEY}`,
       {
@@ -310,16 +486,43 @@ CRITICAL RULES:
 3. Maintain EXACT flow connections (source→target)
 4. Use EXACT number of elements (don't add/remove tasks)
 5. Keep EXACT sequence and structure
+6. ALWAYS include appropriate gateways (XOR/AND/OR) when decision points or parallel flows are detected
+7. ALWAYS create subprocesses for grouped related activities
 
 BPMN 2.0 XML Structure:
 - xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
 - xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
 - xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
 - xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-- Element types: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, inclusiveGateway, endEvent, sequenceFlow
+- Element types: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, inclusiveGateway, endEvent, sequenceFlow, subProcess
 - Unique id for every element
 - sequenceFlow: sourceRef and targetRef
 - Include complete bpmndi:BPMNDiagram with bpmndi:BPMNShape (x, y, width, height) and bpmndi:BPMNEdge (waypoints)
+
+GATEWAY REQUIREMENTS (MANDATORY):
+- exclusiveGateway (XOR): Use for single-path decisions (if/else, either/or)
+  * Must have 2+ outgoing sequenceFlows
+  * Each outgoing flow should have a condition (name attribute with condition text)
+  * Example: <bpmn:exclusiveGateway id="Gateway_1" name="Check condition"/>
+- parallelGateway (AND): Use for parallel execution (simultaneous activities)
+  * Must have 2+ outgoing sequenceFlows (all execute)
+  * Usually paired: split gateway (multiple outgoing) and join gateway (multiple incoming)
+  * Example: <bpmn:parallelGateway id="Gateway_2" name="Parallel split"/>
+- inclusiveGateway (OR): Use for multiple optional paths (one or more can execute)
+  * Must have 2+ outgoing sequenceFlows
+  * Each flow can have conditions
+  * Example: <bpmn:inclusiveGateway id="Gateway_3" name="Inclusive decision"/>
+
+SUBPROCESS REQUIREMENTS (MANDATORY):
+- subProcess: Use for grouped related activities (2+ tasks that form a logical unit)
+  * Can be collapsed (triggeredByEvent="false") or expanded (contains nested elements)
+  * For expanded subprocess: nest tasks, gateways, and flows inside the subProcess element
+  * For collapsed subprocess: use triggeredByEvent="false" and add a + marker in diagram
+  * Example collapsed: <bpmn:subProcess id="SubProcess_1" name="Order Processing" triggeredByEvent="false"/>
+  * Example expanded: <bpmn:subProcess id="SubProcess_1" name="Order Processing"><bpmn:task id="Task_1" name="Validate Order"/>...</bpmn:subProcess>
+- Common subprocess patterns to detect and create:
+  * "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process", "Verification Process"
+  * Any group of 2+ related tasks mentioned together
 
 LAYOUT ALGORITHM (critical for clean diagrams):
 - Use layered (Sugiyama) layout: assign layers, minimize crossings, apply orthogonal routing
@@ -335,13 +538,35 @@ LAYOUT ALGORITHM (critical for clean diagrams):
 
 VALIDATION:
 - No orphan flows
-- Gateways have matching incoming/outgoing
+- Gateways have matching incoming/outgoing (split gateways: 1 incoming, 2+ outgoing; join gateways: 2+ incoming, 1 outgoing)
 - All sequenceFlows have valid sourceRef/targetRef
 - Pools properly contain lanes and elements
 - All bpmndi shapes have valid bounds (x, y, width, height > 0)
 - All bpmndi edges have at least 2 waypoints
+- Subprocesses are properly nested (expanded) or marked as collapsed
+- Gateway types match their usage (XOR for decisions, AND for parallel, OR for inclusive)
+- Decision points in the process MUST have corresponding gateways
+- Grouped activities MUST be wrapped in subprocesses
 
-Return ONLY valid, schema-compliant BPMN 2.0 XML with complete diagram interchange (DI) for clean rendering. No markdown, no explanations.`;
+CRITICAL: DO NOT generate invalid BPMN elements:
+- NEVER use "flowNodeRef" - this is NOT a valid BPMN 2.0 element
+- NEVER use "bpmns:" namespace - always use "bpmn:" (not "bpmns:")
+- ONLY use valid BPMN 2.0 elements: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, inclusiveGateway, endEvent, sequenceFlow, subProcess, pool, lane, messageFlow, dataObject, etc.
+- Ensure ALL opening tags have matching closing tags
+- Use proper XML structure with correct namespaces
+
+GATEWAY VALIDATION:
+- If analysis mentions "if/else", "either/or", "decide" → MUST include exclusiveGateway
+- If analysis mentions "parallel", "simultaneous", "at the same time" → MUST include parallelGateway
+- If analysis mentions "one or more", "any combination" → MUST include inclusiveGateway
+- Gateways must have proper split/join pairs for parallel flows
+
+SUBPROCESS VALIDATION:
+- If analysis mentions grouped activities (e.g., "Order Processing includes...", "Payment workflow: ...") → MUST create subProcess
+- Related tasks mentioned together should be grouped in a subprocess
+- Subprocesses should have meaningful names describing the grouped activity
+
+Return ONLY valid, schema-compliant BPMN 2.0 XML with complete diagram interchange (DI) for clean rendering. Include gateways and subprocesses as detected. No markdown, no explanations.`;
 
     const pidSystemPrompt = `System Prompt — "ProcessDesigner-AI v4 (Full P&ID Mode)"
 
@@ -598,7 +823,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     // Check cache for document analysis result
     const documentHash = await generateHash(`${documentAnalysis}:${diagramType}`);
     const cachedResult = await checkExactHashCache(documentHash, diagramType);
-    
+
     if (cachedResult) {
       console.log('Cache hit for document analysis');
       const cacheResponseTime = Date.now() - (startTime || Date.now());
@@ -612,9 +837,9 @@ When combined with your **PidRenderer.js**, this updated prompt will:
       });
 
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           bpmnXml: cachedResult.bpmnXml,
-          cached: true 
+          cached: true
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -632,7 +857,18 @@ When combined with your **PidRenderer.js**, this updated prompt will:
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: `${bpmnSystemPrompt}\n\nCreate BPMN 2.0 XML that EXACTLY replicates this diagram. Use the EXACT labels, EXACT flow structure, and EXACT element types described below. Do not modify, improve, or redesign - just replicate exactly:\n\n${documentAnalysis}` }
+              {
+                text: `${bpmnSystemPrompt}\n\nCreate BPMN 2.0 XML that EXACTLY replicates this diagram. Use the EXACT labels, EXACT flow structure, and EXACT element types described below. 
+
+CRITICAL: 
+- If the analysis mentions decision points, conditions, or "if/else" patterns, you MUST include exclusiveGateway (XOR) elements
+- If the analysis mentions parallel activities, "simultaneous", or "at the same time", you MUST include parallelGateway (AND) elements  
+- If the analysis mentions "one or more", "any combination", or optional paths, you MUST include inclusiveGateway (OR) elements
+- If the analysis mentions grouped activities, workflows, or sub-processes, you MUST create subProcess elements to group related tasks
+- Do not skip gateways or subprocesses - they are essential for accurate process modeling
+
+Do not modify, improve, or redesign - just replicate exactly with proper gateway and subprocess elements:\n\n${documentAnalysis}`
+              }
             ]
           }],
           generationConfig: {
@@ -653,7 +889,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     let bpmnXml = bpmnData.candidates[0].content.parts[0].text;
     bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
 
-    // Validate XML structure before caching (only cache valid responses)
+    // Quick validation: check for XML declaration and BPMN structure
     if (!bpmnXml.startsWith('<?xml')) {
       throw new Error('Generated content is not valid XML - missing XML declaration');
     }
@@ -662,7 +898,51 @@ When combined with your **PidRenderer.js**, this updated prompt will:
       throw new Error('Generated BPMN XML is invalid or incomplete');
     }
 
-    // Store in cache only after successful validation (200 response + valid XML)
+    // Full validation and repair pipeline
+    const ensureValidBpmn = async (xml: string): Promise<string> => {
+      let currentXml = xml;
+      let validationError = validateBpmnXml(currentXml);
+
+      if (!validationError) return currentXml;
+
+      console.warn('Initial BPMN XML invalid:', validationError);
+
+      // Attempt quick sanitization fixes
+      const sanitizedXml = sanitizeBpmnXml(currentXml);
+      if (sanitizedXml !== currentXml) {
+        const sanitizedError = validateBpmnXml(sanitizedXml);
+        if (!sanitizedError) {
+          console.log('BPMN XML fixed via sanitization');
+          return sanitizedXml;
+        }
+        validationError = sanitizedError;
+        currentXml = sanitizedXml;
+      }
+
+      // Attempt repair via additional Gemini call
+      const repairedXml = await repairInvalidBpmnXml({
+        invalidXml: currentXml,
+        validationError,
+        documentAnalysis,
+        systemPrompt,
+        googleApiKey: GOOGLE_API_KEY,
+      });
+
+      if (repairedXml) {
+        const repairValidationError = validateBpmnXml(repairedXml);
+        if (!repairValidationError) {
+          console.log('BPMN XML repaired successfully');
+          return repairedXml;
+        }
+        validationError = repairValidationError;
+      }
+
+      throw new Error(`Generated BPMN XML is invalid and could not be repaired: ${validationError}`);
+    };
+
+    bpmnXml = await ensureValidBpmn(bpmnXml);
+
+    // Store in cache (async, don't wait) - only after successful validation
     (async () => {
       try {
         await storeExactHashCache(documentHash, documentAnalysis, diagramType, bpmnXml);
@@ -715,7 +995,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     if (alternativesResponse.ok) {
       const altData = await alternativesResponse.json();
       const altText = altData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
+
       // Basic parsing of alternatives
       alternatives = [
         { title: 'Simplified Process', description: 'Streamlined workflow with fewer steps' },
@@ -729,10 +1009,10 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const fileTypeCategory = fileType.startsWith('image/') ? 'image' : 
-                             fileType.includes('pdf') ? 'pdf' :
-                             fileType.includes('word') || fileType.includes('document') ? 'document' :
-                             'text';
+    const fileTypeCategory = fileType.startsWith('image/') ? 'image' :
+      fileType.includes('pdf') ? 'pdf' :
+        fileType.includes('word') || fileType.includes('document') ? 'document' :
+          'text';
 
     const { error: insertError } = await supabase
       .from('bpmn_generations')
@@ -752,7 +1032,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
     console.log('Document-to-BPMN processing complete');
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         bpmnXml,
         analysis: documentAnalysis,
         alternatives,
