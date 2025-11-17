@@ -153,16 +153,27 @@ serve(async (req) => {
     );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Google Gemini API error:', response.status, errorText);
+      
       if (response.status === 429) {
-        console.error('Rate limit exceeded');
         return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+          JSON.stringify({ error: 'Google API rate limit exceeded. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      const errorText = await response.text();
-      console.error('Google Gemini API error:', response.status, errorText);
-      throw new Error('Failed to generate BPMN');
+      
+      if (response.status === 503) {
+        return new Response(
+          JSON.stringify({ error: 'Google Gemini service is temporarily overloaded. Please try again in a moment.' }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      return new Response(
+        JSON.stringify({ error: `Google API error: ${errorText}` }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const data = await response.json();
