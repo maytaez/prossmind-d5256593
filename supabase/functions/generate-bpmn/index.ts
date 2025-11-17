@@ -52,10 +52,10 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not found');
-      throw new Error('Lovable API key not configured');
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) {
+      console.error('GOOGLE_API_KEY not found');
+      throw new Error('Google API key not configured');
     }
 
     // Use optimized prompts from shared module
@@ -111,19 +111,33 @@ serve(async (req) => {
       }
     }
 
+    // Map Lovable AI model names to Gemini model names
+    const geminiModel = model.replace('google/', '');
+    
+    // Build messages array for Gemini format
+    const messages = buildMessagesWithExamples(systemPrompt, prompt, diagramType);
+    const systemMessage = messages.find((m: any) => m.role === 'system');
+    const userMessages = messages.filter((m: any) => m.role === 'user');
+    
     const response = await fetch(
-      'https://ai.gateway.lovable.dev/v1/chat/completions',
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GOOGLE_API_KEY}`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: model,
-          messages: buildMessagesWithExamples(systemPrompt, prompt, diagramType),
-          max_tokens: maxTokens,
-          temperature: temperature
+          contents: userMessages.map((m: any) => ({
+            role: 'user',
+            parts: [{ text: m.content }]
+          })),
+          systemInstruction: systemMessage ? {
+            parts: [{ text: systemMessage.content }]
+          } : undefined,
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            temperature: temperature
+          }
         }),
       }
     );
@@ -136,22 +150,15 @@ serve(async (req) => {
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      if (response.status === 402) {
-        console.error('Payment required');
-        return new Response(
-          JSON.stringify({ error: 'AI credits depleted. Please add more credits.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
       const errorText = await response.text();
-      console.error('Lovable AI API error:', response.status, errorText);
+      console.error('Google Gemini API error:', response.status, errorText);
       throw new Error('Failed to generate BPMN');
     }
 
     const data = await response.json();
     console.log('AI Response received');
     
-    let bpmnXml = data.choices?.[0]?.message?.content || '';
+    let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     if (!bpmnXml) {
       console.error('Failed to extract BPMN XML from response. Full response:', JSON.stringify(data));
