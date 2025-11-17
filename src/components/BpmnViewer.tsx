@@ -3371,6 +3371,9 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             ref={paletteRef}
             className="absolute z-50 bg-white border border-border rounded-lg shadow-lg flex flex-col"
             style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
               width: `${paletteSize.width}px`,
               height: `${paletteSize.height}px`,
               minWidth: '240px',
@@ -3379,6 +3382,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               maxHeight: canvasContainerRef.current ? `${canvasContainerRef.current.offsetHeight - palettePosition.y}px` : 'none',
               display: 'flex',
               flexDirection: 'column',
+              willChange: 'transform',
             }}
             drag={!isResizing}
             dragMomentum={false}
@@ -3442,12 +3446,6 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
             animate={{ 
               x: palettePosition.x, 
               y: palettePosition.y 
-            }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              willChange: 'transform',
             }}
           >
             {/* Header */}
