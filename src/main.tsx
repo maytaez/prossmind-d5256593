@@ -19,13 +19,9 @@ createRoot(document.getElementById("root")!).render(
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        {subdomain ? (
-          <BrowserRouter>
-            <SubdomainApp />
-          </BrowserRouter>
-        ) : (
-          <App />
-        )}
+        <BrowserRouter>
+          {subdomain ? <SubdomainApp /> : <App />}
+        </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
   </ThemeProvider>
