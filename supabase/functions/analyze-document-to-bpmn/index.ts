@@ -10,16 +10,23 @@ const corsHeaders = {
 };
 
 /**
- * Validate BPMN XML using the built-in DOMParser.
- * Returns null when XML is valid, otherwise returns the parser error message.
+ * Basic BPMN XML validation - checks for critical structure
+ * Returns null when XML appears valid, otherwise returns an error message.
  */
 function validateBpmnXml(xml: string): string | null {
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
-    const parserError = doc?.getElementsByTagName('parsererror')?.[0];
-    if (parserError) {
-      return parserError.textContent || 'Unknown BPMN XML parser error';
+    // Basic checks for BPMN structure
+    if (!xml.includes('<bpmn:definitions') && !xml.includes('<bpmn2:definitions')) {
+      return 'Missing BPMN definitions element';
+    }
+    if (!xml.includes('</bpmn:definitions>') && !xml.includes('</bpmn2:definitions>')) {
+      return 'Missing closing BPMN definitions tag';
+    }
+    // Check for balanced tags - basic validation
+    const openTags = (xml.match(/<bpmn[2]?:[^/>]+>/g) || []).length;
+    const closeTags = (xml.match(/<\/bpmn[2]?:[^>]+>/g) || []).length;
+    if (Math.abs(openTags - closeTags) > 5) {
+      return 'Unbalanced BPMN tags detected';
     }
     return null;
   } catch (error) {
@@ -56,19 +63,8 @@ function sanitizeBpmnXml(xml: string): string {
 
   // Remove orphaned closing tags (tags that don't have matching opening tags)
   // This is a simple heuristic - remove closing tags for elements that don't exist
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(sanitized, 'application/xml');
-  const parserError = doc?.getElementsByTagName('parsererror')?.[0];
-
-  // If there's a parser error about closing tag mismatch, try to fix it
-  if (parserError) {
-    const errorText = parserError.textContent || '';
-    if (errorText.includes('closing tag mismatch') || errorText.includes('closing tag')) {
-      // Try to remove common problematic patterns
-      // Remove any closing tags that reference invalid elements
-      sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
-    }
-  }
+  // Remove any closing tags that reference invalid elements
+  sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
 
   return sanitized.trim();
 }

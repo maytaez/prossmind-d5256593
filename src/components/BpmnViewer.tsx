@@ -2254,7 +2254,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           downloadBlob(blob, filename);
           toast.success(`Exported ${filename}`);
         } else {
-          const { svg } = await modelerRef.current.saveSVG({ format: true });
+          const { svg } = await modelerRef.current.saveSVG();
           if (format === 'svg') {
             const blob = new Blob([svg], { type: 'image/svg+xml' });
             downloadBlob(blob, filename);

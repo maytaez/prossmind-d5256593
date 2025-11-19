@@ -107,8 +107,7 @@ export async function useTemplate(
       .eq("id", id)
       .then(() => {
         // Silently handle errors for usage tracking
-      })
-      .catch(() => {
+      }, () => {
         // Silently handle errors for usage tracking
       });
 

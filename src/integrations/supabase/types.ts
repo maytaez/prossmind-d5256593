@@ -593,51 +593,6 @@ export type Database = {
         }
         Relationships: []
       }
-      templates: {
-        Row: {
-          id: string
-          name: string
-          description: string | null
-          category: string
-          diagram_type: string
-          bpmn_xml: string
-          icon_name: string | null
-          is_active: boolean
-          usage_count: number
-          created_by: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          description?: string | null
-          category: string
-          diagram_type: string
-          bpmn_xml: string
-          icon_name?: string | null
-          is_active?: boolean
-          usage_count?: number
-          created_by?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          description?: string | null
-          category?: string
-          diagram_type?: string
-          bpmn_xml?: string
-          icon_name?: string | null
-          is_active?: boolean
-          usage_count?: number
-          created_by?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
