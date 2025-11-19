@@ -861,11 +861,172 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 ? variant.instructions.pid
                 : variant.instructions.bpmn;
 
+            // Build complexity-specific prompt with unique constraints
+            const complexityConstraints = {
+              basic: {
+                maxElements: 12,
+                maxTasks: 6,
+                maxParallelBranches: 0,
+                maxDecisionPoints: 0,
+                maxSubprocesses: 0,
+                maxNestingDepth: 1,
+                mandatoryStructure: `
+CRITICAL: Generate a SIMPLE, SEQUENTIAL BPMN diagram with NO branching or decision points.
+
+MANDATORY STRUCTURE FOR BASIC TIER:
+1. Start Event → Task 1 → Task 2 → Task 3 → ... → End Event
+2. NO gateways (no XOR, AND, OR, or Inclusive gateways)
+3. NO parallel branches
+4. NO decision points
+5. NO subprocesses
+6. NO loops or backflows
+7. Simple linear sequence only
+8. Maximum 6 tasks total
+9. Each task flows directly to the next task
+
+EXAMPLE STRUCTURE:
+<startEvent> → <task name="Task 1"> → <task name="Task 2"> → <task name="Task 3"> → <endEvent>
+
+DO NOT include:
+- Any gateways (exclusiveGateway, parallelGateway, inclusiveGateway)
+- Any subprocesses
+- Any boundary events
+- Any intermediate events
+- Any loops or cycles
+
+Generate ONLY a simple sequential flow.`
+              },
+              intermediate: {
+                maxElements: 25,
+                maxTasks: 12,
+                maxParallelBranches: 2,
+                maxDecisionPoints: 1,
+                maxSubprocesses: 1,
+                maxNestingDepth: 2,
+                mandatoryStructure: `
+CRITICAL: Generate an INTERMEDIATE BPMN diagram with STRUCTURE and ORGANIZATION.
+
+MANDATORY STRUCTURE FOR INTERMEDIATE TIER:
+1. MUST include at least 1 decision gateway (XOR gateway) with 2-3 outgoing paths
+2. MUST include at least 1 parallel gateway (AND gateway) OR 1 subprocess
+3. MUST have swimlanes (pools/lanes) if the variant is "Human-Centric Collaboration"
+4. Include 8-12 tasks total
+5. Show clear decision points with labeled conditions
+6. Include at least one parallel branch OR one subprocess grouping related tasks
+
+EXAMPLE STRUCTURES:
+- Decision path: <startEvent> → <task> → <exclusiveGateway> → [Path A: task → task] OR [Path B: task → task] → <endEvent>
+- Parallel path: <startEvent> → <task> → <parallelGateway> → [Branch 1: task] + [Branch 2: task] → <parallelGateway> → <endEvent>
+- Subprocess: <startEvent> → <task> → <subProcess> (with internal tasks) → <task> → <endEvent>
+
+MUST include:
+- At least 1 exclusiveGateway (decision point)
+- At least 1 parallelGateway OR 1 subProcess
+- Clear flow organization
+- 2-3 different execution paths`
+              },
+              advanced: {
+                maxElements: 45,
+                maxTasks: 20,
+                maxParallelBranches: 4,
+                maxDecisionPoints: 3,
+                maxSubprocesses: 2,
+                maxNestingDepth: 3,
+                mandatoryStructure: `
+CRITICAL: Generate a COMPLEX, ADVANCED BPMN diagram with MULTIPLE STRUCTURES.
+
+MANDATORY STRUCTURE FOR ADVANCED TIER:
+1. MUST include 2-3 decision gateways (XOR/Inclusive gateways) creating multiple paths
+2. MUST include 2-4 parallel branches (AND gateways) for concurrent execution
+3. MUST include 1-2 subprocesses with internal workflows
+4. MUST include error handling: at least 1 boundary event attached to a task or subprocess
+5. Include 15-20 tasks total
+6. Show complex routing with multiple decision points
+7. Include compensation or rollback paths if applicable
+8. Use event-based gateways for exception handling if needed
+
+EXAMPLE STRUCTURES:
+- Multiple decisions: <startEvent> → <task> → <exclusiveGateway> → [Path A] OR [Path B] → <exclusiveGateway> → [Path C] OR [Path D] → <endEvent>
+- Parallel + Subprocess: <startEvent> → <parallelGateway> → [Branch 1: task] + [Branch 2: <subProcess> (with internal tasks)] → <parallelGateway> → <endEvent>
+- Error handling: <task> with <boundaryEvent> (error) attached → <errorHandlerTask> → <endEvent>
+- Complex flow: Multiple gateways, subprocesses, parallel branches, and error paths all interconnected
+
+MUST include:
+- 2-3 exclusiveGateway or inclusiveGateway (decision points)
+- 2-4 parallelGateway pairs (split + join)
+- 1-2 subProcess elements (collapsed or expanded)
+- At least 1 boundaryEvent (error, escalation, or timer)
+- Multiple execution paths (4+ different paths through the diagram)
+- Complex routing with gateways connecting different branches`
+              }
+            };
+
+            const constraints = complexityConstraints[variant.complexity];
+            
             const prompt = `
+              ============================================
+              VARIANT GENERATION REQUEST
+              ============================================
+              
               Original process summary: ${processSummary}
               Variant to generate: ${variant.title} - ${variant.description}
-              Instructions: ${instructions}
-              Generate a valid BPMN 2.0 XML for this specific variant.
+              Base instructions: ${instructions}
+              
+              ============================================
+              COMPLEXITY TIER: ${variant.complexity.toUpperCase()}
+              ============================================
+              
+              ${constraints.mandatoryStructure}
+              
+              ============================================
+              TECHNICAL CONSTRAINTS
+              ============================================
+              - Maximum ${constraints.maxElements} total elements
+              - Maximum ${constraints.maxTasks} tasks
+              - Maximum ${constraints.maxParallelBranches} parallel branches
+              - Maximum ${constraints.maxDecisionPoints} decision points
+              - Maximum ${constraints.maxSubprocesses} subprocesses
+              - Maximum ${constraints.maxNestingDepth} nesting depth
+              
+              ============================================
+              CRITICAL REQUIREMENTS - READ CAREFULLY
+              ============================================
+              
+              ⚠️ YOU MUST FOLLOW THE MANDATORY STRUCTURE REQUIREMENTS ABOVE EXACTLY ⚠️
+              
+              The generated BPMN MUST be VISUALLY and STRUCTURALLY DIFFERENT from other variants:
+              - Different number and arrangement of gateways
+              - Different flow patterns (sequential vs parallel vs decision-based)
+              - Different use of subprocesses
+              - Different error handling approaches
+              
+              ${variant.complexity === 'basic' ? `
+              ⚠️ BASIC TIER: You MUST create a simple sequential flow with NO gateways, NO subprocesses, NO branching.
+              If you include any gateways or subprocesses, the generation is INCORRECT. ⚠️
+              ` : ''}
+              
+              ${variant.complexity === 'intermediate' ? `
+              ⚠️ INTERMEDIATE TIER: You MUST include at least 1 gateway (decision or parallel) OR 1 subprocess.
+              The diagram must show structure and organization, not just a simple sequence. ⚠️
+              ` : ''}
+              
+              ${variant.complexity === 'advanced' ? `
+              ⚠️ ADVANCED TIER: You MUST include:
+              - At least 2-3 gateways (decision points)
+              - At least 2-4 parallel branches (AND gateways)
+              - At least 1-2 subprocesses OR boundary events
+              - Multiple execution paths (4+ different paths)
+              If the diagram is too simple, it does NOT match the ADVANCED tier. ⚠️
+              ` : ''}
+              
+              ============================================
+              GENERATION INSTRUCTIONS
+              ============================================
+              
+              Generate a valid, renderable BPMN 2.0 XML that matches the ${variant.complexity.toUpperCase()} tier requirements above.
+              The diagram MUST include the mandatory structures specified for this tier.
+              
+              Return ONLY the BPMN 2.0 XML, no explanations or markdown.
             `;
 
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
