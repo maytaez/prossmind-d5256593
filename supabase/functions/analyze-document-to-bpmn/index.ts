@@ -32,14 +32,14 @@ function validateBpmnXml(xml: string): string | null {
  */
 function sanitizeBpmnXml(xml: string): string {
   let sanitized = xml;
-  
+
   // Fix namespace issues: bpmns: -> bpmn:
   sanitized = sanitized.replace(/bpmns:/gi, 'bpmn:');
-  
+
   // Fix bpmndi namespace issues
   sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, 'bpmndi:BPMNShape');
   sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, 'bpmndi:BPMNEdge');
-  
+
   // Remove invalid tags that don't exist in BPMN 2.0 (flowNodeRef is not a valid element)
   sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmn:flowNodeRef\s*>/gi, '');
   sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmns:flowNodeRef\s*>/gi, '');
@@ -47,19 +47,19 @@ function sanitizeBpmnXml(xml: string): string {
   sanitized = sanitized.replace(/<\/\s*bpmns:flowNodeRef\s*>/gi, '');
   sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*\/?\s*>/gi, '');
   sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*\/?\s*>/gi, '');
-  
+
   // Fix XML declaration issues
   sanitized = sanitized.replace(/<\s*\/\?xml/gi, '<?xml');
-  
+
   // Fix unescaped ampersands
   sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
-  
+
   // Remove orphaned closing tags (tags that don't have matching opening tags)
   // This is a simple heuristic - remove closing tags for elements that don't exist
   const parser = new DOMParser();
   const doc = parser.parseFromString(sanitized, 'application/xml');
   const parserError = doc?.getElementsByTagName('parsererror')?.[0];
-  
+
   // If there's a parser error about closing tag mismatch, try to fix it
   if (parserError) {
     const errorText = parserError.textContent || '';
@@ -69,7 +69,7 @@ function sanitizeBpmnXml(xml: string): string {
       sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
     }
   }
-  
+
   return sanitized.trim();
 }
 
@@ -207,11 +207,18 @@ GATEWAY DETECTION RULES:
 - AND: Multiple activities happening together (A and B happen simultaneously)
 - OR/Inclusive: Multiple optional paths (can do A, B, or both)
 
-SUBPROCESS DETECTION RULES:
-- Identify grouped activities with a common purpose or theme
-- Look for phrases like "process", "procedure", "workflow", "sub-process", "nested"
-- Detect visual groupings: boxes containing multiple tasks, dashed borders around task groups
-- Common subprocess patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation"
+SUBPROCESS DETECTION RULES (Based on BPMN 2.0 Best Practices):
+- Identify grouped activities with a common purpose or theme (2+ related tasks)
+- Look for keywords: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage", "handling", "management", "nested"
+- Detect visual groupings: boxes containing multiple tasks, dashed borders around task groups, collapsed subprocesses with "+" icon
+- Common subprocess patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process", "Verification Process", "Customer Registration", "Handle Order Picking and Delivery"
+- Naming should follow "verb + complement" format: "Review Application", "Register Request", "Verify and Approve Customer"
+- Types to detect:
+  * Embedded Subprocess: Most common, groups related tasks within main process
+  * Call Activity: Reusable subprocess (if same flow appears multiple times)
+  * Event Subprocess: Exception handling, timeouts, event-driven flows
+  * Ad-Hoc Subprocess: Tasks without predefined order
+  * Transactional Subprocess: All-or-nothing operations (financial/legal)
 
 SEMANTIC MAPPING:
 Convert to BPMN primitives: Start/End Events, Tasks (User/Service), Gateways (XOR/AND/Inclusive/OR), Sequence Flows, Pools, Swimlanes, Subprocesses (collapsed or expanded), Message Flows.
@@ -322,11 +329,14 @@ GATEWAY DETECTION:
   * Keywords: "one or more", "any combination", "select multiple", "can do A, B, or both"
   * Pattern: "Can perform A, B, or both A and B"
 
-SUBPROCESS DETECTION:
-- Identify grouped activities with common purpose
-- Look for: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage"
-- Common patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process"
-- Visual indicators: sections, chapters, numbered steps, grouped paragraphs
+SUBPROCESS DETECTION (Based on BPMN 2.0 Best Practices):
+- Identify grouped activities with common purpose (2+ related tasks forming a logical unit)
+- Look for keywords: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage", "handling", "management"
+- Common patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process", "Verification Process", "Customer Registration", "Handle Order Picking and Delivery"
+- Visual indicators: sections, chapters, numbered steps, grouped paragraphs, related tasks mentioned together
+- Naming: Use "verb + complement" format (e.g., "Review Application", "Register Request", "Verify and Approve Customer")
+- Types: Default to Embedded SubProcess (most common), use Call Activity for reusable flows, Event SubProcess for exceptions/timeouts
+- Subprocesses can be nested (subprocess within subprocess)
 
 SEMANTIC MAPPING:
 Convert to BPMN: Start/End Events, Tasks (User/Service/Manual), Gateways (XOR/AND/OR/Inclusive), Sequence Flows, Pools/Swimlanes, Subprocesses (collapsed or expanded with nested tasks).
@@ -377,10 +387,14 @@ GATEWAY DETECTION RULES:
 - AND (Parallel): "A and B simultaneously", "at the same time", "in parallel", "while A, also do B"
 - OR/Inclusive: "can do A, B, or both", "one or more", "any combination"
 
-SUBPROCESS DETECTION RULES:
-- Look for grouped activities: "Order Processing includes...", "Payment workflow: ...", "Quality check process: ..."
-- Identify logical groupings of 2+ related tasks
-- Common patterns: processing, verification, approval, validation, review workflows
+SUBPROCESS DETECTION RULES (Based on BPMN 2.0 Best Practices):
+- Look for grouped activities: "Order Processing includes...", "Payment workflow: ...", "Quality check process: ...", "Handle Order Picking and Delivery"
+- Identify logical groupings of 2+ related tasks with common purpose
+- Common patterns: processing, verification, approval, validation, review workflows, handling, management procedures
+- Keywords: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage", "handling", "management"
+- Naming: Use "verb + complement" format (e.g., "Review Application", "Register Request", "Verify and Approve Customer")
+- Types: Default to Embedded SubProcess (collapsed or expanded), use Call Activity for reusable flows, Event SubProcess for exceptions/timeouts
+- Subprocesses can be nested (subprocess within subprocess)
 
 LAYOUT REQUIREMENTS:
 - Use layered layout with orthogonal routing
@@ -514,15 +528,134 @@ GATEWAY REQUIREMENTS (MANDATORY):
   * Example: <bpmn:inclusiveGateway id="Gateway_3" name="Inclusive decision"/>
 
 SUBPROCESS REQUIREMENTS (MANDATORY):
-- subProcess: Use for grouped related activities (2+ tasks that form a logical unit)
-  * Can be collapsed (triggeredByEvent="false") or expanded (contains nested elements)
-  * For expanded subprocess: nest tasks, gateways, and flows inside the subProcess element
-  * For collapsed subprocess: use triggeredByEvent="false" and add a + marker in diagram
-  * Example collapsed: <bpmn:subProcess id="SubProcess_1" name="Order Processing" triggeredByEvent="false"/>
-  * Example expanded: <bpmn:subProcess id="SubProcess_1" name="Order Processing"><bpmn:task id="Task_1" name="Validate Order"/>...</bpmn:subProcess>
-- Common subprocess patterns to detect and create:
-  * "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process", "Verification Process"
-  * Any group of 2+ related tasks mentioned together
+Subprocesses are compound activities representing a sequence of grouped tasks treated as a single step. They help break large processes into manageable parts, improve readability, and enable reuse.
+
+TYPES OF SUBPROCESSES:
+
+1. EMBEDDED SUBPROCESS (Most Common):
+   - Defined and detailed within the main diagram
+   - Part of the main process with integrated start and end events
+   - Can be represented in two ways:
+     * COLLAPSED: Rectangular box with rounded corners, subprocess name at the top, circular "+" icon in the center (triggeredByEvent="false", isExpanded="false" in BPMNShape)
+     * EXPANDED: Shows all internal tasks directly in the diagram (isExpanded="true" or omitted in BPMNShape)
+   - Cannot be reused in other processes
+   - Use when: Tasks are closely related to main process, to improve readability, when reuse is not needed
+   - XML Structure:
+     * Collapsed (shows "+" icon): 
+       <bpmn:subProcess id="SubProcess_1" name="Verify and Approve Customer" triggeredByEvent="false"/>
+       <bpmndi:BPMNShape id="BPMNShape_SubProcess_1" bpmnElement="SubProcess_1" isExpanded="false">
+         <dc:Bounds x="100" y="100" width="100" height="80"/>
+       </bpmndi:BPMNShape>
+       Note: isExpanded="false" in BPMNShape makes it display as collapsed with "+" icon
+     * Expanded (shows internal tasks when "+" icon is clicked): 
+       <bpmn:subProcess id="SubProcess_1" name="Procurement">
+         <bpmn:startEvent id="StartEvent_Sub1"/>
+         <bpmn:task id="Task_1" name="Order Items"/>
+         <bpmn:task id="Task_2" name="Receive Items"/>
+         <bpmn:endEvent id="EndEvent_Sub1"/>
+         <!-- Boundary events attached to subprocess -->
+         <bpmn:boundaryEvent id="BoundaryEvent_1" attachedToRef="SubProcess_1">
+           <bpmn:errorEventDefinition errorRef="Error_Undeliverable"/>
+         </bpmn:boundaryEvent>
+         <bpmn:boundaryEvent id="BoundaryEvent_2" attachedToRef="SubProcess_1">
+           <bpmn:escalationEventDefinition escalationRef="Escalation_LateDelivery"/>
+         </bpmn:boundaryEvent>
+       </bpmn:subProcess>
+       <!-- Internal sequence flows -->
+       <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Sub1" targetRef="Task_1"/>
+       <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Task_2"/>
+       <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_2" targetRef="EndEvent_Sub1"/>
+       <!-- Flows from boundary events -->
+       <bpmn:sequenceFlow id="Flow_4" sourceRef="BoundaryEvent_1" targetRef="Task_Inform1"/>
+       <bpmn:sequenceFlow id="Flow_5" sourceRef="BoundaryEvent_2" targetRef="Task_Inform2"/>
+       <!-- Diagram interchange for expanded subprocess -->
+       <bpmndi:BPMNShape id="BPMNShape_SubProcess_1" bpmnElement="SubProcess_1" isExpanded="true">
+         <dc:Bounds x="100" y="100" width="400" height="300"/>
+         <!-- Internal elements' shapes -->
+         <bpmndi:BPMNShape id="BPMNShape_StartEvent_Sub1" bpmnElement="StartEvent_Sub1">
+           <dc:Bounds x="120" y="150" width="36" height="36"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape id="BPMNShape_Task_1" bpmnElement="Task_1">
+           <dc:Bounds x="200" y="130" width="100" height="80"/>
+         </bpmndi:BPMNShape>
+         <!-- Boundary event shapes attached to subprocess boundary -->
+         <bpmndi:BPMNShape id="BPMNShape_BoundaryEvent_1" bpmnElement="BoundaryEvent_1">
+           <dc:Bounds x="250" y="380" width="36" height="36"/>
+         </bpmndi:BPMNShape>
+       </bpmndi:BPMNShape>
+       Note: When isExpanded="true", the subprocess shows all internal tasks, gateways, and flows. Boundary events can be attached to handle exceptions, errors, or escalations.
+
+2. CALL ACTIVITY (For Reusable Subprocesses):
+   - Calls an external, reusable process that can be versioned separately
+   - Use when: Same flow needs to be reused across different processes
+   - Common reusable patterns: "Approve Request", "Issue Invoice", "Validate Customer Data"
+   - XML: <bpmn:callActivity id="CallActivity_1" name="Approve Request" calledElement="ApproveRequestProcess"/>
+
+3. EVENT SUBPROCESS:
+   - Triggered by events (messages, timeouts, signals, errors)
+   - Not part of main sequence flow
+   - Can be interrupting (stops main flow) or non-interrupting (runs in parallel)
+   - Use when: Handling exceptions, delays, external events, automatic monitoring
+   - Example: Timer Event Subprocess for "Response time exceeded" scenarios
+
+4. AD-HOC SUBPROCESS:
+   - Tasks can be executed in any order or optionally
+   - No explicit sequence between tasks
+   - Use when: No predefined sequence, informal/creative workflows, participants decide execution order
+
+5. TRANSACTIONAL SUBPROCESS:
+   - Activities must succeed together or all roll back
+   - Use when: Financial/legal operations, partial completion not acceptable, need commit/cancel boundaries
+
+NAMING CONVENTIONS:
+- Use clear "verb + complement" format: "Review Application", "Register Request", "Handle Order Picking and Delivery"
+- Names should describe the grouped activity clearly
+
+DETECTION PATTERNS:
+- Look for grouped activities with common purpose or theme
+- Keywords: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage", "handling", "management"
+- Common patterns: "Order Processing", "Payment Processing", "Approval Workflow", "Quality Control", "Data Validation", "Review Process", "Verification Process", "Customer Registration", "Material Request Handling"
+- Any group of 2+ related tasks mentioned together should be grouped in a subprocess
+- Subprocesses can be nested (subprocess within subprocess)
+
+BOUNDARY EVENTS ON SUBPROCESSES:
+- Boundary events can be attached to subprocesses to handle exceptions, errors, escalations, or timeouts
+- Common boundary event types:
+  * Error Boundary Event: Handles errors (e.g., "Undeliverable", "Payment Failed")
+  * Escalation Boundary Event: Handles escalations (e.g., "Late Delivery", "Timeout")
+  * Message Boundary Event: Handles incoming messages
+  * Timer Boundary Event: Handles time-based events
+- Boundary events are attached using attachedToRef pointing to the subprocess ID
+- When a boundary event is triggered, it interrupts (or doesn't interrupt) the subprocess and flows to external tasks
+- Example: "Procurement" subprocess with "Undeliverable" and "Late Delivery" boundary events leading to "Inform Customer" tasks
+
+EXPANDED VS COLLAPSED - INTERACTIVE BEHAVIOR:
+- DEFAULT: Always create COLLAPSED subprocesses (isExpanded="false") for cleaner main process view
+- Collapsed subprocess displays: rectangular box with rounded corners, subprocess name at top, circular "+" icon in center
+- When user clicks "+" icon: subprocess expands to show all internal elements (startEvent, tasks, gateways, endEvent, internal flows)
+- When expanded: displays "-" icon that allows user to collapse back to single subprocess element
+- Expanding pushes rest of diagram down/sideways to accommodate internal workflow visibility
+- Collapsed mode: shows only subprocess name and "+" toggle icon
+- Expanded mode: shows full internal workflow with proper BPMN notation (all tasks, gateways, flows visible)
+- Internal elements must be properly nested inside subProcess element when expanded
+- All internal sequence flows must connect internal elements only
+- Boundary events can be visible on both collapsed and expanded subprocesses
+
+BEST PRACTICES FOR INTERACTIVE SUBPROCESSES:
+- Group logically related tasks (2+ tasks) into subprocesses
+- Prefer Embedded Subprocess for most cases (unless reuse is needed)
+- ALWAYS default to collapsed subprocesses (isExpanded="false") for cleaner diagrams
+- Collapsed subprocesses must have isExpanded="false" in bpmndi:BPMNShape to show "+" icon
+- When expanded (isExpanded="true"), include ALL internal elements with proper bounds in DI layer
+- Internal elements (startEvent, tasks, gateways, endEvent) must be nested inside subProcess element
+- Internal sequence flows must be defined and connect only internal elements
+- Layout: Calculate bounds for expanded subprocess to accommodate all internal elements
+- Visual adjustment: Expanded subprocess should push surrounding elements to maintain diagram clarity
+- Use Call Activity when the same flow needs to be reused
+- Use Event Subprocess for exceptions, delays, and interruptions
+- Use Boundary Events on subprocesses to handle exceptions, errors, or escalations
+- Name subprocesses clearly using verb + complement format
+- Subprocesses should have meaningful names describing the grouped activity
 
 LAYOUT ALGORITHM (critical for clean diagrams):
 - Use layered (Sugiyama) layout: assign layers, minimize crossings, apply orthogonal routing
@@ -544,6 +677,17 @@ VALIDATION:
 - All bpmndi shapes have valid bounds (x, y, width, height > 0)
 - All bpmndi edges have at least 2 waypoints
 - Subprocesses are properly nested (expanded) or marked as collapsed
+- INTERACTIVE SUBPROCESS VALIDATION:
+  * Collapsed subprocesses MUST have isExpanded="false" in bpmndi:BPMNShape to display with "+" icon
+  * Collapsed subprocesses show only name and "+" toggle, hiding internal elements
+  * Expanded subprocesses should have isExpanded="true" in bpmndi:BPMNShape and include ALL internal element shapes (startEvent, tasks, gateways, endEvent) with proper bounds
+  * Expanded subprocesses must show "-" icon for collapsing
+  * Internal elements' bounds must be positioned within the expanded subprocess bounds
+  * Internal sequence flows within expanded subprocesses must connect internal elements only
+  * Expanded subprocess layout should push surrounding elements to maintain diagram clarity
+- Boundary events attached to subprocesses must have attachedToRef pointing to the subprocess ID
+- Flows from boundary events should connect to external tasks outside the subprocess
+- Default to collapsed (isExpanded="false") for all subprocesses unless explicitly needed expanded
 - Gateway types match their usage (XOR for decisions, AND for parallel, OR for inclusive)
 - Decision points in the process MUST have corresponding gateways
 - Grouped activities MUST be wrapped in subprocesses
@@ -562,9 +706,14 @@ GATEWAY VALIDATION:
 - Gateways must have proper split/join pairs for parallel flows
 
 SUBPROCESS VALIDATION:
-- If analysis mentions grouped activities (e.g., "Order Processing includes...", "Payment workflow: ...") → MUST create subProcess
-- Related tasks mentioned together should be grouped in a subprocess
-- Subprocesses should have meaningful names describing the grouped activity
+- If analysis mentions grouped activities (e.g., "Order Processing includes...", "Payment workflow: ...", "Handle Order Picking and Delivery") → MUST create Embedded SubProcess
+- Related tasks mentioned together (2+ tasks) should be grouped in a subprocess
+- Subprocesses should have meaningful names using "verb + complement" format (e.g., "Review Application", "Register Request")
+- Look for keywords: "process", "procedure", "workflow", "sub-process", "module", "phase", "stage", "handling", "management"
+- If same flow appears in multiple places → consider Call Activity for reuse
+- If exception handling, timeouts, or event-driven flows → consider Event SubProcess
+- Subprocesses can be nested (subprocess within subprocess)
+- Default to Embedded SubProcess (collapsed or expanded) unless reuse is explicitly needed
 
 Return ONLY valid, schema-compliant BPMN 2.0 XML with complete diagram interchange (DI) for clean rendering. Include gateways and subprocesses as detected. No markdown, no explanations.`;
 
@@ -864,7 +1013,28 @@ CRITICAL:
 - If the analysis mentions decision points, conditions, or "if/else" patterns, you MUST include exclusiveGateway (XOR) elements
 - If the analysis mentions parallel activities, "simultaneous", or "at the same time", you MUST include parallelGateway (AND) elements  
 - If the analysis mentions "one or more", "any combination", or optional paths, you MUST include inclusiveGateway (OR) elements
-- If the analysis mentions grouped activities, workflows, or sub-processes, you MUST create subProcess elements to group related tasks
+- If the analysis mentions grouped activities, workflows, or sub-processes, you MUST create Embedded SubProcess elements to group related tasks (2+ related tasks)
+- Use proper subprocess naming: "verb + complement" format (e.g., "Review Application", "Handle Order Picking and Delivery", "Verify and Approve Customer")
+- Subprocesses can be collapsed (triggeredByEvent="false") or expanded (with nested tasks, gateways, and flows)
+- INTERACTIVE SUBPROCESS REQUIREMENTS:
+  * ALWAYS create COLLAPSED subprocesses by default (isExpanded="false" in bpmndi:BPMNShape)
+  * Collapsed displays: rectangular box with rounded corners, subprocess name at top, circular "+" icon in center
+  * When user clicks "+" icon, subprocess expands to reveal internal workflow
+  * Expanded displays: "-" icon to collapse, full internal structure visible
+- For COLLAPSED subprocesses (DEFAULT):
+  * MUST include isExpanded="false" in bpmndi:BPMNShape element
+  * Shows only subprocess name and "+" toggle icon
+  * Internal elements are defined in XML but hidden from view
+- For EXPANDED subprocesses (when "+" icon is clicked):
+  * Include startEvent, tasks, gateways, endEvent, and sequence flows inside the subProcess element
+  * Use isExpanded="true" in bpmndi:BPMNShape
+  * Include bpmndi:BPMNShape elements for ALL internal elements (startEvent, tasks, gateways, endEvent) with proper bounds
+  * Internal elements' bounds must be within the subprocess bounds
+  * Show internal structure with proper layout and routing
+  * Expanded subprocess pushes surrounding elements to accommodate internal workflow
+- Boundary events can be attached to subprocesses using attachedToRef (e.g., error events for "Undeliverable", escalation events for "Late Delivery")
+- When boundary events are present, include sequence flows from boundary events to external tasks
+- Default to Embedded SubProcess (collapsed with "+" icon) unless reuse is needed (then use Call Activity) or exception handling is needed (then use Event SubProcess)
 - Do not skip gateways or subprocesses - they are essential for accurate process modeling
 
 Do not modify, improve, or redesign - just replicate exactly with proper gateway and subprocess elements:\n\n${documentAnalysis}`
@@ -893,7 +1063,7 @@ Do not modify, improve, or redesign - just replicate exactly with proper gateway
     if (!bpmnXml.startsWith('<?xml')) {
       throw new Error('Generated content is not valid XML - missing XML declaration');
     }
-    
+
     if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
       throw new Error('Generated BPMN XML is invalid or incomplete');
     }

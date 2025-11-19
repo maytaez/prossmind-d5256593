@@ -1456,9 +1456,143 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       }
     });
 
-    // Listen to element clicks to show context menu
-    eventBus.on("element.click", (event: { element: { type?: string; waypoints?: unknown }; originalEvent: MouseEvent }) => {
-      const { element, originalEvent } = event;
+    // Helper function to toggle subprocess expand/collapse
+    const toggleSubprocessExpansion = (elementId: string) => {
+      if (!modelerRef.current) return;
+      
+      try {
+        const modeling = modelerRef.current.get('modeling') as { 
+          updateProperties: (element: unknown, properties: { isExpanded?: boolean }) => void;
+          toggleCollapse?: (element: unknown) => void;
+        };
+        const elementRegistry = modelerRef.current.get('elementRegistry') as { get: (id: string) => unknown };
+        
+        const subprocessElement = elementRegistry.get(elementId);
+        if (subprocessElement) {
+          if (typeof modeling.toggleCollapse === 'function') {
+            // Use built-in toggle method if available
+            modeling.toggleCollapse(subprocessElement);
+          } else {
+            // Fallback: manually toggle isExpanded
+            const bo = (subprocessElement as { businessObject?: { di?: { isExpanded?: boolean } } }).businessObject;
+            const di = bo?.di;
+            const currentExpanded = di?.isExpanded !== false;
+            modeling.updateProperties(subprocessElement, {
+              isExpanded: !currentExpanded
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error toggling subprocess expansion:', error);
+      }
+    };
+
+    // Add direct DOM event listener for marker clicks
+    const handleMarkerClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | SVGElement;
+      if (!target || !modelerRef.current) return;
+
+      // Check if click is on a marker element (SVG circle or path that represents +/- icon)
+      const isMarkerElement = target.tagName === 'circle' || 
+                              target.tagName === 'path' ||
+                              target.classList.contains('djs-collapse-marker') ||
+                              target.classList.contains('djs-expand-marker') ||
+                              target.closest('.djs-collapse-marker') ||
+                              target.closest('.djs-expand-marker');
+      
+      if (isMarkerElement) {
+        const elementRegistry = modelerRef.current.get('elementRegistry') as { 
+          filter: (filterFn: (element: { type?: string; id?: string }) => boolean) => Array<{ type?: string; id?: string }>;
+        };
+        const canvas = modelerRef.current.get('canvas') as { 
+          getGraphics: (element: unknown) => SVGElement | null;
+        };
+        
+        // Get all subprocesses and check which one contains this marker
+        const subprocesses = elementRegistry.filter((el: { type?: string }) => el.type === 'bpmn:SubProcess');
+        
+        for (const subprocess of subprocesses) {
+          if (subprocess.id) {
+            const gfx = canvas.getGraphics(subprocess);
+            if (gfx) {
+              // Check if the clicked element is within this subprocess's graphics
+              const gfxRect = gfx.getBoundingClientRect();
+              const clickX = e.clientX;
+              const clickY = e.clientY;
+              
+              // Check if click is in the bottom center area (where marker typically is)
+              const isInMarkerArea = clickX >= gfxRect.left && 
+                                     clickX <= gfxRect.right &&
+                                     clickY >= gfxRect.bottom - 30 && // Bottom 30px area
+                                     clickY <= gfxRect.bottom + 10;
+              
+              // Also check if target is actually within the gfx element
+              if (gfx.contains(target as Node) || isInMarkerArea) {
+                toggleSubprocessExpansion(subprocess.id);
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    // Add click listener to the container
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('click', handleMarkerClick, true); // Use capture phase
+    }
+
+    // Listen to element clicks to show context menu or toggle subprocess
+    eventBus.on("element.click", (event: { element: { type?: string; waypoints?: unknown; businessObject?: { isExpanded?: boolean }; id?: string }; originalEvent: MouseEvent; gfx?: unknown }) => {
+      const { element, originalEvent, gfx } = event;
+
+      // Handle subprocess expand/collapse on click
+      if (element.type === 'bpmn:SubProcess' && element.id && modelerRef.current) {
+        try {
+          const canvas = modelerRef.current.get('canvas') as { 
+            getGraphics: (element: unknown) => SVGElement | null;
+          };
+          
+          if (gfx) {
+            const svgElement = gfx as SVGElement;
+            const clickTarget = originalEvent.target as HTMLElement | SVGElement;
+            
+            // Check if click is on a marker element (circle, path, or marker class)
+            const isMarkerClick = clickTarget && (
+              clickTarget.tagName === 'circle' ||
+              clickTarget.tagName === 'path' ||
+              (clickTarget as HTMLElement).classList?.contains('djs-collapse-marker') ||
+              (clickTarget as HTMLElement).classList?.contains('djs-expand-marker') ||
+              (clickTarget as HTMLElement).closest?.('.djs-collapse-marker') ||
+              (clickTarget as HTMLElement).closest?.('.djs-expand-marker')
+            );
+            
+            // Also check if click is in the bottom center area of the subprocess (where marker is)
+            const gfxRect = svgElement.getBoundingClientRect();
+            const clickX = originalEvent.clientX;
+            const clickY = originalEvent.clientY;
+            const isInMarkerArea = clickX >= gfxRect.left && 
+                                   clickX <= gfxRect.right &&
+                                   clickY >= gfxRect.bottom - 40 && // Bottom 40px area
+                                   clickY <= gfxRect.bottom + 10 &&
+                                   clickX >= gfxRect.left + (gfxRect.width * 0.4) && // Center 20% of width
+                                   clickX <= gfxRect.right - (gfxRect.width * 0.4);
+            
+            if (isMarkerClick || isInMarkerArea) {
+              // Click is on the marker, toggle expansion
+              toggleSubprocessExpansion(element.id);
+              originalEvent.stopPropagation();
+              originalEvent.preventDefault();
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Error handling subprocess click:', error);
+        }
+      }
 
       if (!canEditRef.current) {
         setShowContextMenu(false);
@@ -1483,7 +1617,54 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       }
     });
 
+    // Listen for double-click on subprocesses to toggle expand/collapse
+    eventBus.on("element.dblclick", (event: { element: { type?: string; id?: string } }) => {
+      const { element } = event;
+      
+      if (element.type === 'bpmn:SubProcess' && element.id) {
+        toggleSubprocessExpansion(element.id);
+      }
+    });
+
+    // Listen for interaction events that might be triggered by marker clicks
+    eventBus.on("interactionEvents.create", (event: { element: { type?: string; id?: string } }) => {
+      // This might catch marker interactions in some BPMN.js versions
+    });
+
+    // Also listen for marker click events (alternative event name)
+    eventBus.on("marker.click", (event: { element: { type?: string; id?: string } }) => {
+      const { element } = event;
+      
+      if (element.type === 'bpmn:SubProcess' && element.id) {
+        toggleSubprocessExpansion(element.id);
+      }
+    });
+
+    // Listen for shape click events that might include marker clicks
+    eventBus.on("shape.click", (event: { element: { type?: string; id?: string }; originalEvent?: MouseEvent }) => {
+      const { element, originalEvent } = event;
+      
+      if (element.type === 'bpmn:SubProcess' && element.id && originalEvent) {
+        const target = originalEvent.target as HTMLElement;
+        // Check if click is on a marker
+        if (target && (
+          target.classList.contains('djs-collapse-marker') ||
+          target.closest('.djs-collapse-marker') ||
+          target.classList.contains('djs-expand-marker') ||
+          target.closest('.djs-expand-marker')
+        )) {
+          toggleSubprocessExpansion(element.id);
+          originalEvent.stopPropagation();
+          originalEvent.preventDefault();
+        }
+      }
+    });
+
     return () => {
+      // Remove event listener
+      if (container) {
+        container.removeEventListener('click', handleMarkerClick, true);
+      }
       // Cleanup only on unmount
       if (modelerRef.current) {
         modelerRef.current.destroy();
@@ -2058,43 +2239,41 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   }, [canEdit]);
 
   // Enhanced Download/Export handler with format options
-  const handleDownloadWithFormat = useCallback(async (format: 'bpmn' | 'xml' | 'svg' = 'bpmn') => {
-    if (!modelerRef.current) return;
+  const handleDownloadWithFormat = useCallback(
+    async (format: 'bpmn' | 'xml' | 'svg' | 'png' | 'jpeg' | 'jpg' = 'bpmn') => {
+      if (!modelerRef.current) return;
 
-    try {
-      if (format === 'svg') {
-        // Export as SVG
-        const canvas = modelerRef.current.get("canvas") as { svg: () => string };
-        const svg = canvas.svg();
-        const blob = new Blob([svg], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `diagram.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast.success("SVG exported successfully");
-      } else {
-        // Export as BPMN/XML
-        const { xml } = await modelerRef.current.saveXML({ format: true });
-        const blob = new Blob([xml], { type: 'application/xml' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `diagram.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        toast.success(`${format.toUpperCase()} exported successfully`);
+      const diagramLabel = diagramType === "bpmn" ? "BPMN" : "P&ID";
+      const normalizedExt = format === 'jpeg' ? 'jpeg' : format;
+      const filename = `${diagramLabel}_v${version}.${normalizedExt}`;
+
+      try {
+        if (format === 'bpmn' || format === 'xml') {
+          const { xml } = await modelerRef.current.saveXML({ format: true });
+          const blob = new Blob([xml], { type: 'application/xml' });
+          downloadBlob(blob, filename);
+          toast.success(`Exported ${filename}`);
+        } else {
+          const { svg } = await modelerRef.current.saveSVG({ format: true });
+          if (format === 'svg') {
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            downloadBlob(blob, filename);
+            toast.success(`Exported ${filename}`);
+          } else {
+            const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+            const background = format === 'png' ? 'rgba(255,255,255,0)' : '#ffffff';
+            const blob = await exportSvgStringToImage(svg, mimeType, background);
+            downloadBlob(blob, filename);
+            toast.success(`Exported ${filename}`);
+          }
+        }
+      } catch (error) {
+        console.error("Export error:", error);
+        toast.error("Failed to export diagram");
       }
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export diagram");
-    }
-  }, []);
+    },
+    [diagramType, version]
+  );
 
   // Zoom functions
   const handleZoomIn = useCallback(() => {
@@ -3072,6 +3251,18 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               <DropdownMenuItem onClick={() => handleDownloadWithFormat('svg')}>
                 <ImageIcon className="h-4 w-4 mr-2" />
                 Export as .svg
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('png')}>
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Export as .png
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('jpeg')}>
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Export as .jpeg
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownloadWithFormat('jpg')}>
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Export as .jpg
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
