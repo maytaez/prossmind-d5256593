@@ -15,7 +15,8 @@ CRITICAL RULES:
 3. Use elements: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, endEvent
 4. Include sequenceFlow with sourceRef and targetRef
 5. Add bpmndi:BPMNDiagram section for visual layout
-6. Return ONLY XML, no markdown or explanations`;
+6. Return ONLY XML, no markdown or explanations
+7. IMPORTANT: Generate all element names and labels in the SAME LANGUAGE as the user's prompt. If the user writes in German, use German labels. If in English, use English labels, etc.`;
 }
 
 /**
@@ -31,7 +32,8 @@ CRITICAL RULES:
 4. Instruments (dataObjectReference): pid:type="instrument", pid:symbol="transmitter_level|transmitter_flow|transmitter_pressure|analyzer", pid:category="control"
 5. Controllers (subProcess): pid:type="controller", pid:symbol="controller_pid|controller_plc", pid:category="control"
 6. Lines: pid:type="line", pid:category="process|signal|electrical"
-7. Return ONLY XML with 2-3 sentence summary before XML`;
+7. Return ONLY XML with 2-3 sentence summary before XML
+8. IMPORTANT: Generate all element names and labels in the SAME LANGUAGE as the user's prompt. If the user writes in German, use German labels. If in English, use English labels, etc.`;
 }
 
 /**
