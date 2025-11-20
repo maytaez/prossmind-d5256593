@@ -29,6 +29,7 @@ serve(async (req) => {
     const requestData = await req.json();
     prompt = requestData.prompt;
     const diagramType = requestData.diagramType || 'bpmn';
+    const skipCache = requestData.skipCache === true; // Check if caching should be skipped
     
     if (!prompt) {
       throw new Error('Prompt is required');
@@ -36,30 +37,34 @@ serve(async (req) => {
     
     promptLength = prompt.length;
     console.log('Generating BPMN for prompt:', prompt);
-
-    // Generate hash for exact cache lookup
+    
+    // Generate hash (needed for potential cache storage even if skipping cache lookup)
     const promptHash = await generateHash(`${prompt}:${diagramType}`);
+    
+    if (skipCache) {
+      console.log('Cache disabled for this request (modeling agent mode)');
+    } else {
+      // Check exact hash cache first
+      const exactCache = await checkExactHashCache(promptHash, diagramType);
+      if (exactCache) {
+        console.log('Exact hash cache hit');
+        cacheType = 'exact_hash';
+        const responseTime = Date.now() - startTime;
+        
+        await logPerformanceMetric({
+          function_name: 'generate-bpmn',
+          cache_type: 'exact_hash',
+          prompt_length: prompt.length,
+          response_time_ms: responseTime,
+          cache_hit: true,
+          error_occurred: false,
+        });
 
-    // Check exact hash cache first
-    const exactCache = await checkExactHashCache(promptHash, diagramType);
-    if (exactCache) {
-      console.log('Exact hash cache hit');
-      cacheType = 'exact_hash';
-      const responseTime = Date.now() - startTime;
-      
-      await logPerformanceMetric({
-        function_name: 'generate-bpmn',
-        cache_type: 'exact_hash',
-        prompt_length: prompt.length,
-        response_time_ms: responseTime,
-        cache_hit: true,
-        error_occurred: false,
-      });
-
-      return new Response(
-        JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+        return new Response(
+          JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
@@ -79,8 +84,8 @@ serve(async (req) => {
     
     console.log(`Using model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens}, reasoning: ${modelSelection.reasoning})`);
 
-    // Check semantic cache if enabled and exact hash missed
-    if (isSemanticCacheEnabled()) {
+    // Check semantic cache if enabled and exact hash missed (skip if cache disabled)
+    if (!skipCache && isSemanticCacheEnabled()) {
       try {
         const embedding = await generateEmbedding(prompt);
         const semanticCache = await checkSemanticCache(
@@ -220,22 +225,26 @@ serve(async (req) => {
           throw new Error('Generated BPMN XML is invalid or incomplete');
         }
 
-        // Store in cache only after successful validation (async, don't wait)
-        (async () => {
-          try {
-            let embedding: number[] | undefined;
-            if (isSemanticCacheEnabled()) {
-              try {
-                embedding = await generateEmbedding(prompt);
-              } catch (e) {
-                console.warn('Failed to generate embedding for cache storage:', e);
+        // Store in cache only after successful validation (async, don't wait) - skip if cache disabled
+        if (!skipCache) {
+          (async () => {
+            try {
+              let embedding: number[] | undefined;
+              if (isSemanticCacheEnabled()) {
+                try {
+                  embedding = await generateEmbedding(prompt);
+                } catch (e) {
+                  console.warn('Failed to generate embedding for cache storage:', e);
+                }
               }
+              await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding);
+            } catch (cacheError) {
+              console.error('Failed to store in cache:', cacheError);
             }
-            await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding);
-          } catch (cacheError) {
-            console.error('Failed to store in cache:', cacheError);
-          }
-        })();
+          })();
+        } else {
+          console.log('Skipping cache storage (modeling agent mode)');
+        }
 
         const responseTime = Date.now() - startTime;
 

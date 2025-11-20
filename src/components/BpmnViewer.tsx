@@ -5,7 +5,7 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
 import { Button } from "@/components/ui/button";
-import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List } from "lucide-react";
+import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -86,6 +86,15 @@ interface AlternativeModel {
   complexity: AlternativeComplexity;
   xml: string;
   generatedAt?: string;
+  metrics?: {
+    taskCount: number;
+    decisionPoints: number;
+    parallelBranches: number;
+    errorHandlers: number;
+    eventTypes: string[];
+    estimatedPaths: number;
+  };
+  previewFailed?: boolean;
 }
 
 type SystemActivityType = "visit" | "click";
@@ -164,6 +173,80 @@ const computeSha256 = async (value: string): Promise<string> => {
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+// Calculate complexity metrics for a BPMN model
+const calculateModelMetrics = (xmlString: string): {
+  taskCount: number;
+  decisionPoints: number;
+  parallelBranches: number;
+  errorHandlers: number;
+  eventTypes: string[];
+  estimatedPaths: number;
+} => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlString, "application/xml");
+    
+    if (doc.getElementsByTagName("parsererror").length > 0) {
+      return { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, eventTypes: [], estimatedPaths: 1 };
+    }
+
+    // Count tasks
+    const taskElements = doc.querySelectorAll('task, userTask, serviceTask, manualTask, sendTask, receiveTask, scriptTask, businessRuleTask, callActivity');
+    const taskCount = taskElements.length;
+
+    // Count gateways (decision points)
+    const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway, eventBasedGateway');
+    const decisionPoints = gateways.length;
+
+    // Count parallel gateways (parallel branches)
+    const parallelGateways = doc.querySelectorAll('parallelGateway');
+    const parallelBranches = parallelGateways.length;
+
+    // Count error catch events
+    const errorEvents = doc.querySelectorAll('boundaryEvent errorEventDefinition, intermediateCatchEvent errorEventDefinition');
+    const errorHandlers = errorEvents.length;
+
+    // Collect event types
+    const eventTypes: string[] = [];
+    const allEvents = doc.querySelectorAll('startEvent, intermediateCatchEvent, intermediateThrowEvent, endEvent, boundaryEvent');
+    allEvents.forEach(event => {
+      const eventDefs = event.querySelectorAll('messageEventDefinition, timerEventDefinition, errorEventDefinition, escalationEventDefinition, signalEventDefinition, conditionalEventDefinition');
+      eventDefs.forEach(def => {
+        const tagName = def.tagName.replace('EventDefinition', '').toLowerCase();
+        if (tagName && !eventTypes.includes(tagName)) {
+          eventTypes.push(tagName);
+        }
+      });
+    });
+
+    // Estimate execution paths (simplified: 2^decisionPoints for exclusive, more for parallel)
+    let estimatedPaths = 1;
+    gateways.forEach(gateway => {
+      const tagName = gateway.tagName.toLowerCase();
+      if (tagName.includes('exclusive')) {
+        estimatedPaths *= 2; // Each exclusive gateway doubles paths
+      } else if (tagName.includes('parallel')) {
+        const outgoingFlows = gateway.querySelectorAll('outgoing').length;
+        estimatedPaths *= Math.max(2, outgoingFlows);
+      } else if (tagName.includes('inclusive')) {
+        estimatedPaths *= 2; // Simplified estimate
+      }
+    });
+
+    return {
+      taskCount,
+      decisionPoints,
+      parallelBranches,
+      errorHandlers,
+      eventTypes: eventTypes.length > 0 ? eventTypes : ['none'],
+      estimatedPaths: Math.max(1, estimatedPaths)
+    };
+  } catch (error) {
+    console.error("Failed to calculate metrics:", error);
+    return { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, eventTypes: [], estimatedPaths: 1 };
+  }
 };
 
 const extractProcessSummary = (xmlString: string, type: "bpmn" | "pid"): string => {
@@ -371,8 +454,53 @@ const downloadBlob = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
-const renderXmlToSvg = async (xml: string): Promise<string> => {
-  // Render using an offscreen modeler instance
+// Calculate diagram complexity
+const calculateDiagramComplexity = (xml: string): { elementCount: number; complexity: 'simple' | 'intermediate' | 'complex' | 'very-complex' } => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "application/xml");
+    
+    if (doc.getElementsByTagName("parsererror").length > 0) {
+      return { elementCount: 0, complexity: 'simple' };
+    }
+
+    const tasks = doc.querySelectorAll('task, userTask, serviceTask, manualTask, sendTask, receiveTask, scriptTask, businessRuleTask, callActivity');
+    const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway, eventBasedGateway');
+    const events = doc.querySelectorAll('startEvent, intermediateCatchEvent, intermediateThrowEvent, endEvent, boundaryEvent');
+    const flows = doc.querySelectorAll('sequenceFlow, messageFlow');
+    const subprocesses = doc.querySelectorAll('subProcess, callActivity');
+    
+    const elementCount = tasks.length + gateways.length + events.length + flows.length + subprocesses.length;
+    
+    let complexity: 'simple' | 'intermediate' | 'complex' | 'very-complex';
+    if (elementCount <= 20) complexity = 'simple';
+    else if (elementCount <= 50) complexity = 'intermediate';
+    else if (elementCount <= 100) complexity = 'complex';
+    else complexity = 'very-complex';
+    
+    return { elementCount, complexity };
+  } catch (error) {
+    console.error("Failed to calculate complexity:", error);
+    return { elementCount: 0, complexity: 'simple' };
+  }
+};
+
+// Render with timeout wrapper
+const renderWithTimeout = async <T,>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string
+): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    ),
+  ]);
+};
+
+// Layer 1: Primary SVG rendering
+const renderXmlToSvg = async (xml: string, timeoutMs = 5000): Promise<string> => {
   const container = document.createElement("div");
   container.style.position = "fixed";
   container.style.left = "-99999px";
@@ -380,16 +508,166 @@ const renderXmlToSvg = async (xml: string): Promise<string> => {
   container.style.width = "1200px";
   container.style.height = "800px";
   document.body.appendChild(container);
+  
   try {
-    const tmpModeler = new BpmnModeler({ container });
-    await tmpModeler.importXML(xml);
-    const { svg } = await tmpModeler.saveSVG();
-    tmpModeler.destroy();
+    const renderPromise = (async () => {
+      const tmpModeler = new BpmnModeler({ container });
+      await tmpModeler.importXML(xml);
+      const { svg } = await tmpModeler.saveSVG();
+      tmpModeler.destroy();
+      return svg;
+    })();
+    
+    const svg = await renderWithTimeout(
+      renderPromise,
+      timeoutMs,
+      "SVG rendering timed out"
+    );
+    
     document.body.removeChild(container);
     return svg;
   } catch (e) {
-    document.body.removeChild(container);
+    if (container.parentNode) {
+      document.body.removeChild(container);
+    }
     throw e;
+  }
+};
+
+// Layer 2: Canvas-based rendering fallback
+const renderXmlToCanvas = async (xml: string, timeoutMs = 5000): Promise<string> => {
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.left = "-99999px";
+  container.style.top = "-99999px";
+  container.style.width = "2000px"; // Larger for complex diagrams
+  container.style.height = "1500px";
+  document.body.appendChild(container);
+  
+  try {
+    const renderPromise = (async () => {
+      const tmpModeler = new BpmnModeler({ container });
+      await tmpModeler.importXML(xml);
+      
+      // Wait for complex diagrams to fully render
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      const { svg } = await tmpModeler.saveSVG();
+      tmpModeler.destroy();
+      return svg;
+    })();
+    
+    const svg = await renderWithTimeout(
+      renderPromise,
+      timeoutMs,
+      "Canvas rendering timed out"
+    );
+    
+    document.body.removeChild(container);
+    return svg;
+  } catch (e) {
+    if (container.parentNode) {
+      document.body.removeChild(container);
+    }
+    throw e;
+  }
+};
+
+// Layer 3: Server-side preview generation (async, returns placeholder)
+const requestServerPreview = async (xml: string, title: string): Promise<string | null> => {
+  try {
+    // This would call a server endpoint to generate preview
+    // For now, return null to indicate server preview not available
+    // TODO: Implement server-side preview endpoint
+    return null;
+  } catch (error) {
+    console.error("Server preview request failed:", error);
+    return null;
+  }
+};
+
+// Layer 4: Simplified diagram representation (always succeeds)
+const generateSimplifiedPreview = (xml: string, title: string): string => {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, "application/xml");
+    
+    if (doc.getElementsByTagName("parsererror").length > 0) {
+      throw new Error("Invalid XML");
+    }
+    
+    // Extract key information
+    const tasks = Array.from(doc.querySelectorAll('task, userTask, serviceTask')).slice(0, 10);
+    const taskNames = tasks.map(t => t.getAttribute('name') || 'Task').filter(Boolean);
+    const startEvents = doc.querySelectorAll('startEvent');
+    const endEvents = doc.querySelectorAll('endEvent');
+    const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway');
+    
+    // Create a simplified SVG representation
+    const width = 600;
+    const height = Math.max(400, taskNames.length * 60 + 100);
+    
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background: white;">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+          <polygon points="0 0, 10 3, 0 6" fill="#1976d2" />
+        </marker>
+        <style>
+          .task-box { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+          .start-end { fill: #c8e6c9; stroke: #388e3c; stroke-width: 2; }
+          .gateway { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+          .text { font-family: Arial, sans-serif; font-size: 12px; fill: #333; }
+          .title { font-size: 14px; font-weight: bold; fill: #1976d2; }
+        </style>
+      </defs>
+      <text x="${width/2}" y="25" text-anchor="middle" class="title">${title}</text>
+      <text x="${width/2}" y="45" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">Simplified Preview</text>
+    `;
+    
+    // Draw start event
+    if (startEvents.length > 0) {
+      svg += `<circle cx="50" cy="80" r="15" class="start-end" />
+              <text x="50" y="85" text-anchor="middle" class="text" style="font-size: 10px;">Start</text>`;
+    }
+    
+    // Draw tasks
+    let yPos = 120;
+    taskNames.forEach((name, idx) => {
+      const x = 150;
+      const truncatedName = name.length > 25 ? name.substring(0, 22) + '...' : name;
+      svg += `<rect x="${x-60}" y="${yPos-15}" width="120" height="30" rx="5" class="task-box" />
+              <text x="${x}" y="${yPos+2}" text-anchor="middle" class="text">${truncatedName}</text>`;
+      
+      if (idx < taskNames.length - 1) {
+        svg += `<line x1="${x}" y1="${yPos+15}" x2="${x}" y2="${yPos+45}" stroke="#1976d2" stroke-width="2" marker-end="url(#arrowhead)" />`;
+      }
+      yPos += 60;
+    });
+    
+    // Draw end event
+    if (endEvents.length > 0) {
+      svg += `<circle cx="150" cy="${yPos}" r="15" class="start-end" />
+              <text x="150" y="${yPos+5}" text-anchor="middle" class="text" style="font-size: 10px;">End</text>`;
+    }
+    
+    // Add gateway indicator if present
+    if (gateways.length > 0) {
+      svg += `<text x="${width-100}" y="80" class="text" style="font-size: 10px; fill: #f57c00;">${gateways.length} Gateway${gateways.length > 1 ? 's' : ''}</text>`;
+    }
+    
+    // Add element count
+    const elementCount = tasks.length + gateways.length + startEvents.length + endEvents.length;
+    svg += `<text x="${width/2}" y="${height-20}" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">${elementCount} elements total</text>`;
+    
+    svg += `</svg>`;
+    
+    return svg;
+  } catch (error) {
+    // Ultimate fallback: minimal SVG
+    return `<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg" style="background: white;">
+      <text x="200" y="100" text-anchor="middle" font-family="Arial" font-size="14" fill="#666">${title}</text>
+      <text x="200" y="120" text-anchor="middle" font-family="Arial" font-size="12" fill="#999">Diagram Preview</text>
+    </svg>`;
   }
 };
 
@@ -409,24 +687,166 @@ function invokeWithTimeout(functionName: string, options: any, timeout: number):
   });
 }
 
-const AlternativeDiagramPreview = ({ xml, title }: { xml: string; title: string }) => {
+// Cache for successful previews (5-minute TTL)
+const previewCache = new Map<string, { svg: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getCachedPreview = (cacheKey: string): string | null => {
+  const cached = previewCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.svg;
+  }
+  if (cached) {
+    previewCache.delete(cacheKey);
+  }
+  return null;
+};
+
+const setCachedPreview = (cacheKey: string, svg: string) => {
+  previewCache.set(cacheKey, { svg, timestamp: Date.now() });
+};
+
+// Generate cache key from XML content
+const generateCacheKey = (xml: string, title: string): string => {
+  // Use a hash of the XML content + title for cache key
+  const hash = xml.slice(0, 100) + title;
+  return btoa(hash).replace(/[^a-zA-Z0-9]/g, '');
+};
+
+const AlternativeDiagramPreview = ({ 
+  xml, 
+  title, 
+  onRetry,
+  onDownloadAvailable 
+}: { 
+  xml: string; 
+  title: string;
+  onRetry?: () => void;
+  onDownloadAvailable?: (available: boolean) => void;
+}) => {
   const [svg, setSvg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'timeout' | 'complex' | 'unavailable' | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [renderStage, setRenderStage] = useState<'svg' | 'canvas' | 'server' | 'failed'>('svg');
 
   useEffect(() => {
     let isMounted = true;
+    const complexity = calculateDiagramComplexity(xml);
+    const cacheKey = generateCacheKey(xml, title);
+    
+    // Check cache first
+    const cachedSvg = getCachedPreview(cacheKey);
+    if (cachedSvg) {
+      setSvg(cachedSvg);
+      setLoading(false);
+      if (onDownloadAvailable) {
+        onDownloadAvailable(true);
+      }
+      return;
+    }
+    
     const generateSvg = async () => {
       setLoading(true);
       setError(null);
+      setErrorType(null);
+      setRenderStage('svg');
+      
       try {
-        const renderedSvg = await renderXmlToSvg(xml);
+        let renderedSvg: string | null = null;
+        let lastError: Error | null = null;
+        
+        // Layer 1: Primary SVG rendering (5s timeout)
+        try {
+          setRenderStage('svg');
+          renderedSvg = await renderXmlToSvg(xml, 5000);
+          console.log(`✓ SVG render successful for ${title}`);
+        } catch (svgError) {
+          lastError = svgError as Error;
+          console.warn(`✗ SVG render failed for ${title}:`, svgError);
+          
+          // Layer 2: Canvas-based fallback (5s timeout)
+          try {
+            setRenderStage('canvas');
+            renderedSvg = await renderXmlToCanvas(xml, 5000);
+            console.log(`✓ Canvas render successful for ${title}`);
+          } catch (canvasError) {
+            lastError = canvasError as Error;
+            console.warn(`✗ Canvas render failed for ${title}:`, canvasError);
+            
+            // Layer 3: Server-side preview (async, show loader)
+            if (complexity.complexity === 'complex' || complexity.complexity === 'very-complex') {
+              setRenderStage('server');
+              try {
+                const serverSvg = await requestServerPreview(xml, title);
+                if (serverSvg) {
+                  renderedSvg = serverSvg;
+                  console.log(`✓ Server preview successful for ${title}`);
+                } else {
+                  throw new Error("Server preview not available");
+                }
+              } catch (serverError) {
+                lastError = serverError as Error;
+                console.warn(`✗ Server preview failed for ${title}:`, serverError);
+              }
+            }
+            
+            // Layer 4: Simplified representation (ALWAYS succeeds as final fallback)
+            if (!renderedSvg) {
+              setRenderStage('svg'); // Reset stage for simplified view
+              try {
+                renderedSvg = generateSimplifiedPreview(xml, title);
+                console.log(`✓ Simplified preview generated for ${title}`);
+              } catch (simplifiedError) {
+                console.error(`✗ Even simplified preview failed for ${title}:`, simplifiedError);
+                // This should never happen, but if it does, we have ultimate fallback in generateSimplifiedPreview
+                renderedSvg = generateSimplifiedPreview(xml, title);
+              }
+            }
+          }
+        }
+        
+        // GUARANTEE: Always set a preview (never show "unavailable")
         if (isMounted) {
-          setSvg(renderedSvg);
+          if (renderedSvg) {
+            setSvg(renderedSvg);
+            setCachedPreview(cacheKey, renderedSvg); // Cache successful render
+            setRenderStage('svg'); // Reset to show success
+            if (onDownloadAvailable) {
+              onDownloadAvailable(true);
+            }
+          } else {
+            // Ultimate fallback: generate simplified preview
+            const fallbackSvg = generateSimplifiedPreview(xml, title);
+            setSvg(fallbackSvg);
+            if (onDownloadAvailable) {
+              onDownloadAvailable(true);
+            }
+          }
         }
       } catch (e) {
         if (isMounted) {
-          setError("Preview failed");
+          // Ultimate fallback: always generate simplified preview
+          try {
+            const fallbackSvg = generateSimplifiedPreview(xml, title);
+            setSvg(fallbackSvg);
+            if (onDownloadAvailable) {
+              onDownloadAvailable(true);
+            }
+          } catch (fallbackError) {
+            // Even simplified preview failed (should never happen)
+            console.error(`Even simplified preview failed for ${title}:`, fallbackError);
+            // Set a minimal SVG as last resort
+            const minimalSvg = `<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg" style="background: white;">
+              <text x="200" y="100" text-anchor="middle" font-family="Arial" font-size="14" fill="#666">${title}</text>
+              <text x="200" y="120" text-anchor="middle" font-family="Arial" font-size="12" fill="#999">Diagram Preview</text>
+            </svg>`;
+            setSvg(minimalSvg);
+            if (onDownloadAvailable) {
+              onDownloadAvailable(true);
+            }
+          }
         }
         console.error(`Failed to render preview for ${title}:`, e);
       } finally {
@@ -441,14 +861,45 @@ const AlternativeDiagramPreview = ({ xml, title }: { xml: string; title: string 
     return () => {
       isMounted = false;
     };
-  }, [xml, title]);
+  }, [xml, title, retryCount, onDownloadAvailable]);
+
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+    if (onRetry) {
+      onRetry();
+    }
+  };
+
+  const getErrorMessage = () => {
+    if (errorType === 'complex') {
+      return {
+        title: "Diagram too complex - rendering simplified preview",
+        description: "This model has many elements. Preview may be simplified, but full version is available for download."
+      };
+    } else if (errorType === 'timeout') {
+      return {
+        title: "Preview rendering timed out",
+        description: "Please download the XML file to view the complete diagram."
+      };
+    } else {
+      return {
+        title: "Preview temporarily unavailable",
+        description: "Model generated successfully and ready to download. Try again in a moment."
+      };
+    }
+  };
+
+  const errorMsg = error ? getErrorMessage() : null;
 
   return (
     <div className="w-full h-full flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#ffffff' }}>
       {loading ? (
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      ) : error ? (
-        <div className="text-xs text-destructive text-center p-2">{error}</div>
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          {renderStage === 'server' && (
+            <p className="text-xs text-muted-foreground">Generating server preview...</p>
+          )}
+        </div>
       ) : svg ? (
         <img
           src={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`}
@@ -477,7 +928,10 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [isLoadingAlternatives, setIsLoadingAlternatives] = useState(false);
   const [alternativeError, setAlternativeError] = useState<string | null>(null);
   const [alternativeProgress, setAlternativeProgress] = useState<{ completed: number; total: number; current?: string }>({ completed: 0, total: 0 });
+  const [modelStatuses, setModelStatuses] = useState<Map<string, 'queued' | 'generating' | 'completed' | 'failed'>>(new Map());
   const [alternativeCount, setAlternativeCount] = useState<number>(5);
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const alternativesScrollRef = useRef<HTMLDivElement>(null);
   const [selectedAlternativeId, setSelectedAlternativeId] = useState<string | null>(null);
   const [logHistory, setLogHistory] = useState<LogHistoryEntry[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -496,6 +950,109 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
     () => extractProcessSummary(xml, diagramType),
     [xml, diagramType]
   );
+
+  // Calculate recommended model based on complexity balance
+  // Generate variant summary (strengths, weaknesses, use cases)
+  const getVariantSummary = useCallback((model: AlternativeModel) => {
+    const metrics = model.metrics || { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, estimatedPaths: 1 };
+    const complexity = model.complexity;
+    
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+    const useCases: string[] = [];
+    
+    if (complexity === 'basic') {
+      strengths.push('Simple and easy to understand');
+      strengths.push('Fast to implement and maintain');
+      strengths.push('Low complexity reduces errors');
+      weaknesses.push('Limited flexibility for complex scenarios');
+      weaknesses.push('No error handling or recovery paths');
+      weaknesses.push('Cannot model parallel or conditional flows');
+      useCases.push('Simple, linear processes');
+      useCases.push('Quick prototyping');
+      useCases.push('Training and documentation');
+    } else if (complexity === 'intermediate') {
+      strengths.push('Balanced complexity and clarity');
+      strengths.push('Includes decision points and parallel flows');
+      strengths.push('Human and system interaction points');
+      if (metrics.errorHandlers > 0) {
+        strengths.push('Basic error handling included');
+      }
+      if (metrics.parallelBranches > 0) {
+        strengths.push('Optimized for efficiency');
+      }
+      weaknesses.push('May lack advanced error recovery');
+      weaknesses.push('Limited compliance checkpoints');
+      useCases.push('Standard business processes');
+      useCases.push('Process optimization');
+      useCases.push('Team collaboration workflows');
+    } else if (complexity === 'advanced') {
+      strengths.push('Comprehensive error handling and recovery');
+      strengths.push('Multiple execution paths');
+      strengths.push('Compliance and audit ready');
+      strengths.push('External system integration');
+      if (metrics.errorHandlers > 1) {
+        strengths.push('Robust error recovery mechanisms');
+      }
+      if (metrics.parallelBranches > 2) {
+        strengths.push('Highly optimized parallel execution');
+      }
+      weaknesses.push('Higher implementation complexity');
+      weaknesses.push('Requires more maintenance');
+      weaknesses.push('Steeper learning curve');
+      useCases.push('Enterprise-grade processes');
+      useCases.push('Compliance-critical workflows');
+      useCases.push('Complex multi-system integrations');
+      useCases.push('High-availability systems');
+    }
+    
+    return { strengths, weaknesses, useCases };
+  }, []);
+
+  const recommendedModel = useMemo(() => {
+    if (!alternativeModels.length) return null;
+    
+    // Enhanced scoring algorithm for recommendation
+    const scored = alternativeModels.map(model => {
+      let score = 0;
+      const metrics = model.metrics || { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, estimatedPaths: 1 };
+      
+      // Complexity scoring (prefer intermediate for standard use)
+      if (model.complexity === 'intermediate') score += 15;
+      else if (model.complexity === 'basic') score += 8;
+      else score += 5;
+      
+      // Task count balance (3-12 is optimal)
+      if (metrics.taskCount >= 3 && metrics.taskCount <= 12) score += 8;
+      else if (metrics.taskCount > 12 && metrics.taskCount <= 20) score += 5;
+      else if (metrics.taskCount > 0) score += 2;
+      
+      // Decision points (1-3 is optimal)
+      if (metrics.decisionPoints >= 1 && metrics.decisionPoints <= 3) score += 8;
+      else if (metrics.decisionPoints > 3) score += 4;
+      
+      // Parallel branches (1-2 is optimal)
+      if (metrics.parallelBranches > 0 && metrics.parallelBranches <= 2) score += 6;
+      else if (metrics.parallelBranches > 2) score += 3;
+      
+      // Error handling (preferred but not required)
+      if (metrics.errorHandlers > 0) score += 5;
+      if (metrics.errorHandlers > 1) score += 2;
+      
+      // Path diversity (2-5 paths is optimal)
+      if (metrics.estimatedPaths >= 2 && metrics.estimatedPaths <= 5) score += 4;
+      else if (metrics.estimatedPaths > 5) score += 2;
+      
+      // Penalize extremes
+      if (metrics.taskCount > 25) score -= 5; // Too complex
+      if (metrics.taskCount < 2) score -= 3; // Too simple
+      
+      return { model, score };
+    });
+    
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0]?.model || alternativeModels[0];
+  }, [alternativeModels]);
 
   const selectedAlternative = useMemo(() => {
     if (!alternativeModels.length) {
@@ -831,18 +1388,72 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           }
         }
 
-        const variantsToGenerate = ALTERNATIVE_VARIANTS.slice(
-          0,
-          Math.min(ALTERNATIVE_VARIANTS.length, Math.max(1, alternativeCount))
-        );
+        // Generate alternatives with proper complexity distribution
+        const getVariantsByCount = (count: number) => {
+          // Get all variants grouped by complexity
+          const basic = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'basic');
+          const intermediate = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'intermediate');
+          const advanced = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'advanced');
+          
+          const result: typeof ALTERNATIVE_VARIANTS = [];
+          
+          if (count === 3) {
+            // Perfect balance: 1 BASIC, 1 INTERMEDIATE, 1 ADVANCED
+            if (basic.length > 0) result.push(basic[0]);
+            if (intermediate.length > 0) result.push(intermediate[0]);
+            if (advanced.length > 0) result.push(advanced[0]);
+          } else if (count === 5) {
+            // Balanced: 1 BASIC, 2 INTERMEDIATE, 2 ADVANCED
+            if (basic.length > 0) result.push(basic[0]);
+            // Add up to 2 intermediate variants
+            for (let i = 0; i < Math.min(2, intermediate.length); i++) {
+              result.push(intermediate[i]);
+            }
+            // Add up to 2 advanced variants
+            for (let i = 0; i < Math.min(2, advanced.length); i++) {
+              result.push(advanced[i]);
+            }
+          } else if (count === 7) {
+            // Full range: 1 BASIC (only 1 available), 3 INTERMEDIATE, 3 ADVANCED
+            // Since we only have 1 basic, adjust: 1 BASIC, 3 INTERMEDIATE, 3 ADVANCED
+            if (basic.length > 0) result.push(basic[0]);
+            // Add up to 3 intermediate variants
+            for (let i = 0; i < Math.min(3, intermediate.length); i++) {
+              result.push(intermediate[i]);
+            }
+            // Add up to 3 advanced variants
+            for (let i = 0; i < Math.min(3, advanced.length); i++) {
+              result.push(advanced[i]);
+            }
+          }
+          
+          // If we don't have enough variants, fill with remaining ones in order
+          if (result.length < count) {
+            const usedIds = new Set(result.map(v => v.id));
+            const remaining = ALTERNATIVE_VARIANTS.filter(v => !usedIds.has(v.id));
+            result.push(...remaining.slice(0, count - result.length));
+          }
+          
+          // Ensure we return exactly the requested count
+          return result.slice(0, count);
+        };
+        
+        const variantsToGenerate = getVariantsByCount(alternativeCount);
 
         if (!variantsToGenerate.length) {
           throw new Error("No variant definitions available for generation.");
         }
 
-        // Initialize progress tracking
+        // Initialize progress tracking with individual model statuses
         const totalVariants = variantsToGenerate.length;
         setAlternativeProgress({ completed: 0, total: totalVariants, current: undefined });
+        
+        // Initialize status map for all models
+        const initialStatuses = new Map<string, 'queued' | 'generating' | 'completed' | 'failed'>();
+        variantsToGenerate.forEach(variant => {
+          initialStatuses.set(variant.id, 'queued');
+        });
+        setModelStatuses(initialStatuses);
 
         // Generate variants in parallel (limit to 3 concurrent requests to avoid rate limiting)
         const generated: AlternativeModel[] = [];
@@ -850,6 +1461,13 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
 
         const generateVariant = async (variant: typeof variantsToGenerate[0], index: number) => {
           try {
+            // Update status to generating
+            setModelStatuses(prev => {
+              const updated = new Map(prev);
+              updated.set(variant.id, 'generating');
+              return updated;
+            });
+            
             setAlternativeProgress({
               completed: completedCount,
               total: totalVariants,
@@ -861,107 +1479,186 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 ? variant.instructions.pid
                 : variant.instructions.bpmn;
 
-            // Build complexity-specific prompt with unique constraints
+            // Define complexity-specific constraints
             const complexityConstraints = {
               basic: {
                 maxElements: 12,
                 maxTasks: 6,
-                maxParallelBranches: 0,
+                maxBranches: 0,
                 maxDecisionPoints: 0,
                 maxSubprocesses: 0,
-                maxNestingDepth: 1,
-                mandatoryStructure: `
-CRITICAL: Generate a SIMPLE, SEQUENTIAL BPMN diagram with NO branching or decision points.
+                maxDepth: 1,
+                description: 'Minimal, straight-line flow with only essential activities'
+              },
+              intermediate: {
+                maxElements: 25,
+                maxTasks: 12,
+                maxBranches: 2,
+                maxDecisionPoints: 1,
+                maxSubprocesses: 1,
+                maxDepth: 2,
+                description: 'Balanced with some parallelism and decision points'
+              },
+              advanced: {
+                maxElements: 45,
+                maxTasks: 20,
+                maxBranches: 4,
+                maxDecisionPoints: 3,
+                maxSubprocesses: 2,
+                maxDepth: 3,
+                description: 'Complex with error handling, parallel flows, and subprocesses'
+              }
+            };
+            
+            const constraints = complexityConstraints[variant.complexity] || complexityConstraints.intermediate;
+            
+            // Create highly specific, prescriptive prompts for each variant to ensure different BPMN structures
+            const getVariantSpecificPrompt = (variant: typeof variantsToGenerate[0], instructions: string) => {
+              if (variant.complexity === 'basic') {
+                return `
+CRITICAL: Generate a BEGINNER-LEVEL BPMN diagram - SIMPLE, LINEAR SEQUENCE ONLY.
 
-MANDATORY STRUCTURE FOR BASIC TIER:
-1. Start Event → Task 1 → Task 2 → Task 3 → ... → End Event
-2. NO gateways (no XOR, AND, OR, or Inclusive gateways)
-3. NO parallel branches
-4. NO decision points
-5. NO subprocesses
-6. NO loops or backflows
-7. Simple linear sequence only
-8. Maximum 6 tasks total
-9. Each task flows directly to the next task
+MODE: BEGINNER
+The complexity of the diagram must align with Beginner mode:
+- Use ONLY basic tasks and events in a linear sequence
+- AVOID branches, parallel flows, or advanced notations
+
+MANDATORY STRUCTURE FOR BEGINNER TIER:
+1. Start Event → Basic Task 1 → Basic Task 2 → Basic Task 3 → ... → End Event
+2. Use only simple <task> or <userTask> elements (no serviceTask, no manualTask)
+3. Use only <startEvent> and <endEvent> (no intermediate events)
+4. NO gateways (no XOR, AND, OR, or Inclusive gateways)
+5. NO parallel branches
+6. NO decision points
+7. NO subprocesses
+8. NO loops or backflows
+9. NO pools or lanes
+10. NO boundary events
+11. NO BPMN artifacts (data objects, annotations, groups)
+12. Simple linear sequence only
+13. Maximum ${constraints.maxTasks} tasks total
+14. Each task flows directly to the next task
 
 EXAMPLE STRUCTURE:
 <startEvent> → <task name="Task 1"> → <task name="Task 2"> → <task name="Task 3"> → <endEvent>
 
 DO NOT include:
-- Any gateways (exclusiveGateway, parallelGateway, inclusiveGateway)
-- Any subprocesses
-- Any boundary events
-- Any intermediate events
+- Any gateways (exclusiveGateway, parallelGateway, inclusiveGateway, eventBasedGateway)
+- Any subprocesses (subProcess, callActivity)
+- Any boundary events (boundaryEvent)
+- Any intermediate events (intermediateCatchEvent, intermediateThrowEvent)
 - Any loops or cycles
+- Any pools or lanes
+- Any BPMN artifacts (dataObject, dataStore, annotation, group)
+- Any advanced notations
 
-Generate ONLY a simple sequential flow.`
-              },
-              intermediate: {
-                maxElements: 25,
-                maxTasks: 12,
-                maxParallelBranches: 2,
-                maxDecisionPoints: 1,
-                maxSubprocesses: 1,
-                maxNestingDepth: 2,
-                mandatoryStructure: `
+Generate ONLY a simple, linear sequential flow with basic tasks and events.`;
+              } else if (variant.complexity === 'intermediate') {
+                return `
 CRITICAL: Generate an INTERMEDIATE BPMN diagram with STRUCTURE and ORGANIZATION.
 
+MODE: INTERMEDIATE
+The complexity of the diagram must align with Intermediate mode:
+- Add 1-2 decision gateways
+- Include possible parallel tasks
+- Include at least one subprocess or event
+- Include human and system interaction points
+
 MANDATORY STRUCTURE FOR INTERMEDIATE TIER:
-1. MUST include at least 1 decision gateway (XOR gateway) with 2-3 outgoing paths
+1. MUST include 1-2 decision gateways (XOR gateway) with 2-3 outgoing paths each
 2. MUST include at least 1 parallel gateway (AND gateway) OR 1 subprocess
-3. MUST have swimlanes (pools/lanes) if the variant is "Human-Centric Collaboration"
-4. Include 8-12 tasks total
-5. Show clear decision points with labeled conditions
-6. Include at least one parallel branch OR one subprocess grouping related tasks
+3. MUST include at least one subprocess OR intermediate event (message, timer, or signal)
+4. MUST include human and system interaction points:
+   - Use <userTask> for human interaction points (manual work, approvals, reviews)
+   - Use <serviceTask> for system interaction points (automated services, API calls, integrations)
+   - Mix of userTask and serviceTask to show human-system collaboration
+5. MUST have swimlanes (pools/lanes) if the variant is "Human-Centric Collaboration"
+6. Include 8-12 tasks total
+7. Show clear decision points with labeled conditions
+8. Include at least one parallel branch OR one subprocess grouping related tasks
+9. Can include intermediate events (message, timer, signal) for communication or timing
 
 EXAMPLE STRUCTURES:
-- Decision path: <startEvent> → <task> → <exclusiveGateway> → [Path A: task → task] OR [Path B: task → task] → <endEvent>
-- Parallel path: <startEvent> → <task> → <parallelGateway> → [Branch 1: task] + [Branch 2: task] → <parallelGateway> → <endEvent>
-- Subprocess: <startEvent> → <task> → <subProcess> (with internal tasks) → <task> → <endEvent>
+- Decision with human/system mix: <startEvent> → <userTask name="Review"> → <exclusiveGateway> → [Path A: <serviceTask name="Auto-approve">] OR [Path B: <userTask name="Manual Review">] → <endEvent>
+- Parallel with subprocess: <startEvent> → <task> → <parallelGateway> → [Branch 1: <userTask>] + [Branch 2: <subProcess> (with internal tasks)] → <parallelGateway> → <endEvent>
+- With intermediate event: <startEvent> → <userTask> → <intermediateCatchEvent type="message"> → <serviceTask> → <endEvent>
 
 MUST include:
-- At least 1 exclusiveGateway (decision point)
+- At least 1 exclusiveGateway (decision point) - 1-2 total
 - At least 1 parallelGateway OR 1 subProcess
-- Clear flow organization
-- 2-3 different execution paths`
-              },
-              advanced: {
-                maxElements: 45,
-                maxTasks: 20,
-                maxParallelBranches: 4,
-                maxDecisionPoints: 3,
-                maxSubprocesses: 2,
-                maxNestingDepth: 3,
-                mandatoryStructure: `
+- At least 1 userTask (human interaction point)
+- At least 1 serviceTask (system interaction point)
+- At least 1 subprocess OR 1 intermediate event
+- Clear flow organization showing human-system collaboration
+- 2-3 different execution paths`;
+              } else if (variant.complexity === 'advanced') {
+                return `
 CRITICAL: Generate a COMPLEX, ADVANCED BPMN diagram with MULTIPLE STRUCTURES.
 
+MODE: ADVANCED
+The complexity of the diagram must align with Advanced mode:
+- Model complex gateways
+- Include parallel flows
+- Include multiple pools or lanes
+- Include detailed error handling
+- Include recovery paths
+- Include compliance checkpoints
+- Include integration with external systems
+- Use BPMN artifacts and documentation elements
+
 MANDATORY STRUCTURE FOR ADVANCED TIER:
-1. MUST include 2-3 decision gateways (XOR/Inclusive gateways) creating multiple paths
+1. MUST include 2-3 complex decision gateways (XOR/Inclusive/Event-based gateways) creating multiple paths
 2. MUST include 2-4 parallel branches (AND gateways) for concurrent execution
 3. MUST include 1-2 subprocesses with internal workflows
-4. MUST include error handling: at least 1 boundary event attached to a task or subprocess
-5. Include 15-20 tasks total
-6. Show complex routing with multiple decision points
-7. Include compensation or rollback paths if applicable
-8. Use event-based gateways for exception handling if needed
+4. MUST include detailed error handling:
+   - At least 1 boundary event (error, escalation, timer, or signal) attached to a task or subprocess
+   - Error handling paths that lead to recovery or compensation tasks
+5. MUST include recovery paths:
+   - Compensation tasks or compensation events
+   - Rollback paths for error recovery
+   - Retry mechanisms or alternative paths
+6. MUST include compliance checkpoints:
+   - Tasks or subprocesses labeled as "Compliance Check", "Audit", "Validation", "Approval"
+   - Data objects or annotations marking compliance requirements
+7. MUST include integration with external systems:
+   - Service tasks representing external API calls, system integrations
+   - Message events for system-to-system communication
+   - Call activities for reusable external processes
+8. MUST include multiple pools or lanes:
+   - At least 2 pools (different participants/organizations) OR
+   - At least 2 lanes within a pool (different roles/departments)
+9. MUST use BPMN artifacts and documentation elements:
+   - Data objects (dataObject) for information flow
+   - Data stores (dataStore) for persistent data
+   - Annotations (textAnnotation) for documentation
+   - Groups (group) for logical grouping
+10. Include 15-20 tasks total
+11. Show complex routing with multiple decision points
+12. Include event-based gateways for exception handling
 
 EXAMPLE STRUCTURES:
-- Multiple decisions: <startEvent> → <task> → <exclusiveGateway> → [Path A] OR [Path B] → <exclusiveGateway> → [Path C] OR [Path D] → <endEvent>
-- Parallel + Subprocess: <startEvent> → <parallelGateway> → [Branch 1: task] + [Branch 2: <subProcess> (with internal tasks)] → <parallelGateway> → <endEvent>
-- Error handling: <task> with <boundaryEvent> (error) attached → <errorHandlerTask> → <endEvent>
-- Complex flow: Multiple gateways, subprocesses, parallel branches, and error paths all interconnected
+- Multiple pools with integration: <pool id="Customer"> → <task> → <messageFlow> → <pool id="System"> → <serviceTask name="External API"> → <messageFlow> → <pool id="Customer">
+- Error handling with recovery: <task> with <boundaryEvent type="error"> attached → <task name="Recovery Task"> → <task name="Retry Original"> → back to original flow
+- Compliance checkpoint: <task> → <subProcess name="Compliance Check"> → <dataObject name="Compliance Report"> → <exclusiveGateway> → [Compliant: continue] OR [Non-compliant: escalate]
+- Parallel with artifacts: <parallelGateway> → [Branch 1: <task> + <dataObject>] + [Branch 2: <subProcess> + <annotation>] → <parallelGateway>
 
 MUST include:
-- 2-3 exclusiveGateway or inclusiveGateway (decision points)
-- 2-4 parallelGateway pairs (split + join)
+- 2-3 exclusiveGateway, inclusiveGateway, or eventBasedGateway (complex decision points)
+- 2-4 parallelGateway pairs (split + join for parallel flows)
 - 1-2 subProcess elements (collapsed or expanded)
-- At least 1 boundaryEvent (error, escalation, or timer)
+- At least 1 boundaryEvent (error, escalation, timer, or signal) for error handling
+- At least 1 recovery path (compensation, rollback, or retry mechanism)
+- At least 1 compliance checkpoint (task or subprocess for compliance/audit)
+- At least 1 external system integration (serviceTask for API/system integration)
+- Multiple pools (2+) OR multiple lanes (2+) for organizational structure
+- At least 2 BPMN artifacts (dataObject, dataStore, annotation, or group)
 - Multiple execution paths (4+ different paths through the diagram)
-- Complex routing with gateways connecting different branches`
+- Complex routing with gateways connecting different branches`;
               }
+              return '';
             };
 
-            const constraints = complexityConstraints[variant.complexity];
+            const variantSpecificInstructions = getVariantSpecificPrompt(variant, instructions);
             
             const prompt = `
               ============================================
@@ -976,17 +1673,17 @@ MUST include:
               COMPLEXITY TIER: ${variant.complexity.toUpperCase()}
               ============================================
               
-              ${constraints.mandatoryStructure}
+              ${variantSpecificInstructions}
               
               ============================================
               TECHNICAL CONSTRAINTS
               ============================================
               - Maximum ${constraints.maxElements} total elements
               - Maximum ${constraints.maxTasks} tasks
-              - Maximum ${constraints.maxParallelBranches} parallel branches
+              - Maximum ${constraints.maxBranches} parallel branches
               - Maximum ${constraints.maxDecisionPoints} decision points
               - Maximum ${constraints.maxSubprocesses} subprocesses
-              - Maximum ${constraints.maxNestingDepth} nesting depth
+              - Maximum ${constraints.maxDepth} nesting depth
               
               ============================================
               CRITICAL REQUIREMENTS - READ CAREFULLY
@@ -1030,7 +1727,11 @@ MUST include:
             `;
 
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
-              body: { prompt, diagramType },
+              body: { 
+                prompt, 
+                diagramType,
+                skipCache: true // Disable caching for modeling agent mode to ensure unique variants
+              },
             }, 30000); // 30-second timeout
 
             if (error) {
@@ -1041,17 +1742,170 @@ MUST include:
               throw new Error(`No BPMN XML returned for ${variant.title}`);
             }
 
+            // Pre-render validation: Check complexity and validate structure
+            const calculatedComplexity = calculateDiagramComplexity(data.bpmnXml);
+            const metrics = calculateModelMetrics(data.bpmnXml);
+            
+            // IMPORTANT: Use the variant's predefined complexity, NOT the calculated one
+            // The calculated complexity is only for validation, not for display
+            // The variant complexity (basic/intermediate/advanced) is the intended complexity level
+            const modelComplexity: AlternativeComplexity = variant.complexity;
+            
+            // Validation checks
+            const validationErrors: string[] = [];
+            const validationWarnings: string[] = [];
+            
+            // Check element count constraint (max 45 elements for reliable rendering)
+            if (calculatedComplexity.elementCount > 45) {
+              validationErrors.push(`Too many elements (${calculatedComplexity.elementCount} > 45)`);
+            }
+            
+            // Validate structure matches complexity tier requirements
+            try {
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(data.bpmnXml, "application/xml");
+              
+              if (doc.getElementsByTagName("parsererror").length > 0) {
+                validationErrors.push("Invalid XML structure");
+              }
+              
+              // Check for sequence flows with invalid source/target
+              const flows = doc.querySelectorAll('sequenceFlow');
+              flows.forEach((flow, idx) => {
+                const sourceRef = flow.getAttribute('sourceRef');
+                const targetRef = flow.getAttribute('targetRef');
+                if (!sourceRef || !targetRef) {
+                  validationErrors.push(`Flow ${idx} missing sourceRef or targetRef`);
+                }
+              });
+              
+              // Tier-specific structure validation
+              const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway, eventBasedGateway');
+              const subprocesses = doc.querySelectorAll('subProcess, callActivity');
+              const boundaryEvents = doc.querySelectorAll('boundaryEvent');
+              const parallelGateways = doc.querySelectorAll('parallelGateway');
+              const userTasks = doc.querySelectorAll('userTask');
+              const serviceTasks = doc.querySelectorAll('serviceTask');
+              const intermediateEvents = doc.querySelectorAll('intermediateCatchEvent, intermediateThrowEvent');
+              const pools = doc.querySelectorAll('participant');
+              const lanes = doc.querySelectorAll('lane');
+              const dataObjects = doc.querySelectorAll('dataObject, dataObjectReference');
+              const annotations = doc.querySelectorAll('textAnnotation');
+              const groups = doc.querySelectorAll('group');
+              const artifacts = doc.querySelectorAll('dataObject, dataObjectReference, textAnnotation, group');
+              
+              if (variant.complexity === 'basic') {
+                // BEGINNER: Should have NO gateways, NO subprocesses, NO advanced elements
+                if (gateways.length > 0) {
+                  validationWarnings.push(`BEGINNER tier should have no gateways, but found ${gateways.length}`);
+                }
+                if (subprocesses.length > 0) {
+                  validationWarnings.push(`BEGINNER tier should have no subprocesses, but found ${subprocesses.length}`);
+                }
+                if (metrics.decisionPoints > 0) {
+                  validationWarnings.push(`BEGINNER tier should have no decision points, but found ${metrics.decisionPoints}`);
+                }
+                if (pools.length > 1 || lanes.length > 0) {
+                  validationWarnings.push(`BEGINNER tier should have no pools/lanes, but found ${pools.length} pools and ${lanes.length} lanes`);
+                }
+                if (artifacts.length > 0) {
+                  validationWarnings.push(`BEGINNER tier should have no BPMN artifacts, but found ${artifacts.length}`);
+                }
+              } else if (variant.complexity === 'intermediate') {
+                // INTERMEDIATE: Should have 1-2 gateways, parallel tasks, subprocess/event, human/system interaction
+                if (gateways.length === 0 && subprocesses.length === 0 && intermediateEvents.length === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 gateway, subprocess, or intermediate event, but found none`);
+                }
+                if (gateways.length > 2) {
+                  validationWarnings.push(`INTERMEDIATE tier should have 1-2 gateways, but found ${gateways.length}`);
+                }
+                if (metrics.decisionPoints === 0 && metrics.parallelBranches === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 decision point or parallel branch`);
+                }
+                if (userTasks.length === 0 && serviceTasks.length === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should include human (userTask) and system (serviceTask) interaction points`);
+                }
+                if (userTasks.length === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should include at least 1 userTask for human interaction`);
+                }
+                if (serviceTasks.length === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should include at least 1 serviceTask for system interaction`);
+                }
+                if (subprocesses.length === 0 && intermediateEvents.length === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 subprocess or intermediate event`);
+                }
+              } else if (variant.complexity === 'advanced') {
+                // ADVANCED: Should have complex gateways, parallel flows, multiple pools/lanes, error handling, recovery, compliance, integration, artifacts
+                if (gateways.length < 2) {
+                  validationWarnings.push(`ADVANCED tier should have at least 2 gateways, but found ${gateways.length}`);
+                }
+                if (metrics.decisionPoints < 2 && metrics.parallelBranches < 2) {
+                  validationWarnings.push(`ADVANCED tier should have at least 2 decision points or 2 parallel branches`);
+                }
+                if (metrics.parallelBranches < 2) {
+                  validationWarnings.push(`ADVANCED tier should have at least 2 parallel branches for complexity`);
+                }
+                if (subprocesses.length === 0 && boundaryEvents.length === 0) {
+                  validationWarnings.push(`ADVANCED tier should have at least 1 subprocess or boundary event for complexity`);
+                }
+                if (boundaryEvents.length === 0) {
+                  validationWarnings.push(`ADVANCED tier should have at least 1 boundary event for error handling`);
+                }
+                if (pools.length < 2 && lanes.length < 2) {
+                  validationWarnings.push(`ADVANCED tier should have multiple pools (2+) or multiple lanes (2+), but found ${pools.length} pools and ${lanes.length} lanes`);
+                }
+                if (serviceTasks.length === 0) {
+                  validationWarnings.push(`ADVANCED tier should include serviceTask elements for external system integration`);
+                }
+                if (artifacts.length < 2) {
+                  validationWarnings.push(`ADVANCED tier should use BPMN artifacts (dataObject, annotation, group), but found only ${artifacts.length}`);
+                }
+                // Check for compliance checkpoints (tasks/subprocesses with compliance-related names)
+                const allTasks = doc.querySelectorAll('task, userTask, serviceTask, subProcess');
+                const hasComplianceCheckpoint = Array.from(allTasks).some(task => {
+                  const name = task.getAttribute('name') || '';
+                  return /compliance|audit|validation|approval|checkpoint/i.test(name);
+                });
+                if (!hasComplianceCheckpoint) {
+                  validationWarnings.push(`ADVANCED tier should include compliance checkpoints (tasks/subprocesses with compliance/audit/validation in name)`);
+                }
+              }
+              
+            } catch (parseError) {
+              validationErrors.push("XML parsing failed");
+            }
+            
+            // Log validation results
+            if (validationErrors.length > 0) {
+              console.error(`Validation errors for ${variant.title}:`, validationErrors);
+            }
+            if (validationWarnings.length > 0) {
+              console.warn(`Validation warnings for ${variant.title}:`, validationWarnings);
+              console.warn(`Generated structure: ${metrics.decisionPoints} decision points, ${metrics.parallelBranches} parallel branches, ${metrics.taskCount} tasks`);
+            }
+            
+            // DEBUG: Log complexity assignment to verify it's correct
+            console.log(`[Model Generation] ${variant.title}: Variant complexity="${variant.complexity}", Assigned complexity="${modelComplexity}", Calculated complexity="${calculatedComplexity.complexity}"`);
+            
             const newModel: AlternativeModel = {
               id: `${variant.id}-${Date.now()}-${index}`,
               title: variant.title,
               description: variant.description,
-              complexity: variant.complexity,
+              complexity: modelComplexity, // Use variant's predefined complexity (NOT calculated)
               xml: data.bpmnXml,
               generatedAt: new Date().toISOString(),
+              metrics,
             };
             
             generated.push(newModel);
             completedCount++;
+            
+            // Update status to completed
+            setModelStatuses(prev => {
+              const updated = new Map(prev);
+              updated.set(variant.id, 'completed');
+              return updated;
+            });
             
             // Update UI with the new model as it becomes available
             setAlternativeModels([...generated]);
@@ -1068,6 +1922,14 @@ MUST include:
             return newModel;
           } catch (error) {
             completedCount++;
+            
+            // Update status to failed
+            setModelStatuses(prev => {
+              const updated = new Map(prev);
+              updated.set(variant.id, 'failed');
+              return updated;
+            });
+            
             setAlternativeProgress({
               completed: completedCount,
               total: totalVariants,
@@ -3716,7 +4578,7 @@ MUST include:
       )}
 
       {/* Main Board Layout - Flowable Style */}
-      <div ref={canvasContainerRef} className="flex flex-1 overflow-hidden relative" style={{ position: 'relative', isolation: 'isolate', overflow: 'hidden' }}>
+      <div ref={canvasContainerRef} className="flex flex-1 relative" style={{ position: 'relative', isolation: 'isolate', overflow: 'auto' }}>
         {/* Draggable Elements Palette */}
         {showPalette && (
           <motion.div
@@ -4462,7 +5324,12 @@ MUST include:
           {/* BPMN Canvas */}
           <div
             ref={containerRef}
-            style={{ backgroundColor: '#ffffff' }}
+            style={{ 
+              backgroundColor: '#ffffff',
+              width: '100%',
+              height: '100%',
+              position: 'relative'
+            }}
             className={`w-full h-full border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
           />
 
@@ -5187,51 +6054,74 @@ MUST include:
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent 
+          className="max-w-[95vw] max-h-[95vh] w-[90vw] h-[90vh] overflow-hidden flex flex-col p-0"
+          style={{ 
+            maxWidth: '1400px',
+            maxHeight: '900px',
+            width: '90vw',
+            height: '90vh',
+            minWidth: '900px',
+            minHeight: '650px'
+          }}
+        >
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
             <DialogTitle>Modelling Agent Mode</DialogTitle>
             <DialogDescription>
               Compare 5-7 AI-generated BPMN variations, from streamlined to advanced, and apply the best fit
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                How many alternative diagrams would you like to generate?
-              </p>
-              <ToggleGroup
-                type="single"
-                value={String(alternativeCount)}
-                onValueChange={(value) => {
-                  if (!value || isLoadingAlternatives) return;
-                  setAlternativeCount(Number(value));
-                }}
-                className="justify-start"
-              >
-                {[3, 5, 7].map((countOption) => (
-                  <ToggleGroupItem
-                    key={countOption}
-                    value={String(countOption)}
-                    disabled={isLoadingAlternatives}
-                    className="px-4"
-                  >
-                    {countOption}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-              <p className="text-[11px] text-muted-foreground">
-                Adjust the batch size before generating or regenerating alternatives.
-              </p>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-6" style={{ minHeight: 0, scrollBehavior: 'smooth' }}>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-3 block">
+                  How many alternative diagrams would you like to generate?
+                </label>
+                <div className="flex gap-4">
+                  {[3, 5, 7].map((countOption) => (
+                    <label
+                      key={countOption}
+                      className={`flex items-center gap-2 cursor-pointer ${
+                        isLoadingAlternatives ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="alternativeCount"
+                        value={countOption}
+                        checked={alternativeCount === countOption}
+                        onChange={() => {
+                          if (!isLoadingAlternatives) {
+                            setAlternativeCount(countOption);
+                          }
+                        }}
+                        disabled={isLoadingAlternatives}
+                        className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                        aria-label={`Generate ${countOption} alternatives`}
+                      />
+                      <span className="text-sm font-medium">{countOption}</span>
+                      {countOption === 5 && (
+                        <Badge variant="secondary" className="text-[10px]">Recommended</Badge>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  <p>• <strong>3 alternatives:</strong> Quick comparison (fastest)</p>
+                  <p>• <strong>5 alternatives:</strong> Comprehensive options (recommended)</p>
+                  <p>• <strong>7 alternatives:</strong> Maximum variety (slowest)</p>
+                </div>
+              </div>
             </div>
             {isLoadingAlternatives ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-12">
+              <div className="flex flex-col items-center justify-center gap-4 py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <div className="space-y-2 text-center">
+                <div className="space-y-4 text-center w-full max-w-md">
                   <p className="text-sm font-medium">
                     Generating {alternativeProgress.total || alternativeCount} alternative {diagramType === "pid" ? "P&ID" : "BPMN"} models in parallel...
                   </p>
                   {alternativeProgress.total > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Progress: {alternativeProgress.completed} / {alternativeProgress.total}</span>
                         <span>
@@ -5241,7 +6131,7 @@ MUST include:
                           %
                         </span>
                       </div>
-                      <div className="w-64 h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                         <div
                           className="h-full bg-primary transition-all duration-300"
                           style={{
@@ -5255,11 +6145,26 @@ MUST include:
                           }}
                         />
                       </div>
-                      {alternativeProgress.current && (
-                        <p className="text-xs text-muted-foreground italic">
-                          Processing: {alternativeProgress.current}
-                        </p>
-                      )}
+                      {/* Individual model status list */}
+                      <div className="space-y-1.5 text-left border rounded-lg p-3 bg-muted/30 max-h-64 overflow-y-auto">
+                        {ALTERNATIVE_VARIANTS.slice(0, alternativeProgress.total).map((variant) => {
+                          const status = modelStatuses.get(variant.id) || 'queued';
+                          const isCurrent = alternativeProgress.current === variant.title;
+                          return (
+                            <div key={variant.id} className="flex items-center gap-2 text-xs">
+                              {status === 'completed' && <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />}
+                              {status === 'generating' && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />}
+                              {status === 'failed' && <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />}
+                              {status === 'queued' && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />}
+                              <span className={`flex-1 ${isCurrent ? 'font-medium text-primary' : ''} ${status === 'failed' ? 'text-destructive' : ''}`}>
+                                {variant.title}
+                                {status === 'failed' && ' (generation failed)'}
+                                {status === 'completed' && alternativeModels.find(m => m.title === variant.title)?.previewFailed && ' (preview unavailable)'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                   {alternativeModels.length > 0 && (
@@ -5306,19 +6211,145 @@ MUST include:
                             Generated {new Date(selectedAlternative.generatedAt).toLocaleString()}
                           </p>
                         )}
+                        {/* Recommendation badge */}
+                        {recommendedModel && recommendedModel.id === selectedAlternative.id && (
+                          <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-primary/10 to-primary/5 border-2 border-primary/30 rounded-lg shadow-sm">
+                            <span className="text-2xl">🏆</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-primary">Recommended Variant</p>
+                              <p className="text-xs text-muted-foreground">
+                                Best balance of complexity, clarity, and functionality
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {/* Enhanced KPIs display */}
+                        {selectedAlternative.metrics && (
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Key Performance Indicators</p>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                <span className="text-xs text-muted-foreground mb-1">Number of Tasks</span>
+                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.taskCount}</span>
+                              </div>
+                              <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                <span className="text-xs text-muted-foreground mb-1">Decision Points</span>
+                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.decisionPoints}</span>
+                              </div>
+                              <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                <span className="text-xs text-muted-foreground mb-1">Parallel Branches</span>
+                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.parallelBranches}</span>
+                              </div>
+                              <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                <span className="text-xs text-muted-foreground mb-1">Error Handlers</span>
+                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.errorHandlers}</span>
+                              </div>
+                              <div className="col-span-2 flex flex-col p-3 bg-background border rounded-lg">
+                                <span className="text-xs text-muted-foreground mb-1">Estimated Execution Paths</span>
+                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.estimatedPaths}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Variant Summary */}
+                        {(() => {
+                          const summary = getVariantSummary(selectedAlternative);
+                          return (
+                            <div className="space-y-3 border-t pt-4">
+                              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variant Analysis</p>
+                              <div className="grid md:grid-cols-3 gap-3 text-xs">
+                                <div>
+                                  <p className="font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1">
+                                    <span>✓</span> Strengths
+                                  </p>
+                                  <ul className="space-y-1 text-muted-foreground">
+                                    {summary.strengths.map((s, i) => (
+                                      <li key={i} className="flex items-start gap-1">
+                                        <span className="text-green-500 mt-0.5">•</span>
+                                        <span>{s}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1">
+                                    <span>⚠</span> Weaknesses
+                                  </p>
+                                  <ul className="space-y-1 text-muted-foreground">
+                                    {summary.weaknesses.map((w, i) => (
+                                      <li key={i} className="flex items-start gap-1">
+                                        <span className="text-amber-500 mt-0.5">•</span>
+                                        <span>{w}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
+                                    <span>🎯</span> Best Use Cases
+                                  </p>
+                                  <ul className="space-y-1 text-muted-foreground">
+                                    {summary.useCases.map((u, i) => (
+                                      <li key={i} className="flex items-start gap-1">
+                                        <span className="text-blue-500 mt-0.5">•</span>
+                                        <span>{u}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         <div className="space-y-2">
                           <p className="text-xs font-medium text-muted-foreground uppercase">
                             Diagram Preview
                           </p>
-                          <div className="h-64 border rounded-md" style={{ backgroundColor: '#ffffff' }}>
-                            <AlternativeDiagramPreview xml={selectedAlternative.xml} title={selectedAlternative.title} />
+                          <div 
+                            className="h-64 border rounded-md" 
+                            style={{ backgroundColor: '#ffffff' }}
+                            data-preview-container
+                          >
+                            <AlternativeDiagramPreview 
+                              xml={selectedAlternative.xml} 
+                              title={selectedAlternative.title}
+                              onRetry={() => {
+                                // Force re-render by updating a state
+                                setSelectedAlternativeId(selectedAlternative.id);
+                              }}
+                              onDownloadAvailable={(available) => {
+                                // Track preview failure
+                                if (!available) {
+                                  setAlternativeModels(prev => prev.map(m => 
+                                    m.id === selectedAlternative.id ? { ...m, previewFailed: true } : m
+                                  ));
+                                }
+                              }}
+                            />
                           </div>
                         </div>
-                        <div className="flex justify-end gap-2">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button size="sm" variant="outline">Download as</Button>
-                            </DropdownMenuTrigger>
+                        <div className="flex justify-between items-center gap-2 pt-2 border-t">
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                // Preview is already shown, scroll to it
+                                const previewElement = document.querySelector('[data-preview-container]');
+                                previewElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }}
+                              className="flex items-center gap-2"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Preview
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="outline" className="flex items-center gap-2">
+                                  <Download className="h-4 w-4" />
+                                  Download
+                                </Button>
+                              </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-44">
                               <DropdownMenuLabel>Choose format</DropdownMenuLabel>
                               <DropdownMenuSeparator />
@@ -5390,72 +6421,259 @@ MUST include:
                           <Button
                             size="sm"
                             onClick={() => {
-                              setConfirmAlternative(selectedAlternative);
-                              setConfirmAlternativeDialogOpen(true);
+                              if (selectedAlternative) {
+                                applyAlternativeModel(selectedAlternative);
+                              }
                             }}
+                            className="flex items-center gap-2"
                           >
-                            Apply to canvas
+                            <Check className="h-4 w-4" />
+                            Apply
                           </Button>
                         </div>
                       </div>
+                    </div>
                     ) : (
                       <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground bg-muted/30">
                         Select an alternative from the list to preview and apply it.
                       </div>
                     )}
                   </div>
-                  <div className="border rounded-lg p-3 bg-background/70">
+                  <div className="border rounded-lg p-3 bg-background/70 flex flex-col" style={{ minHeight: '300px', maxHeight: 'calc(100vh - 250px)' }}>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Alternatives ({alternativeModels.length})
                       </p>
                       <span className="text-[11px] text-muted-foreground">Click to preview & confirm</span>
                     </div>
-                    <ScrollArea className="h-[30rem] pr-2">
-                      <div className="space-y-3">
-                        {alternativeModels.map((model) => {
+                    {/* Scroll Position Indicator */}
+                    {alternativeModels.length > 3 && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-primary transition-all duration-200"
+                            style={{ width: `${scrollPosition}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground min-w-[35px] text-right">
+                          {Math.round(scrollPosition)}%
+                        </span>
+                      </div>
+                    )}
+                    <ScrollArea 
+                      className="flex-1 pr-2 alternatives-panel-scroll"
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: 'rgba(52, 152, 219, 0.6) rgba(255, 255, 255, 0.05)',
+                        minHeight: '300px',
+                        maxHeight: 'calc(100vh - 350px)'
+                      }}
+                      onScroll={(e) => {
+                        const target = e.target as HTMLElement;
+                        const { scrollTop, scrollHeight, clientHeight } = target;
+                        const scrollPercent = scrollHeight > clientHeight 
+                          ? (scrollTop / (scrollHeight - clientHeight)) * 100 
+                          : 0;
+                        setScrollPosition(Math.min(100, Math.max(0, scrollPercent)));
+                      }}
+                    >
+                      <style>{`
+                        .alternatives-panel-scroll::-webkit-scrollbar {
+                          width: 10px;
+                          height: 10px;
+                        }
+                        .alternatives-panel-scroll::-webkit-scrollbar-track {
+                          background: rgba(255, 255, 255, 0.05);
+                          border-radius: 10px;
+                          margin: 5px 0;
+                        }
+                        .alternatives-panel-scroll::-webkit-scrollbar-thumb {
+                          background: rgba(52, 152, 219, 0.6);
+                          border-radius: 10px;
+                          border: 2px solid transparent;
+                          background-clip: padding-box;
+                        }
+                        .alternatives-panel-scroll::-webkit-scrollbar-thumb:hover {
+                          background: rgba(52, 152, 219, 0.9);
+                          background-clip: padding-box;
+                        }
+                        @media (max-width: 1200px) {
+                          .alternatives-panel-scroll {
+                            max-height: calc(100vh - 200px) !important;
+                          }
+                        }
+                        @media (max-width: 768px) {
+                          .alternatives-panel-scroll {
+                            max-height: calc(100vh - 150px) !important;
+                          }
+                        }
+                      `}</style>
+                      <div 
+                        ref={alternativesScrollRef}
+                        className="space-y-3" 
+                        style={{ scrollBehavior: 'smooth' }}
+                      >
+                        {alternativeModels.map((model, index) => {
                           const isSelected = model.id === selectedAlternativeId;
                           return (
                             <button
                               key={model.id}
                               type="button"
                               onClick={() => setSelectedAlternativeId(model.id)}
-                              className={`w-full text-left border rounded-lg p-3 transition-all focus:outline-none ${isSelected
+                              className={`w-full text-left border rounded-lg p-3 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex-shrink-0 ${isSelected
                                   ? "border-primary bg-primary/10 shadow-lg"
                                   : "border-border hover:shadow-md"
                                 }`}
+                              style={{ 
+                                minHeight: '280px',
+                                maxHeight: 'none',
+                                display: 'flex',
+                                flexDirection: 'column'
+                              }}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div className="space-y-1 flex-1">
-                                  <p className="text-sm font-medium">{model.title}</p>
-                                  <p className="text-xs capitalize text-muted-foreground">
-                                    {model.complexity}
-                                  </p>
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{model.title}</p>
+                                  <Badge 
+                                    variant={model.complexity === "advanced" ? "default" : model.complexity === "intermediate" ? "secondary" : "outline"}
+                                    className="text-[10px] mt-1"
+                                  >
+                                    {model.complexity === "basic" ? "BASIC" : model.complexity === "intermediate" ? "INTERMEDIATE" : "ADVANCED"}
+                                  </Badge>
                                 </div>
                                 {isSelected && <Check className="h-5 w-5 text-primary flex-shrink-0" />}
                               </div>
-                              <div className="h-32 mt-2 rounded-md border" style={{ backgroundColor: '#ffffff' }}>
-                                <AlternativeDiagramPreview xml={model.xml} title={model.title} />
+                              <div 
+                                className="mt-2 rounded-md border overflow-hidden" 
+                                style={{ 
+                                  backgroundColor: '#ffffff',
+                                  minHeight: '128px',
+                                  maxHeight: '200px',
+                                  height: 'auto'
+                                }}
+                              >
+                                <AlternativeDiagramPreview 
+                                  xml={model.xml} 
+                                  title={model.title}
+                                  onDownloadAvailable={(available) => {
+                                    if (!available) {
+                                      setAlternativeModels(prev => prev.map(m => 
+                                        m.id === model.id ? { ...m, previewFailed: true } : m
+                                      ));
+                                    }
+                                  }}
+                                />
                               </div>
+                              {/* KPIs Display */}
+                              {model.metrics && (
+                                <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                    <span className="text-muted-foreground">Tasks:</span>
+                                    <span className="font-semibold">{model.metrics.taskCount}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                    <span className="text-muted-foreground">Decisions:</span>
+                                    <span className="font-semibold">{model.metrics.decisionPoints}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                    <span className="text-muted-foreground">Parallel:</span>
+                                    <span className="font-semibold">{model.metrics.parallelBranches}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                    <span className="text-muted-foreground">Errors:</span>
+                                    <span className="font-semibold">{model.metrics.errorHandlers}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {/* Show recommendation indicator */}
+                              {recommendedModel && recommendedModel.id === model.id && (
+                                <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-primary/10 border border-primary/20 rounded text-[10px] text-primary">
+                                  <span>🏆</span>
+                                  <span className="font-semibold">Recommended</span>
+                                </div>
+                              )}
+                              {/* Show preview failure indicator */}
+                              {model.previewFailed && (
+                                <div className="mt-1 flex items-center gap-1 text-[10px] text-yellow-600 dark:text-yellow-500">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>Preview unavailable</span>
+                                </div>
+                              )}
                             </button>
                           );
                         })}
                       </div>
                     </ScrollArea>
+                    {/* Scroll Controls */}
+                    {alternativeModels.length > 3 && (
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            alternativesScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          disabled={scrollPosition === 0}
+                        >
+                          ↑ Top
+                        </Button>
+                        <span className="text-[10px] text-muted-foreground">
+                          {alternativeModels.length} alternative{alternativeModels.length !== 1 ? 's' : ''}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            if (alternativesScrollRef.current) {
+                              alternativesScrollRef.current.scrollTo({ 
+                                top: alternativesScrollRef.current.scrollHeight, 
+                                behavior: 'smooth' 
+                              });
+                            }
+                          }}
+                          disabled={scrollPosition >= 99}
+                        >
+                          Bottom ↓
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <span className="text-xs text-muted-foreground">
                     Compare variants side by side, then apply the one that fits your requirements.
                   </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => generateAlternativeModels(true)}
-                    disabled={isLoadingAlternatives}
-                  >
-                    Regenerate {alternativeCount}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        // Refresh all previews by clearing cache and forcing re-render
+                        previewCache.clear();
+                        setAlternativeModels(prev => prev.map(m => ({ ...m })));
+                        toast.info("Refreshing all previews...");
+                      }}
+                      disabled={isLoadingAlternatives}
+                      title="Refresh all alternative previews"
+                    >
+                      Refresh All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (confirm("This will replace current alternatives with a new set. Continue?")) {
+                          generateAlternativeModels(true);
+                        }
+                      }}
+                      disabled={isLoadingAlternatives}
+                      title="Generate a new set of alternative BPMN models with the same input"
+                    >
+                      Regenerate all variations
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : (
