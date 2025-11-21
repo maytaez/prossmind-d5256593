@@ -38,6 +38,7 @@ serve(async (req) => {
     
     promptLength = prompt.length;
     console.log('Generating BPMN for prompt:', prompt);
+    console.log('Request flags - skipCache:', skipCache, 'modelingAgentMode:', modelingAgentMode, 'diagramType:', diagramType);
     
     // Generate hash (needed for potential cache storage even if skipping cache lookup)
     const promptHash = await generateHash(`${prompt}:${diagramType}`);

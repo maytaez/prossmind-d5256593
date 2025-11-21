@@ -1728,6 +1728,8 @@ MUST include:
               [Variation seed: ${Date.now()}-${Math.random().toString(36).substring(7)}]
             `;
 
+            console.log(`Generating ${variant.title} with skipCache=true, modelingAgentMode=true`);
+            
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
               body: { 
                 prompt, 
