@@ -30,6 +30,7 @@ serve(async (req) => {
     prompt = requestData.prompt;
     const diagramType = requestData.diagramType || 'bpmn';
     const skipCache = requestData.skipCache === true; // Check if caching should be skipped
+    const modelingAgentMode = requestData.modelingAgentMode === true; // Modeling agent mode flag
     
     if (!prompt) {
       throw new Error('Prompt is required');
@@ -41,7 +42,7 @@ serve(async (req) => {
     // Generate hash (needed for potential cache storage even if skipping cache lookup)
     const promptHash = await generateHash(`${prompt}:${diagramType}`);
     
-    if (skipCache) {
+    if (skipCache || modelingAgentMode) {
       console.log('Cache disabled for this request (modeling agent mode)');
     } else {
       // Check exact hash cache first
@@ -79,13 +80,20 @@ serve(async (req) => {
     // Determine model based on prompt complexity using shared utility
     const criteria = analyzePrompt(prompt, diagramType);
     const modelSelection = selectModel(criteria);
-    const { model, maxTokens, temperature, complexityScore } = modelSelection;
+    let { model, maxTokens, temperature, complexityScore } = modelSelection;
+    
+    // Increase temperature for modeling agent mode to add variation
+    if (modelingAgentMode && temperature < 0.9) {
+      temperature = Math.min(temperature + 0.3, 1.0);
+      console.log(`Increased temperature to ${temperature} for modeling agent mode variation`);
+    }
+    
     modelUsed = model;
     
-    console.log(`Using model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens}, reasoning: ${modelSelection.reasoning})`);
+    console.log(`Using model: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens}, temperature: ${temperature}, reasoning: ${modelSelection.reasoning})`);
 
     // Check semantic cache if enabled and exact hash missed (skip if cache disabled)
-    if (!skipCache && isSemanticCacheEnabled()) {
+    if (!skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
       try {
         const embedding = await generateEmbedding(prompt);
         const semanticCache = await checkSemanticCache(
@@ -226,7 +234,7 @@ serve(async (req) => {
         }
 
         // Store in cache only after successful validation (async, don't wait) - skip if cache disabled
-        if (!skipCache) {
+        if (!skipCache && !modelingAgentMode) {
           (async () => {
             try {
               let embedding: number[] | undefined;

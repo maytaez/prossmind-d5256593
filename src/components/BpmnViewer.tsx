@@ -1724,13 +1724,16 @@ MUST include:
               The diagram MUST include the mandatory structures specified for this tier.
               
               Return ONLY the BPMN 2.0 XML, no explanations or markdown.
+              
+              [Variation seed: ${Date.now()}-${Math.random().toString(36).substring(7)}]
             `;
 
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
               body: { 
                 prompt, 
                 diagramType,
-                skipCache: true // Disable caching for modeling agent mode to ensure unique variants
+                skipCache: true, // Disable caching for modeling agent mode to ensure unique variants
+                modelingAgentMode: true // Enable variation mode for different outputs
               },
             }, 30000); // 30-second timeout
 
