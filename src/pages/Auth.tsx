@@ -20,8 +20,6 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
   const [showOtpVerification, setShowOtpVerification] = useState(false);
   const [otp, setOtp] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
@@ -188,41 +186,6 @@ const Auth = () => {
     }
   };
 
-  const handlePasswordReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!resetEmail.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Email required",
-        description: "Please enter your email address",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/`,
-    });
-
-    setIsLoading(false);
-
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Password reset failed",
-        description: error.message,
-      });
-    } else {
-      toast({
-        title: "Check your email",
-        description: "We've sent you a password reset link",
-      });
-      setShowForgotPassword(false);
-      setResetEmail("");
-    }
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -230,11 +193,9 @@ const Auth = () => {
         <CardHeader>
           <CardTitle className="text-2xl text-center">Welcome to ProssMind</CardTitle>
           <CardDescription className="text-center">
-            {showForgotPassword 
-              ? "Reset your password" 
-              : showOtpVerification
+            {showOtpVerification
               ? "Verify your email"
-              : "Sign in or create an account to start generating BPMN diagrams"}
+              : "Sign in to start generating BPMN diagrams"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -283,33 +244,6 @@ const Auth = () => {
                 Didn't receive the code? Resend
               </Button>
             </form>
-          ) : showForgotPassword ? (
-            <form onSubmit={handlePasswordReset} className="space-y-4">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowForgotPassword(false)}
-                className="mb-4 p-0 h-auto"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to sign in
-              </Button>
-              <div className="space-y-2">
-                <Label htmlFor="reset-email">Email</Label>
-                <Input
-                  id="reset-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Sending..." : "Send Reset Link"}
-              </Button>
-            </form>
           ) : (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
@@ -338,14 +272,6 @@ const Auth = () => {
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Signing in..." : "Sign In"}
-              </Button>
-              <Button 
-                type="button" 
-                variant="link" 
-                className="w-full text-sm"
-                onClick={() => setShowForgotPassword(true)}
-              >
-                Forgot password?
               </Button>
             </form>
           )}
