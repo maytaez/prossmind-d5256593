@@ -290,6 +290,51 @@ export type Database = {
         }
         Relationships: []
       }
+      dmn_links: {
+        Row: {
+          bpmn_gateway_id: string
+          created_at: string
+          dmn_decision_id: string
+          dmn_project_id: string
+          id: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          bpmn_gateway_id: string
+          created_at?: string
+          dmn_decision_id: string
+          dmn_project_id: string
+          id?: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          bpmn_gateway_id?: string
+          created_at?: string
+          dmn_decision_id?: string
+          dmn_project_id?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dmn_links_dmn_project_id_fkey"
+            columns: ["dmn_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dmn_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       performance_metrics: {
         Row: {
           cache_hit: boolean | null

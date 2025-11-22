@@ -3275,7 +3275,10 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             try {
               // Force re-import the XML to trigger fresh rendering with P&ID attributes
               // This ensures canRender is called again with the updated attributes
-              const canvas = modelerRef.current!.get("canvas") as { zoom: (mode: string) => void };
+              const canvas = modelerRef.current!.get("canvas") as { 
+                zoom: (mode: string) => void; 
+                getViewbox: () => { scale: number; width: number; height: number; x: number; y: number } 
+              };
               const currentXml = finalXml;
 
               // Re-import to force complete re-render
