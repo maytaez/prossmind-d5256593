@@ -116,3 +116,4 @@ export function shouldCompressImage(file: File, maxSizeKB: number = 500): boolea
 
 
 
+

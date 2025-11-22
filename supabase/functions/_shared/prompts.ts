@@ -15,7 +15,9 @@ CRITICAL RULES:
 3. Use elements: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, endEvent
 4. Include sequenceFlow with sourceRef and targetRef
 5. Add bpmndi:BPMNDiagram section for visual layout
-6. Return ONLY XML, no markdown or explanations`;
+6. ALL di:waypoint tags MUST be self-closing: <di:waypoint x="..." y="..."/> (NOT <di:waypoint x="..." y="...">)
+7. ALL XML tags must be properly closed (either self-closing with /> or with matching closing tags)
+8. Return ONLY XML, no markdown or explanations`;
 }
 
 /**
