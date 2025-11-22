@@ -1363,23 +1363,27 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         }
 
         if (!forceRefresh && !hasGeneratedAlternativesRef.current) {
+          // Check for cached alternatives - look for the most recent complete set
           const { data: existingRecord, error: existingError } = await supabase
             .from("bpmn_generations")
             .select("id, alternative_models, created_at")
             .eq("user_id", currentUser.id)
             .eq("input_description", `modelling-agent:${fingerprint}`)
+            .not("alternative_models", "is", null)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
 
           if (existingError && existingError.code !== "PGRST116") {
-            throw existingError;
+            console.warn("Error checking cache:", existingError);
+            // Don't throw - continue with generation if cache check fails
           }
 
           if (existingRecord?.alternative_models) {
             const storedAlternatives = existingRecord
               .alternative_models as unknown as AlternativeModel[];
-            if (Array.isArray(storedAlternatives) && storedAlternatives.length) {
+            if (Array.isArray(storedAlternatives) && storedAlternatives.length > 0) {
+              console.log(`[Cache] Found ${storedAlternatives.length} cached alternatives`);
               setAlternativeModels(storedAlternatives);
               hasGeneratedAlternativesRef.current = true;
               setIsLoadingAlternatives(false);
@@ -1459,7 +1463,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         const generated: AlternativeModel[] = [];
         let completedCount = 0;
 
-        const generateVariant = async (variant: typeof variantsToGenerate[0], index: number) => {
+        const generateVariant = async (variant: typeof variantsToGenerate[0], index: number): Promise<AlternativeModel | null> => {
+          // Declare variables outside try block so they're accessible in catch block
+          const startTime = Date.now();
+          let prompt: string | undefined;
+          let promptLength = 0;
           try {
             // Update status to generating
             setModelStatuses(prev => {
@@ -1554,182 +1562,159 @@ DO NOT include:
 
 Generate ONLY a simple, linear sequential flow with basic tasks and events.`;
               } else if (variant.complexity === 'intermediate') {
+                // Variant-specific instructions for intermediate variants
+                if (variant.id === 'automation-lean') {
+                  return `
+AUTOMATION LEAN: Transform repetitive/high-volume tasks into automated service tasks.
+
+CRITICAL TRANSFORMATION:
+- Identify repetitive, routine, or high-volume tasks in the process
+- Convert these tasks to <serviceTask> elements (automated system tasks)
+- Add system integrations: name service tasks with integration context (e.g., "Automated Data Validation", "System Notification", "Auto-Process Payment")
+- Include automated escalations: use intermediate events or boundary events for automated error handling
+- Keep userTask only for tasks requiring human judgment or approval
+- Use 1-2 exclusiveGateway for decision points (automated routing)
+- Include 1+ serviceTask for each repetitive task pattern identified
+- 8-12 tasks total (mix of userTask and serviceTask)
+- 2-3 execution paths
+
+STRUCTURE: startEvent → [automated service tasks] → [decision gateways] → [user tasks for approvals] → endEvent
+Focus on automation: maximize serviceTask usage for repetitive work.`;
+                } else if (variant.id === 'human-centric') {
+                  return `
+HUMAN-CENTRIC COLLABORATION: Emphasize manual approvals and team coordination.
+
+REQUIREMENTS:
+- 2+ swimlanes (pools or lanes) representing different roles/departments
+- Multiple userTask elements for manual work
+- 1-2 exclusiveGateway for approval decisions
+- Review loops: show tasks that require human review/approval before continuing
+- Include intermediate events for notifications/handoffs between people
+- 1 subprocess OR 1 intermediate event (message/timer/signal) for coordination
+- 8-12 tasks total (mostly userTask)
+- 2-3 execution paths showing different approval outcomes
+
+STRUCTURE: startEvent → [swimlanes with user tasks] → [approval gateways] → [review loops] → endEvent
+Focus on human collaboration: show handoffs, approvals, and coordination.`;
+                } else if (variant.id === 'parallel-efficiency') {
+                  return `
+PARALLEL EFFICIENCY: Maximize concurrent execution of independent activities.
+
+REQUIREMENTS:
+- 1-2 parallelGateway pairs (AND split + AND join) for concurrent flows
+- Identify tasks that can run simultaneously (no dependencies)
+- Group independent tasks into parallel branches
+- Use exclusiveGateway for decisions (1-2 decision points)
+- Mix of userTask and serviceTask
+- 1 subprocess OR 1 intermediate event for coordination
+- 8-12 tasks total
+- 2-3 parallel branches with 2-4 tasks each
+
+STRUCTURE: startEvent → [parallelGateway split] → [concurrent branches] → [parallelGateway join] → endEvent
+Focus on parallelism: maximize tasks running simultaneously.`;
+                }
+                
+                // Generic intermediate instructions for other variants
                 return `
-CRITICAL: Generate an INTERMEDIATE BPMN diagram with STRUCTURE and ORGANIZATION.
+INTERMEDIATE BPMN: Include structure with decisions and parallel flows.
 
-MODE: INTERMEDIATE
-The complexity of the diagram must align with Intermediate mode:
-- Add 1-2 decision gateways
-- Include possible parallel tasks
-- Include at least one subprocess or event
-- Include human and system interaction points
+REQUIREMENTS:
+- 1-2 exclusiveGateway (decision points) with 2-3 paths each
+- 1 parallelGateway (AND) OR 1 subProcess
+- Mix of userTask (human) and serviceTask (system)
+- 1 subprocess OR 1 intermediate event (message/timer/signal)
+- 8-12 tasks total
+- 2-3 execution paths
 
-MANDATORY STRUCTURE FOR INTERMEDIATE TIER:
-1. MUST include 1-2 decision gateways (XOR gateway) with 2-3 outgoing paths each
-2. MUST include at least 1 parallel gateway (AND gateway) OR 1 subprocess
-3. MUST include at least one subprocess OR intermediate event (message, timer, or signal)
-4. MUST include human and system interaction points:
-   - Use <userTask> for human interaction points (manual work, approvals, reviews)
-   - Use <serviceTask> for system interaction points (automated services, API calls, integrations)
-   - Mix of userTask and serviceTask to show human-system collaboration
-5. MUST have swimlanes (pools/lanes) if the variant is "Human-Centric Collaboration"
-6. Include 8-12 tasks total
-7. Show clear decision points with labeled conditions
-8. Include at least one parallel branch OR one subprocess grouping related tasks
-9. Can include intermediate events (message, timer, signal) for communication or timing
-
-EXAMPLE STRUCTURES:
-- Decision with human/system mix: <startEvent> → <userTask name="Review"> → <exclusiveGateway> → [Path A: <serviceTask name="Auto-approve">] OR [Path B: <userTask name="Manual Review">] → <endEvent>
-- Parallel with subprocess: <startEvent> → <task> → <parallelGateway> → [Branch 1: <userTask>] + [Branch 2: <subProcess> (with internal tasks)] → <parallelGateway> → <endEvent>
-- With intermediate event: <startEvent> → <userTask> → <intermediateCatchEvent type="message"> → <serviceTask> → <endEvent>
-
-MUST include:
-- At least 1 exclusiveGateway (decision point) - 1-2 total
-- At least 1 parallelGateway OR 1 subProcess
-- At least 1 userTask (human interaction point)
-- At least 1 serviceTask (system interaction point)
-- At least 1 subprocess OR 1 intermediate event
-- Clear flow organization showing human-system collaboration
-- 2-3 different execution paths`;
+STRUCTURE: startEvent → [gateways/subprocesses] → endEvent with decision branches and optional parallel flows.`;
               } else if (variant.complexity === 'advanced') {
                 return `
-CRITICAL: Generate a COMPLEX, ADVANCED BPMN diagram with MULTIPLE STRUCTURES.
+ADVANCED BPMN: Complex structure with error handling, compliance, and integration.
 
-MODE: ADVANCED
-The complexity of the diagram must align with Advanced mode:
-- Model complex gateways
-- Include parallel flows
-- Include multiple pools or lanes
-- Include detailed error handling
-- Include recovery paths
-- Include compliance checkpoints
-- Include integration with external systems
-- Use BPMN artifacts and documentation elements
+REQUIREMENTS:
+- 2-3 gateways (XOR/Inclusive/Event-based) creating multiple paths
+- 2-4 parallelGateway pairs (split + join)
+- 1-2 subProcess elements
+- 1+ boundaryEvent (error/escalation/timer) attached to task/subprocess
+- 1+ recovery path (compensation/rollback/retry)
+- 1+ compliance checkpoint (task/subprocess with "Compliance"/"Audit"/"Validation" in name)
+- 1+ serviceTask for external system integration
+- 2+ pools OR 2+ lanes
+- 2+ BPMN artifacts (dataObject/dataStore/annotation/group)
+- 15-20 tasks total
+- 4+ execution paths
 
-MANDATORY STRUCTURE FOR ADVANCED TIER:
-1. MUST include 2-3 complex decision gateways (XOR/Inclusive/Event-based gateways) creating multiple paths
-2. MUST include 2-4 parallel branches (AND gateways) for concurrent execution
-3. MUST include 1-2 subprocesses with internal workflows
-4. MUST include detailed error handling:
-   - At least 1 boundary event (error, escalation, timer, or signal) attached to a task or subprocess
-   - Error handling paths that lead to recovery or compensation tasks
-5. MUST include recovery paths:
-   - Compensation tasks or compensation events
-   - Rollback paths for error recovery
-   - Retry mechanisms or alternative paths
-6. MUST include compliance checkpoints:
-   - Tasks or subprocesses labeled as "Compliance Check", "Audit", "Validation", "Approval"
-   - Data objects or annotations marking compliance requirements
-7. MUST include integration with external systems:
-   - Service tasks representing external API calls, system integrations
-   - Message events for system-to-system communication
-   - Call activities for reusable external processes
-8. MUST include multiple pools or lanes:
-   - At least 2 pools (different participants/organizations) OR
-   - At least 2 lanes within a pool (different roles/departments)
-9. MUST use BPMN artifacts and documentation elements:
-   - Data objects (dataObject) for information flow
-   - Data stores (dataStore) for persistent data
-   - Annotations (textAnnotation) for documentation
-   - Groups (group) for logical grouping
-10. Include 15-20 tasks total
-11. Show complex routing with multiple decision points
-12. Include event-based gateways for exception handling
-
-EXAMPLE STRUCTURES:
-- Multiple pools with integration: <pool id="Customer"> → <task> → <messageFlow> → <pool id="System"> → <serviceTask name="External API"> → <messageFlow> → <pool id="Customer">
-- Error handling with recovery: <task> with <boundaryEvent type="error"> attached → <task name="Recovery Task"> → <task name="Retry Original"> → back to original flow
-- Compliance checkpoint: <task> → <subProcess name="Compliance Check"> → <dataObject name="Compliance Report"> → <exclusiveGateway> → [Compliant: continue] OR [Non-compliant: escalate]
-- Parallel with artifacts: <parallelGateway> → [Branch 1: <task> + <dataObject>] + [Branch 2: <subProcess> + <annotation>] → <parallelGateway>
-
-MUST include:
-- 2-3 exclusiveGateway, inclusiveGateway, or eventBasedGateway (complex decision points)
-- 2-4 parallelGateway pairs (split + join for parallel flows)
-- 1-2 subProcess elements (collapsed or expanded)
-- At least 1 boundaryEvent (error, escalation, timer, or signal) for error handling
-- At least 1 recovery path (compensation, rollback, or retry mechanism)
-- At least 1 compliance checkpoint (task or subprocess for compliance/audit)
-- At least 1 external system integration (serviceTask for API/system integration)
-- Multiple pools (2+) OR multiple lanes (2+) for organizational structure
-- At least 2 BPMN artifacts (dataObject, dataStore, annotation, or group)
-- Multiple execution paths (4+ different paths through the diagram)
-- Complex routing with gateways connecting different branches`;
+STRUCTURE: Complex routing with gateways, parallel flows, error handling, compliance checkpoints, and external integrations.`;
               }
               return '';
             };
 
             const variantSpecificInstructions = getVariantSpecificPrompt(variant, instructions);
             
-            const prompt = `
-              ============================================
-              VARIANT GENERATION REQUEST
-              ============================================
-              
-              Original process summary: ${processSummary}
-              Variant to generate: ${variant.title} - ${variant.description}
-              Base instructions: ${instructions}
-              
-              ============================================
-              COMPLEXITY TIER: ${variant.complexity.toUpperCase()}
-              ============================================
-              
-              ${variantSpecificInstructions}
-              
-              ============================================
-              TECHNICAL CONSTRAINTS
-              ============================================
-              - Maximum ${constraints.maxElements} total elements
-              - Maximum ${constraints.maxTasks} tasks
-              - Maximum ${constraints.maxBranches} parallel branches
-              - Maximum ${constraints.maxDecisionPoints} decision points
-              - Maximum ${constraints.maxSubprocesses} subprocesses
-              - Maximum ${constraints.maxDepth} nesting depth
-              
-              ============================================
-              CRITICAL REQUIREMENTS - READ CAREFULLY
-              ============================================
-              
-              ⚠️ YOU MUST FOLLOW THE MANDATORY STRUCTURE REQUIREMENTS ABOVE EXACTLY ⚠️
-              
-              The generated BPMN MUST be VISUALLY and STRUCTURALLY DIFFERENT from other variants:
-              - Different number and arrangement of gateways
-              - Different flow patterns (sequential vs parallel vs decision-based)
-              - Different use of subprocesses
-              - Different error handling approaches
-              
-              ${variant.complexity === 'basic' ? `
-              ⚠️ BASIC TIER: You MUST create a simple sequential flow with NO gateways, NO subprocesses, NO branching.
-              If you include any gateways or subprocesses, the generation is INCORRECT. ⚠️
-              ` : ''}
-              
-              ${variant.complexity === 'intermediate' ? `
-              ⚠️ INTERMEDIATE TIER: You MUST include at least 1 gateway (decision or parallel) OR 1 subprocess.
-              The diagram must show structure and organization, not just a simple sequence. ⚠️
-              ` : ''}
-              
-              ${variant.complexity === 'advanced' ? `
-              ⚠️ ADVANCED TIER: You MUST include:
-              - At least 2-3 gateways (decision points)
-              - At least 2-4 parallel branches (AND gateways)
-              - At least 1-2 subprocesses OR boundary events
-              - Multiple execution paths (4+ different paths)
-              If the diagram is too simple, it does NOT match the ADVANCED tier. ⚠️
-              ` : ''}
-              
-              ============================================
-              GENERATION INSTRUCTIONS
-              ============================================
-              
-              Generate a valid, renderable BPMN 2.0 XML that matches the ${variant.complexity.toUpperCase()} tier requirements above.
-              The diagram MUST include the mandatory structures specified for this tier.
-              
-              Return ONLY the BPMN 2.0 XML, no explanations or markdown.
-              
-              [Variation seed: ${Date.now()}-${Math.random().toString(36).substring(7)}]
-            `;
+            // Build concise prompt
+            const tierWarning = variant.complexity === 'basic' 
+              ? 'BASIC: Simple sequential flow only. NO gateways, NO subprocesses, NO branching.'
+              : variant.complexity === 'intermediate'
+              ? 'INTERMEDIATE: Must include 1+ gateway OR 1+ subprocess. Show structure and organization.'
+              : 'ADVANCED: Must include 2-3 gateways, 2-4 parallel branches, 1-2 subprocesses, error handling, 4+ paths.';
+            
+            prompt = `VARIANT: ${variant.title} (${variant.complexity.toUpperCase()})
+Description: ${variant.description}
 
+Process: ${processSummary}
+
+${variantSpecificInstructions}
+
+Constraints: Max ${constraints.maxElements} elements, ${constraints.maxTasks} tasks, ${constraints.maxBranches} branches, ${constraints.maxDecisionPoints} decisions, ${constraints.maxSubprocesses} subprocesses.
+
+${tierWarning}
+
+Generate valid BPMN 2.0 XML matching the ${variant.complexity.toUpperCase()} tier. Include mandatory structures. Return ONLY XML, no markdown.
+
+Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+            // Comprehensive diagnostic logging
+            promptLength = prompt.length;
+            const variantSpecificLength = variantSpecificInstructions.length;
+            const processSummaryLength = processSummary?.length || 0;
+            
+            console.group(`[Modelling Agent] Generating variant: ${variant.title} (${variant.complexity})`);
+            console.log('Variant Details:', {
+              id: variant.id,
+              title: variant.title,
+              complexity: variant.complexity,
+              description: variant.description,
+              index
+            });
+            console.log('Prompt Metrics:', {
+              totalLength: promptLength,
+              variantSpecificLength,
+              processSummaryLength,
+              baseInstructionsLength: instructions.length,
+              estimatedTokens: Math.ceil(promptLength / 4) // Rough estimate: 1 token ≈ 4 chars
+            });
+            console.log('Constraints:', constraints);
+            console.log('Prompt Structure:', {
+              hasVariantSpecific: variantSpecificLength > 0,
+              hasProcessSummary: processSummaryLength > 0,
+              hasBaseInstructions: instructions.length > 0
+            });
             console.log(`Generating ${variant.title} with skipCache=true, modelingAgentMode=true`);
             
+            // Increase timeout for complex variants (advanced may need more time)
+            // Also account for Pro model which may take longer to process complex prompts
+            // Advanced variants can take 90-120s due to retries and complex processing
+            // Intermediate variants that require transformation (like Automation Lean) may need 90-105s
+            // Other intermediate variants typically need 75-90s
+            // Basic variants typically complete in 30-45s
+            // Automation Lean needs extra time because it requires analyzing and transforming existing tasks
+            const isTransformationVariant = variant.id === 'automation-lean';
+            const timeout = variant.complexity === 'advanced' 
+              ? 120000 
+              : variant.complexity === 'intermediate' 
+                ? (isTransformationVariant ? 105000 : 90000)
+                : 45000;
+            const apiStartTime = Date.now();
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
               body: { 
                 prompt, 
@@ -1737,15 +1722,60 @@ MUST include:
                 skipCache: true, // Disable caching for modeling agent mode to ensure unique variants
                 modelingAgentMode: true // Enable variation mode for different outputs
               },
-            }, 30000); // 30-second timeout
+            }, timeout);
+            const apiDuration = Date.now() - apiStartTime;
+
+            // Log API response details
+            console.log('API Response:', {
+              duration: `${apiDuration}ms`,
+              hasError: !!error,
+              hasData: !!data,
+              hasBpmnXml: !!data?.bpmnXml,
+              errorMessage: error?.message,
+              responseKeys: data ? Object.keys(data) : []
+            });
 
             if (error) {
-              throw new Error(`Function invocation failed: ${error.message}`);
+              console.error(`[Modelling Agent] API Error for ${variant.title}:`, {
+                error: error.message,
+                stack: error instanceof Error ? error.stack : undefined,
+                duration: `${apiDuration}ms`,
+                timeout: `${timeout}ms`,
+                isTimeout: error.message?.includes('timed out')
+              });
+              
+              // Provide more specific error messages
+              let errorMessage = error.message;
+              if (error.message?.includes('timed out')) {
+                const timeoutSeconds = timeout / 1000;
+                errorMessage = `Request timed out after ${timeoutSeconds}s. ${variant.complexity === 'advanced' ? 'Advanced variants require more processing time. ' : variant.complexity === 'intermediate' ? 'Intermediate variants may need additional time. ' : ''}Please try generating alternatives again, or generate them individually.`;
+              } else if (error.message?.includes('rate limit')) {
+                errorMessage = 'API rate limit exceeded. Please wait a moment and try again. Generating multiple variants in parallel may hit rate limits.';
+              } else if (error.message?.includes('429')) {
+                errorMessage = 'Too many requests. Please wait a moment and try again. Consider generating variants one at a time.';
+              }
+              
+              throw new Error(errorMessage);
             }
 
             if (!data?.bpmnXml) {
-              throw new Error(`No BPMN XML returned for ${variant.title}`);
+              console.error(`[Modelling Agent] No BPMN XML returned for ${variant.title}:`, {
+                data: data,
+                duration: `${apiDuration}ms`,
+                hasData: !!data,
+                dataKeys: data ? Object.keys(data) : []
+              });
+              throw new Error(`No BPMN XML returned for ${variant.title}. The AI model may not have generated valid output.`);
             }
+
+            // Log successful response
+            const bpmnXmlLength = data.bpmnXml.length;
+            console.log('BPMN XML Received:', {
+              length: bpmnXmlLength,
+              estimatedTokens: Math.ceil(bpmnXmlLength / 4),
+              startsWithXml: data.bpmnXml.trim().startsWith('<?xml'),
+              containsDefinitions: data.bpmnXml.includes('<bpmn:definitions') || data.bpmnXml.includes('<definitions')
+            });
 
             // Pre-render validation: Check complexity and validate structure
             const calculatedComplexity = calculateDiagramComplexity(data.bpmnXml);
@@ -1760,9 +1790,11 @@ MUST include:
             const validationErrors: string[] = [];
             const validationWarnings: string[] = [];
             
-            // Check element count constraint (max 45 elements for reliable rendering)
-            if (calculatedComplexity.elementCount > 45) {
-              validationErrors.push(`Too many elements (${calculatedComplexity.elementCount} > 45)`);
+            // Check element count constraint (max 60 elements for reliable rendering - increased for advanced variants)
+            // Advanced variants may legitimately have more elements
+            const maxElements = variant.complexity === 'advanced' ? 60 : variant.complexity === 'intermediate' ? 50 : 45;
+            if (calculatedComplexity.elementCount > maxElements) {
+              validationWarnings.push(`High element count (${calculatedComplexity.elementCount} > ${maxElements}) - may affect rendering performance`);
             }
             
             // Validate structure matches complexity tier requirements
@@ -1818,61 +1850,29 @@ MUST include:
                 }
               } else if (variant.complexity === 'intermediate') {
                 // INTERMEDIATE: Should have 1-2 gateways, parallel tasks, subprocess/event, human/system interaction
-                if (gateways.length === 0 && subprocesses.length === 0 && intermediateEvents.length === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 gateway, subprocess, or intermediate event, but found none`);
+                // More lenient validation - only warn if completely missing structure
+                if (gateways.length === 0 && subprocesses.length === 0 && intermediateEvents.length === 0 && metrics.parallelBranches === 0) {
+                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 gateway, subprocess, intermediate event, or parallel branch`);
                 }
-                if (gateways.length > 2) {
-                  validationWarnings.push(`INTERMEDIATE tier should have 1-2 gateways, but found ${gateways.length}`);
-                }
-                if (metrics.decisionPoints === 0 && metrics.parallelBranches === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 decision point or parallel branch`);
-                }
-                if (userTasks.length === 0 && serviceTasks.length === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should include human (userTask) and system (serviceTask) interaction points`);
-                }
-                if (userTasks.length === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should include at least 1 userTask for human interaction`);
-                }
-                if (serviceTasks.length === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should include at least 1 serviceTask for system interaction`);
-                }
-                if (subprocesses.length === 0 && intermediateEvents.length === 0) {
-                  validationWarnings.push(`INTERMEDIATE tier should have at least 1 subprocess or intermediate event`);
-                }
+                // Don't warn if gateways > 2 - some variants may need more
+                // Don't require both userTask and serviceTask - variant-specific
+                // Don't require subprocess if gateways are present
               } else if (variant.complexity === 'advanced') {
-                // ADVANCED: Should have complex gateways, parallel flows, multiple pools/lanes, error handling, recovery, compliance, integration, artifacts
-                if (gateways.length < 2) {
-                  validationWarnings.push(`ADVANCED tier should have at least 2 gateways, but found ${gateways.length}`);
+                // ADVANCED: More lenient validation - only warn if completely missing key features
+                // Advanced variants can vary significantly, so be flexible
+                const hasStructure = gateways.length >= 1 || subprocesses.length >= 1 || metrics.parallelBranches >= 1;
+                if (!hasStructure) {
+                  validationWarnings.push(`ADVANCED tier should have at least 1 gateway, subprocess, or parallel branch`);
                 }
-                if (metrics.decisionPoints < 2 && metrics.parallelBranches < 2) {
-                  validationWarnings.push(`ADVANCED tier should have at least 2 decision points or 2 parallel branches`);
-                }
-                if (metrics.parallelBranches < 2) {
-                  validationWarnings.push(`ADVANCED tier should have at least 2 parallel branches for complexity`);
-                }
-                if (subprocesses.length === 0 && boundaryEvents.length === 0) {
-                  validationWarnings.push(`ADVANCED tier should have at least 1 subprocess or boundary event for complexity`);
-                }
-                if (boundaryEvents.length === 0) {
-                  validationWarnings.push(`ADVANCED tier should have at least 1 boundary event for error handling`);
-                }
-                if (pools.length < 2 && lanes.length < 2) {
-                  validationWarnings.push(`ADVANCED tier should have multiple pools (2+) or multiple lanes (2+), but found ${pools.length} pools and ${lanes.length} lanes`);
-                }
-                if (serviceTasks.length === 0) {
-                  validationWarnings.push(`ADVANCED tier should include serviceTask elements for external system integration`);
-                }
-                if (artifacts.length < 2) {
-                  validationWarnings.push(`ADVANCED tier should use BPMN artifacts (dataObject, annotation, group), but found only ${artifacts.length}`);
-                }
-                // Check for compliance checkpoints (tasks/subprocesses with compliance-related names)
-                const allTasks = doc.querySelectorAll('task, userTask, serviceTask, subProcess');
-                const hasComplianceCheckpoint = Array.from(allTasks).some(task => {
-                  const name = task.getAttribute('name') || '';
-                  return /compliance|audit|validation|approval|checkpoint/i.test(name);
-                });
-                if (!hasComplianceCheckpoint) {
-                  validationWarnings.push(`ADVANCED tier should include compliance checkpoints (tasks/subprocesses with compliance/audit/validation in name)`);
+                // Don't enforce strict counts - advanced variants can vary
+                // Only warn if completely missing error handling AND compliance AND integration
+                const hasAdvancedFeatures = boundaryEvents.length > 0 || 
+                                          artifacts.length > 0 || 
+                                          serviceTasks.length > 0 ||
+                                          pools.length > 1 || 
+                                          lanes.length > 1;
+                if (!hasAdvancedFeatures && gateways.length < 2) {
+                  validationWarnings.push(`ADVANCED tier should include advanced features (error handling, artifacts, integration, or multiple pools/lanes)`);
                 }
               }
               
@@ -1880,17 +1880,35 @@ MUST include:
               validationErrors.push("XML parsing failed");
             }
             
-            // Log validation results
+            // Comprehensive validation logging
+            console.log('Validation Results:', {
+              errors: validationErrors.length,
+              warnings: validationWarnings.length,
+              elementCount: calculatedComplexity.elementCount,
+              complexity: calculatedComplexity.complexity,
+              metrics: {
+                taskCount: metrics.taskCount,
+                decisionPoints: metrics.decisionPoints,
+                parallelBranches: metrics.parallelBranches,
+                errorHandlers: metrics.errorHandlers,
+                estimatedPaths: metrics.estimatedPaths
+              }
+            });
+            
             if (validationErrors.length > 0) {
-              console.error(`Validation errors for ${variant.title}:`, validationErrors);
+              console.error(`[Modelling Agent] Validation errors for ${variant.title}:`, validationErrors);
             }
             if (validationWarnings.length > 0) {
-              console.warn(`Validation warnings for ${variant.title}:`, validationWarnings);
+              console.warn(`[Modelling Agent] Validation warnings for ${variant.title}:`, validationWarnings);
               console.warn(`Generated structure: ${metrics.decisionPoints} decision points, ${metrics.parallelBranches} parallel branches, ${metrics.taskCount} tasks`);
             }
             
             // DEBUG: Log complexity assignment to verify it's correct
             console.log(`[Model Generation] ${variant.title}: Variant complexity="${variant.complexity}", Assigned complexity="${modelComplexity}", Calculated complexity="${calculatedComplexity.complexity}"`);
+            
+            const totalDuration = Date.now() - startTime;
+            console.log(`[Modelling Agent] Successfully generated ${variant.title} in ${totalDuration}ms`);
+            console.groupEnd();
             
             const newModel: AlternativeModel = {
               id: `${variant.id}-${Date.now()}-${index}`,
@@ -1924,9 +1942,70 @@ MUST include:
               setSelectedAlternativeId(newModel.id);
             }
 
+            // Cache incrementally as each model is generated (async, don't wait)
+            // This ensures we cache partial results even if generation fails later
+            (async () => {
+              try {
+                const currentGenerated = [...generated, newModel];
+                // Check if a cache record exists
+                const { data: existing } = await supabase
+                  .from("bpmn_generations")
+                  .select("id")
+                  .eq("user_id", currentUser.id)
+                  .eq("input_description", `modelling-agent:${fingerprint}`)
+                  .order("created_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (existing?.id) {
+                  // Update existing record
+                  await supabase
+                    .from("bpmn_generations")
+                    .update({
+                      alternative_models: JSON.parse(JSON.stringify(currentGenerated)) as any,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq("id", existing.id);
+                } else {
+                  // Insert new record
+                  await supabase
+                    .from("bpmn_generations")
+                    .insert({
+                      user_id: currentUser.id,
+                      input_type: "text",
+                      input_description: `modelling-agent:${fingerprint}`,
+                      generated_bpmn_xml: xmlSnapshot,
+                      alternative_models: JSON.parse(JSON.stringify(currentGenerated)) as any,
+                    });
+                }
+                console.log(`[Cache] Incrementally cached ${currentGenerated.length} alternatives`);
+              } catch (cacheError) {
+                console.warn("Failed to cache alternatives incrementally:", cacheError);
+                // Don't throw - caching is best effort
+              }
+            })();
+
             return newModel;
           } catch (error) {
             completedCount++;
+            const errorDuration = Date.now() - startTime;
+            
+            // Comprehensive error logging
+            console.error(`[Modelling Agent] Failed to generate alternative "${variant.title}":`, {
+              variant: {
+                id: variant.id,
+                title: variant.title,
+                complexity: variant.complexity
+              },
+              error: {
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                name: error instanceof Error ? error.name : 'Unknown'
+              },
+              duration: `${errorDuration}ms`,
+              promptLength: promptLength,
+              timestamp: new Date().toISOString()
+            });
             
             // Update status to failed
             setModelStatuses(prev => {
@@ -1940,46 +2019,128 @@ MUST include:
               total: totalVariants,
               current: undefined,
             });
-            console.error(`Failed to generate alternative "${variant.title}":`, error);
-            toast.error(
-              `Could not generate: ${variant.title}`,
-              { description: error instanceof Error ? error.message : "An unknown error occurred. The AI model might be overloaded or the request may have timed out." }
-            );
-            throw error;
+            
+            console.groupEnd(); // Close the console group opened at start
+            
+            // Don't show toast for every failure - it's too noisy
+            // Only show toast if this is the last variant or if it's a critical error
+            if (completedCount === totalVariants || error instanceof Error && error.message.includes('rate limit')) {
+              toast.error(
+                `Could not generate: ${variant.title}`,
+                { description: error instanceof Error ? error.message : "An unknown error occurred. The AI model might be overloaded or the request may have timed out." }
+              );
+            }
+            
+            // Don't throw error - let Promise.allSettled handle it
+            // Return null to indicate failure
+            return null;
           }
         };
 
-        // Execute in parallel with concurrency limit of 3
-        const concurrencyLimit = 3;
-        const tasks = variantsToGenerate.map((variant, index) => () => generateVariant(variant, index));
+        // Execute ALL variants in parallel - start all at the same time
+        // All variants will generate simultaneously, not sequentially
+        const tasks = variantsToGenerate.map((variant, index) => generateVariant(variant, index));
         
-        // Process in batches
-        for (let i = 0; i < tasks.length; i += concurrencyLimit) {
-          const batch = tasks.slice(i, i + concurrencyLimit);
-          await Promise.allSettled(batch.map(task => task()));
+        console.log(`[Modelling Agent] Starting parallel generation of ${totalVariants} variants`);
+        console.log(`[Modelling Agent] All variants will start generating simultaneously:`, variantsToGenerate.map(v => `${v.title} (${v.complexity})`).join(', '));
+        
+        // Execute ALL variants in parallel at the same time
+        // Promise.allSettled ensures we wait for all to complete (success or failure)
+        const results = await Promise.allSettled(tasks);
+        
+        // Log results for debugging
+        results.forEach((result, idx) => {
+          const variant = variantsToGenerate[idx];
+          if (result.status === 'rejected') {
+            console.error(`[Parallel Processing] Variant ${variant.title} (${variant.complexity}) failed:`, result.reason);
+          } else if (result.status === 'fulfilled' && result.value) {
+            console.log(`[Parallel Processing] Variant ${variant.title} (${variant.complexity}) succeeded`);
+          } else if (result.status === 'fulfilled' && !result.value) {
+            console.warn(`[Parallel Processing] Variant ${variant.title} (${variant.complexity}) returned null (failed silently)`);
+          }
+        });
+        
+        // Log summary of generation results
+        console.log(`[Modelling Agent] Generation complete: ${generated.length} successful, ${totalVariants - generated.length} failed`);
+        if (generated.length < totalVariants) {
+          const failedVariants = variantsToGenerate.filter(v => !generated.find(m => m.title === v.title));
+          console.warn(`[Modelling Agent] Failed variants:`, failedVariants.map(v => v.title));
         }
 
         setAlternativeProgress({ completed: totalVariants, total: totalVariants });
 
+        // Log final results
+        console.log(`[Modelling Agent] Final results: ${generated.length} successful out of ${totalVariants} total variants`);
+        if (generated.length < totalVariants) {
+          const failedCount = totalVariants - generated.length;
+          const failedVariants = variantsToGenerate.filter(v => !generated.find(m => m.title === v.title));
+          console.warn(`[Modelling Agent] ${failedCount} variants failed:`, failedVariants.map(v => `${v.title} (${v.complexity})`));
+          
+          // Show a warning toast if some variants failed, but don't block if we have at least one
+          if (generated.length > 0) {
+            toast.warning(
+              `${generated.length} of ${totalVariants} variants generated`,
+              { 
+                description: failedCount > 0 ? `${failedCount} variants failed to generate. Check console for details.` : undefined,
+                duration: 5000
+              }
+            );
+          }
+        }
+
         if (!generated.length) {
           const errorCount = totalVariants - generated.length;
-          throw new Error(
-            `No alternative diagrams were produced. ${errorCount} of ${totalVariants} generations failed.`
-          );
+          const errorMessage = `No alternative diagrams were produced. ${errorCount} of ${totalVariants} generations failed. Check the browser console for detailed error messages.`;
+          console.error(`[Modelling Agent] ${errorMessage}`);
+          throw new Error(errorMessage);
         }
 
         // Final update with all successful models
         setAlternativeModels(generated);
         setSelectedAlternativeId(generated[0]?.id ?? null);
         hasGeneratedAlternativesRef.current = true;
+        
+        console.log(`[Modelling Agent] Successfully generated ${generated.length} variants:`, generated.map(m => m.title));
 
-        await supabase.from("bpmn_generations").insert({
-          user_id: currentUser.id,
-          input_type: "text",
-          input_description: `modelling-agent:${fingerprint}`,
-          generated_bpmn_xml: xmlSnapshot,
-          alternative_models: JSON.parse(JSON.stringify(generated)) as any,
-        });
+        // Final cache update with all successful models (update if exists, insert if not)
+        // This ensures we have the complete set cached even if incremental caching missed some
+        try {
+          // Check if a cache record exists
+          const { data: existing } = await supabase
+            .from("bpmn_generations")
+            .select("id")
+            .eq("user_id", currentUser.id)
+            .eq("input_description", `modelling-agent:${fingerprint}`)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (existing?.id) {
+            // Update existing record with final complete set
+            await supabase
+              .from("bpmn_generations")
+              .update({
+                alternative_models: JSON.parse(JSON.stringify(generated)) as any,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existing.id);
+          } else {
+            // Insert new record with complete set
+            await supabase
+              .from("bpmn_generations")
+              .insert({
+                user_id: currentUser.id,
+                input_type: "text",
+                input_description: `modelling-agent:${fingerprint}`,
+                generated_bpmn_xml: xmlSnapshot,
+                alternative_models: JSON.parse(JSON.stringify(generated)) as any,
+              });
+          }
+          console.log(`[Cache] Successfully cached ${generated.length} alternatives`);
+        } catch (cacheError) {
+          console.error("Failed to cache alternatives:", cacheError);
+          // Don't throw - caching failure shouldn't break the flow
+        }
       } catch (error) {
         console.error("Failed to prepare alternative models:", error);
         setAlternativeError(
@@ -2003,14 +2164,78 @@ MUST include:
     ]
   );
 
+  // Sanitize BPMN XML to fix common LLM mistakes (unclosed tags, namespace issues, etc.)
+  const sanitizeBpmnXml = useCallback((xml: string): string => {
+    let sanitized = xml;
+
+    // Fix namespace issues: bpmns: -> bpmn:
+    sanitized = sanitized.replace(/bpmns:/gi, 'bpmn:');
+
+    // Fix bpmndi namespace issues
+    sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, 'bpmndi:BPMNShape');
+    sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, 'bpmndi:BPMNEdge');
+
+    // Fix unclosed di:waypoint tags - they should be self-closing
+    // Pattern: <di:waypoint x="..." y="..."> should become <di:waypoint x="..." y="..."/>
+    // Match opening tags that don't end with /> and convert them to self-closing
+    sanitized = sanitized.replace(/<(\s*)di:waypoint\s+([^>]*?)>/gi, (match, whitespace, attrs) => {
+      // If it doesn't end with />, make it self-closing
+      if (!match.trim().endsWith('/>')) {
+        return `<${whitespace}di:waypoint ${attrs}/>`;
+      }
+      return match;
+    });
+    
+    // Fix any remaining unclosed waypoint tags without attributes
+    sanitized = sanitized.replace(/<(\s*)di:waypoint\s*>/gi, '<$1di:waypoint/>');
+
+    // Remove invalid tags that don't exist in BPMN 2.0
+    sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmn:flowNodeRef\s*>/gi, '');
+    sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmns:flowNodeRef\s*>/gi, '');
+    sanitized = sanitized.replace(/<\/\s*bpmn:flowNodeRef\s*>/gi, '');
+    sanitized = sanitized.replace(/<\/\s*bpmns:flowNodeRef\s*>/gi, '');
+    sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*\/?\s*>/gi, '');
+    sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*\/?\s*>/gi, '');
+
+    // Fix XML declaration issues
+    sanitized = sanitized.replace(/<\s*\/\?xml/gi, '<?xml');
+
+    // Fix unescaped ampersands
+    sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
+
+    // Remove orphaned closing tags
+    sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
+
+    return sanitized.trim();
+  }, []);
+
   const applyAlternativeModel = useCallback(
     async (model: AlternativeModel) => {
       if (!modelerRef.current) return;
 
       try {
-        await modelerRef.current.importXML(model.xml);
-        const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
-        canvas.zoom("fit-viewport");
+        // Sanitize XML before applying to fix common LLM mistakes
+        const sanitizedXml = sanitizeBpmnXml(model.xml);
+        await modelerRef.current.importXML(sanitizedXml);
+        const canvas = modelerRef.current.get("canvas") as { 
+          zoom: (mode: string) => void;
+          getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+        };
+        // Safe zoom: validate viewbox before applying
+        try {
+          const viewbox = canvas.getViewbox();
+          if (viewbox) {
+            const scale = viewbox.scale ?? 1;
+            const width = viewbox.width ?? 0;
+            const height = viewbox.height ?? 0;
+            if (isFinite(scale) && isFinite(width) && isFinite(height) && 
+                width > 0 && height > 0 && scale > 0) {
+              canvas.zoom("fit-viewport");
+            }
+          }
+        } catch (zoomError) {
+          console.warn("Zoom error, continuing:", zoomError);
+        }
         setVersions((prev) => [...prev, model.xml]);
         setVersion((prev) => prev + 1);
         toast.success(`${model.title} applied to the canvas`);
@@ -2040,8 +2265,20 @@ MUST include:
 
     try {
       await modelerRef.current.importXML(entry.generated_bpmn_xml);
-      const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
-      canvas.zoom("fit-viewport");
+      const canvas = modelerRef.current.get("canvas") as { 
+        zoom: (mode: string) => void;
+        getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+      };
+      // Safe zoom: validate viewbox before applying
+      try {
+        const viewbox = canvas.getViewbox();
+        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+            viewbox.width > 0 && viewbox.height > 0) {
+          canvas.zoom("fit-viewport");
+        }
+      } catch (zoomError) {
+        console.warn("Zoom error, continuing:", zoomError);
+      }
       setVersions((prev) => [...prev, entry.generated_bpmn_xml]);
       setVersion((prev) => prev + 1);
       toast.success("Historical diagram loaded");
@@ -2305,8 +2542,20 @@ MUST include:
         if (modelerRef.current) {
           try {
             await modelerRef.current.importXML(data.bpmn_xml);
-            const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
-            canvas.zoom("fit-viewport");
+            const canvas = modelerRef.current.get("canvas") as { 
+              zoom: (mode: string) => void;
+              getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+            };
+            // Safe zoom: validate viewbox before applying
+            try {
+              const viewbox = canvas.getViewbox();
+              if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+                  viewbox.width > 0 && viewbox.height > 0) {
+                canvas.zoom("fit-viewport");
+              }
+            } catch (zoomError) {
+              console.warn("Zoom error, continuing:", zoomError);
+            }
 
             toast.success("BPMN diagram generated from your image!", {
               description: "Process extracted and visualized successfully"
@@ -2361,8 +2610,20 @@ MUST include:
           if (job.status === 'completed' && job.bpmn_xml) {
             if (modelerRef.current) {
               modelerRef.current.importXML(job.bpmn_xml).then(() => {
-                const canvas = modelerRef.current!.get("canvas") as { zoom: (mode: string) => void };
-                canvas.zoom("fit-viewport");
+                const canvas = modelerRef.current!.get("canvas") as { 
+                  zoom: (mode: string) => void;
+                  getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+                };
+                // Safe zoom: validate viewbox before applying
+                try {
+                  const viewbox = canvas.getViewbox();
+                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+                      viewbox.width > 0 && viewbox.height > 0) {
+                    canvas.zoom("fit-viewport");
+                  }
+                } catch (zoomError) {
+                  console.warn("Zoom error, continuing:", zoomError);
+                }
 
                 toast.success("BPMN diagram generated from your image!", {
                   description: "Process extracted and visualized successfully"
@@ -2886,9 +3147,18 @@ MUST include:
       const canvas = modelerRef.current!.get("canvas") as {
         zoom: (mode: string) => void;
         getRootElement: () => any;
-        getViewbox: () => { scale: number; x: number; y: number } | undefined;
+        getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
       };
-      canvas.zoom("fit-viewport");
+      // Safe zoom: validate viewbox before applying
+      try {
+        const viewbox = canvas.getViewbox();
+        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+            viewbox.width > 0 && viewbox.height > 0) {
+          canvas.zoom("fit-viewport");
+        }
+      } catch (zoomError) {
+        console.warn("Zoom error, continuing:", zoomError);
+      }
       setErrorState(null);
 
       // Force P&ID mode after import if diagramType is 'pid'
@@ -3010,7 +3280,16 @@ MUST include:
 
               // Re-import to force complete re-render
               modelerRef.current!.importXML(currentXml).then(() => {
-                canvas.zoom("fit-viewport");
+                // Safe zoom: validate viewbox before applying
+                try {
+                  const viewbox = canvas.getViewbox();
+                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+                      viewbox.width > 0 && viewbox.height > 0) {
+                    canvas.zoom("fit-viewport");
+                  }
+                } catch (zoomError) {
+                  console.warn("Zoom error, continuing:", zoomError);
+                }
 
                 // After re-import, set attributes again and force one more update
                 setTimeout(() => {
@@ -3172,8 +3451,20 @@ MUST include:
       setVersion(versionIndex + 1);
       if (onSave && modelerRef.current) {
         modelerRef.current.importXML(versions[versionIndex]).then(() => {
-          const canvas = modelerRef.current!.get("canvas") as { zoom: (mode: string) => void };
-          canvas.zoom("fit-viewport");
+          const canvas = modelerRef.current!.get("canvas") as { 
+            zoom: (mode: string) => void;
+            getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+          };
+          // Safe zoom: validate viewbox before applying
+          try {
+            const viewbox = canvas.getViewbox();
+            if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+                viewbox.width > 0 && viewbox.height > 0) {
+              canvas.zoom("fit-viewport");
+            }
+          } catch (zoomError) {
+            console.warn("Zoom error, continuing:", zoomError);
+          }
         });
       }
     }
@@ -3255,8 +3546,25 @@ MUST include:
         }
 
         await modelerRef.current.importXML(text);
-        const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
-        canvas.zoom("fit-viewport");
+        const canvas = modelerRef.current.get("canvas") as { 
+          zoom: (mode: string) => void;
+          getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+        };
+        // Safe zoom: validate viewbox before applying
+        try {
+          const viewbox = canvas.getViewbox();
+          if (viewbox) {
+            const scale = viewbox.scale ?? 1;
+            const width = viewbox.width ?? 0;
+            const height = viewbox.height ?? 0;
+            if (isFinite(scale) && isFinite(width) && isFinite(height) && 
+                width > 0 && height > 0 && scale > 0) {
+              canvas.zoom("fit-viewport");
+            }
+          }
+        } catch (zoomError) {
+          console.warn("Zoom error, continuing:", zoomError);
+        }
         toast.success("Diagram imported successfully");
       } catch (error) {
         console.error("Import error:", error);
@@ -3303,6 +3611,48 @@ MUST include:
     [diagramType, version]
   );
 
+  // Safe zoom helper function that validates viewbox values before applying zoom
+  const safeZoom = useCallback((zoomValue: number | string) => {
+    if (!modelerRef.current) return false;
+    try {
+      const canvas = modelerRef.current.get("canvas") as {
+        zoom: (step: number | string) => void;
+        getViewbox: () => { scale?: number; x?: number; y?: number; width?: number; height?: number } | undefined;
+      };
+      
+      // If zooming to a specific value, validate it's finite
+      if (typeof zoomValue === 'number') {
+        if (!isFinite(zoomValue) || zoomValue <= 0) {
+          console.warn("Invalid zoom value:", zoomValue);
+          return false;
+        }
+      }
+      
+      // For fit-viewport, check viewbox is valid before applying
+      if (zoomValue === "fit-viewport") {
+        const viewbox = canvas.getViewbox();
+        if (viewbox) {
+          // Validate all viewbox values are finite (check if they exist first)
+          const scale = viewbox.scale ?? 1;
+          const width = viewbox.width ?? 0;
+          const height = viewbox.height ?? 0;
+          
+          if (!isFinite(scale) || !isFinite(width) || !isFinite(height) ||
+              width <= 0 || height <= 0 || scale <= 0) {
+            console.warn("Invalid viewbox values, skipping zoom:", viewbox);
+            return false;
+          }
+        }
+      }
+      
+      canvas.zoom(zoomValue);
+      return true;
+    } catch (error) {
+      console.error("Error applying zoom:", error);
+      return false;
+    }
+  }, []);
+
   // Zoom functions
   const handleZoomIn = useCallback(() => {
     if (!modelerRef.current) return;
@@ -3312,14 +3662,16 @@ MUST include:
         getViewbox: () => { scale: number } | undefined;
       };
       const viewbox = canvas.getViewbox();
-      if (viewbox) {
+      if (viewbox && isFinite(viewbox.scale) && viewbox.scale > 0) {
         const newScale = Math.min(viewbox.scale * 1.2, 3); // Max zoom 3x
-        canvas.zoom(newScale);
+        if (isFinite(newScale) && newScale > 0) {
+          safeZoom(newScale);
+        }
       }
     } catch (error) {
       console.error("Error zooming in:", error);
     }
-  }, []);
+  }, [safeZoom]);
 
   const handleZoomOut = useCallback(() => {
     if (!modelerRef.current) return;
@@ -3329,24 +3681,20 @@ MUST include:
         getViewbox: () => { scale: number } | undefined;
       };
       const viewbox = canvas.getViewbox();
-      if (viewbox) {
+      if (viewbox && isFinite(viewbox.scale) && viewbox.scale > 0) {
         const newScale = Math.max(viewbox.scale / 1.2, 0.2); // Min zoom 0.2x
-        canvas.zoom(newScale);
+        if (isFinite(newScale) && newScale > 0) {
+          safeZoom(newScale);
+        }
       }
     } catch (error) {
       console.error("Error zooming out:", error);
     }
-  }, []);
+  }, [safeZoom]);
 
   const handleFitToScreen = useCallback(() => {
-    if (!modelerRef.current) return;
-    try {
-      const canvas = modelerRef.current.get("canvas") as { zoom: (mode: string) => void };
-      canvas.zoom("fit-viewport");
-    } catch (error) {
-      console.error("Error fitting to screen:", error);
-    }
-  }, []);
+    safeZoom("fit-viewport");
+  }, [safeZoom]);
 
   // Fullscreen handler
   const handleToggleFullscreen = useCallback(() => {
@@ -3519,8 +3867,13 @@ MUST include:
       if (matches.length > 0) {
         // Zoom to first match
         const firstMatch = matches[0];
-        canvas.zoom(firstMatch);
-        toast.success(`Found ${matches.length} element(s) matching "${query}"`);
+        try {
+          canvas.zoom(firstMatch);
+          toast.success(`Found ${matches.length} element(s) matching "${query}"`);
+        } catch (zoomError) {
+          console.warn("Zoom to element error:", zoomError);
+          toast.success(`Found ${matches.length} element(s) matching "${query}"`);
+        }
       } else {
         toast.info(`No elements found matching "${query}"`);
       }
