@@ -114,14 +114,102 @@ export function getPidExample(): { user: string; assistant: string } {
 }
 
 /**
+ * Get optimized DMN system prompt (condensed version)
+ */
+export function getDmnSystemPrompt(): string {
+  return `You are a DMN 1.3 XML expert. Generate valid DMN 1.3 XML based on user descriptions.
+
+CRITICAL RULES:
+1. Return ONLY valid DMN 1.3 XML format
+2. Use namespace: xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+3. Use elements: decision, inputData, knowledgeSource, businessKnowledgeModel, decisionTable
+4. Include decisionTable with input/output clauses and rules
+5. Add dmndi:DMNDI section for visual layout
+6. Return ONLY XML, no markdown or explanations`;
+}
+
+/**
+ * Get DMN example for few-shot learning
+ */
+export function getDmnExample(): { user: string; assistant: string } {
+  return {
+    user: 'Create a simple credit approval decision table: check income and credit score',
+    assistant: `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" 
+  xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" 
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC/" 
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI/" 
+  id="credit_decision" 
+  name="Credit Approval" 
+  namespace="http://camunda.org/schema/1.0/dmn">
+  <decision id="Decision_1" name="Credit Approval Decision">
+    <decisionTable id="DecisionTable_1">
+      <input id="Input_1" label="Annual Income">
+        <inputExpression id="InputExpression_1" typeRef="number">
+          <text>income</text>
+        </inputExpression>
+      </input>
+      <input id="Input_2" label="Credit Score">
+        <inputExpression id="InputExpression_2" typeRef="number">
+          <text>creditScore</text>
+        </inputExpression>
+      </input>
+      <output id="Output_1" label="Approval" name="approval" typeRef="string"/>
+      <rule id="Rule_1">
+        <inputEntry id="InputEntry_1">
+          <text>&gt;= 50000</text>
+        </inputEntry>
+        <inputEntry id="InputEntry_2">
+          <text>&gt;= 700</text>
+        </inputEntry>
+        <outputEntry id="OutputEntry_1">
+          <text>"Approved"</text>
+        </outputEntry>
+      </rule>
+      <rule id="Rule_2">
+        <inputEntry id="InputEntry_3">
+          <text>&lt; 50000</text>
+        </inputEntry>
+        <inputEntry id="InputEntry_4">
+          <text>-</text>
+        </inputEntry>
+        <outputEntry id="OutputEntry_2">
+          <text>"Rejected"</text>
+        </outputEntry>
+      </rule>
+      <rule id="Rule_3">
+        <inputEntry id="InputEntry_5">
+          <text>-</text>
+        </inputEntry>
+        <inputEntry id="InputEntry_6">
+          <text>&lt; 700</text>
+        </inputEntry>
+        <outputEntry id="OutputEntry_3">
+          <text>"Rejected"</text>
+        </outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>`
+  };
+}
+
+/**
  * Build messages array with few-shot examples
  */
 export function buildMessagesWithExamples(
   systemPrompt: string,
   userPrompt: string,
-  diagramType: 'bpmn' | 'pid'
+  diagramType: 'bpmn' | 'pid' | 'dmn'
 ): Array<{ role: string; content: string }> {
-  const example = diagramType === 'pid' ? getPidExample() : getBpmnExample();
+  let example;
+  if (diagramType === 'pid') {
+    example = getPidExample();
+  } else if (diagramType === 'dmn') {
+    example = getDmnExample();
+  } else {
+    example = getBpmnExample();
+  }
   
   return [
     { role: 'system', content: systemPrompt },
