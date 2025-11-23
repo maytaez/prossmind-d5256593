@@ -4,6 +4,7 @@ import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThresho
 import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.ts';
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
 import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
+import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
 
 /**
  * Apply quick sanitization fixes for common LLM BPMN XML mistakes.
@@ -96,14 +97,21 @@ Deno.serve(async (req) => {
     console.log('Generating BPMN for prompt:', prompt);
     console.log('Request flags - skipCache:', skipCache, 'modelingAgentMode:', modelingAgentMode, 'diagramType:', diagramType);
     
+    // Detect language from user prompt FIRST (before cache check)
+    const detectedLanguageCode = detectLanguage(prompt);
+    const detectedLanguageName = getLanguageName(detectedLanguageCode);
+    console.log(`Detected language: ${detectedLanguageName} (${detectedLanguageCode})`);
+    
     // Generate hash (needed for potential cache storage even if skipping cache lookup)
     let promptHash: string;
     try {
-      promptHash = await generateHash(`${prompt}:${diagramType}`);
+      // Include language in the hash to avoid returning cached English responses for non-English prompts
+      promptHash = await generateHash(`${prompt}:${diagramType}:${detectedLanguageCode}`);
     } catch (hashError) {
       console.error('Failed to generate hash:', hashError);
       throw new Error('Failed to generate prompt hash');
     }
+
     
     if (skipCache || modelingAgentMode) {
       console.log('Cache disabled for this request (modeling agent mode)');
@@ -145,7 +153,7 @@ Deno.serve(async (req) => {
       throw new Error('Google API key not configured. Please set GOOGLE_API_KEY environment variable.');
     }
 
-    // Use optimized prompts from shared module
+    // Use optimized prompts from shared module with language awareness
     let systemPrompt: string;
     let criteria: any;
     let modelSelection: any;
@@ -155,7 +163,9 @@ Deno.serve(async (req) => {
     let complexityScore: number;
     
     try {
-      systemPrompt = diagramType === 'pid' ? getPidSystemPrompt() : getBpmnSystemPrompt();
+      systemPrompt = diagramType === 'pid'
+        ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
+        : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
       
       // Determine model based on prompt complexity using shared utility
       criteria = analyzePrompt(prompt, diagramType);
@@ -203,7 +213,7 @@ Deno.serve(async (req) => {
         console.log(`[Model Selection] Increased temperature from ${originalTemperature} to ${temperature} for Flash model (modeling agent mode variation)`);
       }
     }
-    
+
     modelUsed = model;
     
     console.log(`[Model Selection] Final Configuration: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens}, temperature: ${temperature}, reasoning: ${modelSelection.reasoning})`);
@@ -253,18 +263,24 @@ Deno.serve(async (req) => {
     // Map Lovable AI model names to Gemini model names
     const geminiModel = model.replace('google/', '');
     
-    // Build messages array for Gemini format
+    // Build messages array for Gemini format with language awareness
     let messages: Array<{ role: string; content: string }>;
     let systemMessage: any;
     let userMessages: Array<{ role: string; content: string }>;
     
     try {
-      messages = buildMessagesWithExamples(systemPrompt, prompt, diagramType);
+      messages = buildMessagesWithExamples(systemPrompt, prompt, diagramType, detectedLanguageCode, detectedLanguageName);
       systemMessage = messages.find((m: any) => m.role === 'system');
       userMessages = messages.filter((m: any) => m.role === 'user');
     } catch (messageError) {
       console.error('Error building messages:', messageError);
       throw new Error(`Failed to build messages: ${messageError instanceof Error ? messageError.message : String(messageError)}`);
+    }
+
+    
+    // Log the final user prompt for debugging
+    if (detectedLanguageCode !== 'en') {
+      console.log(`User prompt with language instruction: ${userMessages[userMessages.length - 1]?.content?.substring(0, 200)}...`);
     }
     
     // Retry mechanism for handling transient API failures
@@ -385,6 +401,7 @@ Deno.serve(async (req) => {
         }
 
         // Store in cache only after successful validation (async, don't wait) - skip if cache disabled
+        // Use language-aware hash for cache storage
         if (!skipCache && !modelingAgentMode) {
           (async () => {
             try {
@@ -396,12 +413,13 @@ Deno.serve(async (req) => {
                   console.warn('Failed to generate embedding for cache storage:', e);
                 }
               }
+              // Use the same language-aware hash for storage
               await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding);
             } catch (cacheError) {
               console.error('Failed to store in cache:', cacheError);
             }
           })();
-        } else {
+        } else if (modelingAgentMode) {
           console.log('Skipping cache storage (modeling agent mode)');
         }
 

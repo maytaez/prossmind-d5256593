@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
 import { generateHash, checkExactHashCache, storeExactHashCache } from '../_shared/cache.ts';
 import { logPerformanceMetric } from '../_shared/metrics.ts';
+import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -167,6 +168,25 @@ serve(async (req) => {
 
     // Determine file type and create appropriate analysis
     let extractedText = '';
+    let detectedLanguageCode = 'en';
+    let detectedLanguageName = 'English';
+
+    // Helper function to add language instructions to prompts
+    const addLanguageInstructions = (prompt: string, langCode: string, langName: string): string => {
+      if (langCode === 'en') return prompt;
+      return `${prompt}
+
+⚠️ CRITICAL LANGUAGE REQUIREMENT - HIGHEST PRIORITY ⚠️:
+The document content is written in ${langName} (${langCode}).
+
+YOU MUST:
+- Generate ALL text content in the BPMN diagram using ${langName} ONLY
+- Use ${langName} for: task names, event names, gateway labels, sequence flow labels, pool names, swimlane names, subprocess names, and ALL other text elements
+- Preserve the exact language, terminology, and wording from the document
+- DO NOT translate anything to English
+- DO NOT use English labels even if they seem more standard
+- Match the language of the source document exactly`;
+    };
 
     if (fileType.startsWith('image/')) {
       // Image analysis - use OCR and vision
@@ -280,6 +300,8 @@ OUTPUT FORMAT:
 5. Process flow description
 6. Layout and positioning information`;
 
+      // For images, we'll detect language from OCR results after analysis
+      // For now, use default language - will be updated after OCR extraction
       analysisPrompt = diagramType === 'pid' ? pidAnalysisPrompt : bpmnAnalysisPrompt;
 
       analysisContent = [
@@ -298,6 +320,11 @@ OUTPUT FORMAT:
       const documentBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       const documentText = new TextDecoder().decode(documentBuffer);
       extractedText = documentText;
+
+      // Detect language from document text
+      detectedLanguageCode = detectLanguage(documentText);
+      detectedLanguageName = getLanguageName(detectedLanguageCode);
+      console.log(`Detected language from document: ${detectedLanguageName} (${detectedLanguageCode})`);
 
       analysisPrompt = `Mission: Extract business process from this document and produce a perfectly laid out BPMN 2.0 diagram.
 
@@ -352,6 +379,9 @@ OUTPUT:
 1. Summarize extracted content
 2. Provide structured BPMN-ready process description with layout hints`;
 
+      // Add language instructions to the prompt
+      analysisPrompt = addLanguageInstructions(analysisPrompt, detectedLanguageCode, detectedLanguageName);
+
       analysisContent = [
         { type: 'text', text: analysisPrompt }
       ];
@@ -364,6 +394,11 @@ OUTPUT:
       const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, '');
       const textContent = atob(base64Data);
       extractedText = textContent;
+
+      // Detect language from text content
+      detectedLanguageCode = detectLanguage(textContent);
+      detectedLanguageName = getLanguageName(detectedLanguageCode);
+      console.log(`Detected language from text: ${detectedLanguageName} (${detectedLanguageCode})`);
 
       analysisPrompt = `Mission: Parse natural language text into a perfectly laid out BPMN 2.0 diagram.
 
@@ -404,6 +439,9 @@ ${textContent}
 
 OUTPUT:
 Structured BPMN-ready process with layout hints (swimlanes, positioning, routing, gateway types, subprocess groupings)`;
+
+      // Add language instructions to the prompt
+      analysisPrompt = addLanguageInstructions(analysisPrompt, detectedLanguageCode, detectedLanguageName);
 
       analysisContent = [
         { type: 'text', text: analysisPrompt }
@@ -487,7 +525,29 @@ Structured BPMN-ready process with layout hints (swimlanes, positioning, routing
     const documentAnalysis = analysisData.candidates[0].content.parts[0].text;
     console.log('Document analysis complete');
 
+    // For images, detect language from the analysis text if not already detected
+    if (fileType.startsWith('image/') && detectedLanguageCode === 'en') {
+      detectedLanguageCode = detectLanguage(documentAnalysis);
+      detectedLanguageName = getLanguageName(detectedLanguageCode);
+      console.log(`Detected language from image analysis: ${detectedLanguageName} (${detectedLanguageCode})`);
+    }
+
     // Generate diagram XML from the analysis
+    const languageInstruction = detectedLanguageCode !== 'en'
+      ? `\n\n⚠️ CRITICAL LANGUAGE REQUIREMENT - HIGHEST PRIORITY ⚠️:
+The document content is written in ${detectedLanguageName} (${detectedLanguageCode}).
+
+YOU MUST:
+- Generate ALL text content in the BPMN diagram using ${detectedLanguageName} ONLY
+- Use ${detectedLanguageName} for: task names, event names, gateway labels, sequence flow labels, pool names, swimlane names, subprocess names, and ALL other text elements
+- Preserve the exact language, terminology, and wording from the document analysis
+- DO NOT translate anything to English
+- DO NOT use English labels even if they seem more standard
+- Match the language of the source document exactly
+
+Example: If document contains "Bestellprozess", "Genehmigung", "Zahlung" (German), use German labels - NOT English "Order Process", "Approval", "Payment".`
+      : '';
+
     const bpmnSystemPrompt = `You are a BPMN 2.0 XML generator producing clean, production-ready business process diagrams with perfect layout.
 
 CRITICAL RULES:
@@ -711,7 +771,7 @@ SUBPROCESS VALIDATION:
 - Subprocesses can be nested (subprocess within subprocess)
 - Default to Embedded SubProcess (collapsed or expanded) unless reuse is explicitly needed
 
-Return ONLY valid, schema-compliant BPMN 2.0 XML with complete diagram interchange (DI) for clean rendering. Include gateways and subprocesses as detected. No markdown, no explanations.`;
+Return ONLY valid, schema-compliant BPMN 2.0 XML with complete diagram interchange (DI) for clean rendering. Include gateways and subprocesses as detected. No markdown, no explanations.${languageInstruction}`;
 
     const pidSystemPrompt = `System Prompt — "ProcessDesigner-AI v4 (Full P&ID Mode)"
 
@@ -960,7 +1020,7 @@ When combined with your **PidRenderer.js**, this updated prompt will:
 
 - Place controller and transmitter feedback loops visually  
 
-- Produce a true engineering-style **P&ID** in BPMN.io`;
+- Produce a true engineering-style **P&ID** in BPMN.io${languageInstruction}`;
 
     const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
     const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
