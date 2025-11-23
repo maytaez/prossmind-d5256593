@@ -6,6 +6,31 @@ import { getDmnSystemPrompt, buildMessagesWithExamples } from '../_shared/prompt
 import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
 
 /**
+ * Extract XML from response text, handling cases where there's text before the XML.
+ */
+function extractXmlFromResponse(text: string): string {
+  // First, try to find XML declaration
+  const xmlDeclMatch = text.match(/<\?xml[^>]*\?>/i);
+  if (xmlDeclMatch) {
+    const xmlStart = text.indexOf(xmlDeclMatch[0]);
+    // Extract from XML declaration onwards
+    return text.substring(xmlStart).trim();
+  }
+  
+  // If no XML declaration, try to find <definitions> tag
+  const definitionsMatch = text.match(/<definitions[^>]*>/i) || text.match(/<Definitions[^>]*>/i);
+  if (definitionsMatch) {
+    const xmlStart = text.indexOf(definitionsMatch[0]);
+    // Prepend XML declaration and extract from definitions tag onwards
+    const xmlContent = text.substring(xmlStart).trim();
+    return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
+  }
+  
+  // If neither found, return the original text (will be caught by validation)
+  return text.trim();
+}
+
+/**
  * Apply quick sanitization fixes for common LLM DMN XML mistakes.
  */
 function sanitizeDmnXml(xml: string): string {
@@ -15,9 +40,9 @@ function sanitizeDmnXml(xml: string): string {
   sanitized = sanitized.replace(/dmn:/gi, '');
   
   // Fix unclosed tags - ensure all tags are properly closed
-  sanitized = sanitized.replace(/<(\w+)([^>]*)>/g, (match, tag, attrs) => {
+  sanitized = sanitized.replace(/<(\w+)([^>]*?)>/g, (match, tag, attrs) => {
     // Skip if it's a closing tag or already self-closing
-    if (match.startsWith('</') || match.endsWith('/>')) {
+    if (match.includes('</') || match.trim().endsWith('/>')) {
       return match;
     }
     // For known self-closing tags, ensure they're self-closing
@@ -255,28 +280,35 @@ Deno.serve(async (req) => {
         }
 
         const data = await response.json();
-        let dmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        let rawResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         
-        if (!dmnXml) {
-          console.error('[API Response] Failed to extract DMN XML from response.');
+        if (!rawResponse) {
+          console.error('[API Response] Failed to extract DMN XML from response. Full response:', JSON.stringify(data, null, 2));
           throw new Error('No content generated from AI model');
         }
 
+        console.log('[API Response] Raw response (first 500 chars):', rawResponse.substring(0, 500));
+
         // Clean up the response - remove markdown code blocks if present
-        dmnXml = dmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+        rawResponse = rawResponse.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+
+        // Extract XML from response (handles cases where there's text before XML)
+        let dmnXml = extractXmlFromResponse(rawResponse);
 
         // Sanitize XML to fix common LLM mistakes
         dmnXml = sanitizeDmnXml(dmnXml);
 
-        console.log('Cleaned DMN XML:', dmnXml);
+        console.log('[API Response] Extracted DMN XML (first 500 chars):', dmnXml.substring(0, 500));
 
         // Validate XML structure
         if (!dmnXml.startsWith('<?xml')) {
+          console.error('[Validation Error] Missing XML declaration. First 200 chars:', dmnXml.substring(0, 200));
           throw new Error('Generated content is not valid XML - missing XML declaration');
         }
         
         if (!dmnXml.includes('<definitions') && !dmnXml.includes('<Definitions')) {
-          throw new Error('Generated DMN XML is invalid or incomplete');
+          console.error('[Validation Error] Missing definitions tag. First 200 chars:', dmnXml.substring(0, 200));
+          throw new Error('Generated DMN XML is invalid or incomplete - missing definitions element');
         }
 
         // Store in cache (async, don't wait)
