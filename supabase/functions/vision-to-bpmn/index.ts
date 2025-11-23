@@ -91,14 +91,19 @@ Deno.serve(async (req) => {
                            imageBase64.startsWith('data:application/msword');
         const isText = imageBase64.startsWith('data:text/');
 
-        // Generate image hash for caching (for images and PDFs)
+        // Check for unsupported document types early
+        if (isDocument || isPDF) {
+          throw new Error('Word documents and PDFs are not supported for diagram generation. Please convert your document to an image (screenshot/export as image) or extract the text content and paste it directly.');
+        }
+
+        // Generate image hash for caching (for images only)
         let imageHash: string | null = null;
         let bpmnXml = '';
         let cacheHit = false;
         let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
         let selectedModel = 'gemini-2.5-pro'; // Track which model succeeded
 
-        if (isImage || isPDF || isDocument) {
+        if (isImage) {
           // Extract base64 data (remove data URL prefix) and normalize
           const base64Data = imageBase64.includes(',') 
             ? imageBase64.split(',')[1].trim().replace(/\s+/g, '')
@@ -405,10 +410,8 @@ Return ONLY the XML, no other text.`;
           
           console.log('✅ Success with gemini-2.5-pro (text)');
           selectedModel = 'gemini-2.5-pro';
-        } else if (isPDF || isDocument) {
-          throw new Error('PDF/Document processing not yet supported - please upload images or text');
         } else {
-          throw new Error('Unsupported file type');
+          throw new Error('Unsupported file type. Please upload an image (PNG, JPG) or provide text content.');
         }
 
         console.log('BPMN generation complete');
