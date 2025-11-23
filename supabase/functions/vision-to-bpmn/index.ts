@@ -91,6 +91,11 @@ Deno.serve(async (req) => {
         const isDoc = imageBase64.startsWith('data:application/msword');
         const isText = imageBase64.startsWith('data:text/');
 
+        // Check for unsupported document types early
+        if (isDocx || isDoc) {
+          throw new Error('Word documents (.docx, .doc) are not supported by Gemini. Please convert your document to a PDF or extract the text and paste it directly.');
+        }
+
         // Generate image hash for caching (for images and PDFs)
         let imageHash: string | null = null;
         let bpmnXml = '';
@@ -98,122 +103,7 @@ Deno.serve(async (req) => {
         let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
         let selectedModel = 'gemini-2.5-pro'; // Track which model succeeded
 
-        // Handle .docx and .doc files - extract text first
-        if (isDocx || isDoc) {
-          console.log('Processing Word document - extracting text content...');
-          
-          if (!LOVABLE_API_KEY) {
-            throw new Error('Document text extraction requires Lovable AI integration');
-          }
-
-          // Extract base64 content
-          const base64Content = imageBase64.split(',')[1];
-          
-          // Use Lovable AI to extract text from document
-          const extractController = new AbortController();
-          const extractTimeoutId = setTimeout(() => extractController.abort(), 60000);
-          
-          try {
-            const extractResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'google/gemini-2.5-pro',
-                messages: [
-                  {
-                    role: 'user',
-                    content: [
-                      { 
-                        type: 'text', 
-                        text: 'Extract all text content from this document. Return only the extracted text, no explanations or formatting.' 
-                      },
-                      {
-                        type: 'file',
-                        file: {
-                          mime_type: isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/msword',
-                          data: base64Content
-                        }
-                      }
-                    ]
-                  }
-                ],
-                max_tokens: 8000
-              }),
-              signal: extractController.signal
-            });
-            
-            clearTimeout(extractTimeoutId);
-
-            if (!extractResponse.ok) {
-              const errorText = await extractResponse.text();
-              console.error('Document text extraction failed:', errorText);
-              throw new Error('Failed to extract text from document');
-            }
-
-            const extractData = await extractResponse.json();
-            const extractedText = extractData.choices?.[0]?.message?.content || '';
-            
-            if (!extractedText) {
-              throw new Error('No text content extracted from document');
-            }
-
-            console.log('Text extracted from document, length:', extractedText.length);
-            
-            // Now process as text
-            const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
-            console.log(`Generating ${diagramLabel} XML from extracted document text...`);
-
-            const bpmnSystemPrompt = `You are a BPMN 2.0 expert. Generate valid XML with horizontal swimlanes and decision gateways. Return ONLY XML starting with <?xml version="1.0" encoding="UTF-8"?>. No markdown.`;
-            const pidSystemPrompt = `You are a P&ID expert. Generate BPMN 2.0 XML with pid:type, pid:symbol, pid:category attributes for P&ID elements. Return ONLY XML, no markdown.`;
-            const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
-            const userPrompt = `Generate a complete ${diagramType.toUpperCase()} diagram from this document text:\n\n${extractedText}\n\nReturn ONLY the XML.`;
-
-            const genController = new AbortController();
-            const genTimeoutId = setTimeout(() => genController.abort(), 90000);
-            
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_API_KEY}`;
-            
-            const response = await fetch(apiUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-                generationConfig: {
-                  temperature: 0.2,
-                  maxOutputTokens: 32768,
-                }
-              }),
-              signal: genController.signal
-            });
-
-            clearTimeout(genTimeoutId);
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Gemini generation failed: ${response.status} - ${errorText}`);
-            }
-
-            const result = await response.json();
-            bpmnXml = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            
-            if (!bpmnXml) {
-              throw new Error('Empty response from Gemini for document text');
-            }
-            
-            console.log('✅ Success generating diagram from document');
-            selectedModel = 'gemini-2.5-pro';
-            
-          } catch (error) {
-            clearTimeout(extractTimeoutId);
-            if (error instanceof Error && error.name === 'AbortError') {
-              throw new Error('Document processing timeout');
-            }
-            throw error;
-          }
-        } else if (isImage || isPDF) {
+        if (isImage || isPDF) {
           // Extract base64 data (remove data URL prefix) and normalize
           const base64Data = imageBase64.includes(',') 
             ? imageBase64.split(',')[1].trim().replace(/\s+/g, '')
