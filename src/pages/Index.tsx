@@ -9,6 +9,7 @@ import ProductTiers from "@/components/ProductTiers";
 import ChatBot from "@/components/ChatBot";
 import Footer from "@/components/Footer";
 import TrustStrip from "@/components/TrustStrip";
+import CookieConsent, { trackVisitor } from "@/components/CookieConsent";
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -29,7 +30,22 @@ const Index = () => {
       setIsLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Track visitor if they have already given consent
+    const checkAndTrack = async () => {
+      const consent = localStorage.getItem("cookieConsent");
+      if (consent === "accepted") {
+        // Track the visit (don't await to avoid blocking)
+        trackVisitor(true).catch(console.error);
+      }
+    };
+    
+    // Small delay to ensure page is fully loaded
+    const trackingTimer = setTimeout(checkAndTrack, 2000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(trackingTimer);
+    };
   }, []);
 
   // Show loading state while checking auth
@@ -55,6 +71,7 @@ const Index = () => {
       <ProductTiers />
       <ChatBot />
       <Footer />
+      <CookieConsent />
     </div>
   );
 };
