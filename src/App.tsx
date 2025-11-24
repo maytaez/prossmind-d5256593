@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import PageTransition from "@/components/PageTransition";
+import VisitorTracker from "@/components/VisitorTracker";
 import Index from "./pages/Index";
 import Features from "./pages/Features";
 import VisionAI from "./pages/VisionAI";
@@ -12,8 +13,10 @@ import NotFound from "./pages/NotFound";
 import Analytics from "./pages/Analytics";
 
 const App = () => (
-  <Routes>
-    <Route path="/" element={<PageTransition><Index /></PageTransition>} />
+  <>
+    <VisitorTracker />
+    <Routes>
+      <Route path="/" element={<PageTransition><Index /></PageTransition>} />
     <Route path="/features" element={<PageTransition><Features /></PageTransition>} />
     <Route path="/vision-ai" element={<PageTransition><VisionAI /></PageTransition>} />
     <Route path="/pricing" element={<PageTransition><Pricing /></PageTransition>} />
@@ -23,8 +26,9 @@ const App = () => (
     <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
     <Route path="/load-diagram" element={<PageTransition><LoadDiagram /></PageTransition>} />
     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-    <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
-  </Routes>
+      <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
+    </Routes>
+  </>
 );
 
 export default App;
