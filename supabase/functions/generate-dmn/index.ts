@@ -39,21 +39,61 @@ function sanitizeDmnXml(xml: string): string {
   // Fix namespace issues
   sanitized = sanitized.replace(/dmn:/gi, '');
   
-  // Fix unclosed tags - ensure all tags are properly closed
-  sanitized = sanitized.replace(/<(\w+)([^>]*?)>/g, (match, tag, attrs) => {
-    // Skip if it's a closing tag or already self-closing
-    if (match.includes('</') || match.trim().endsWith('/>')) {
-      return match;
-    }
-    // For known self-closing tags, ensure they're self-closing
-    const selfClosingTags = ['inputEntry', 'outputEntry', 'text'];
-    if (selfClosingTags.includes(tag)) {
-      return `<${tag}${attrs}/>`;
-    }
-    return match;
-  });
+  // Step 1: Fix ALL self-closing text tags with content
+  // This is the most critical fix - must be done thoroughly
+  // Pattern: <text/> followed by content then </text>
+  let maxIterations = 10;
+  let iteration = 0;
+  while (iteration < maxIterations) {
+    const before = sanitized;
+    
+    // Fix <text/>Content</text> pattern
+    sanitized = sanitized.replace(/<text\s*\/>\s*([^<]*?)\s*<\/text>/g, '<text>$1</text>');
+    
+    // Fix cases where there might be tags between
+    sanitized = sanitized.replace(/<text\s*\/>\s*([\s\S]*?)<\/text>/g, '<text>$1</text>');
+    
+    if (before === sanitized) break;
+    iteration++;
+  }
+  
+  // Step 2: Fix self-closing inputEntry/outputEntry that should have content
+  // These patterns appear in decision tables
+  maxIterations = 10;
+  iteration = 0;
+  while (iteration < maxIterations) {
+    const before = sanitized;
+    
+    // Pattern: <inputEntry/> followed by content (text tag or text) then </inputEntry>
+    sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\s*\/>\s*(<text>[\s\S]*?<\/text>)\s*<\/\1>/g, '<$1$2>$3</$1>');
+    
+    // Pattern: <inputEntry id="..."/> with any content before closing tag
+    sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\s*\/>\s*([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+      const trimmedContent = content.trim();
+      if (!trimmedContent) return match;
+      
+      // Check if content already has text tag
+      if (trimmedContent.startsWith('<text>')) {
+        return `<${tag}${attrs}>${content}</${tag}>`;
+      }
+      
+      // If content has no tags, wrap in text tag
+      if (!trimmedContent.includes('<')) {
+        return `<${tag}${attrs}><text>${trimmedContent}</text></${tag}>`;
+      }
+      
+      return `<${tag}${attrs}>${content}</${tag}>`;
+    });
+    
+    if (before === sanitized) break;
+    iteration++;
+  }
 
-  // Fix unescaped ampersands
+  // Step 3: Fix any remaining malformed entry tags without proper structure
+  // Pattern: <inputEntry/> as self-closing when it should have text content
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)\s+([^>]*?)\/>\s*<\/(inputEntry|outputEntry)>/g, '<$1 $2><text>-</text></$1>');
+
+  // Fix unescaped ampersands (but not already escaped ones)
   sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
 
   // Fix XML declaration issues
