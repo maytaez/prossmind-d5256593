@@ -45,6 +45,13 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +104,14 @@ interface AlternativeModel {
   previewFailed?: boolean;
 }
 
+interface XmlViewerData {
+  title: string;
+  xml: string;
+  generatedAt?: string;
+  complexity?: AlternativeComplexity;
+  source?: "alternative" | "canvas";
+}
+
 type SystemActivityType = "visit" | "click";
 
 interface SystemActivity {
@@ -123,6 +138,403 @@ interface LogHistoryEntry {
   user_id?: string;
   input_type?: string | null;
 }
+
+const LANGUAGE_OPTIONS = [
+  { value: "auto", label: "Auto (match prompt language)" },
+  { value: "en", label: "English" },
+  { value: "es", label: "Español (Spanish)" },
+  { value: "fr", label: "Français (French)" },
+  { value: "de", label: "Deutsch (German)" },
+  { value: "pt", label: "Português (Portuguese)" },
+  { value: "it", label: "Italiano (Italian)" },
+] as const;
+
+type LanguageOptionValue = (typeof LANGUAGE_OPTIONS)[number]["value"];
+
+const LANGUAGE_NATIVE_NAMES: Record<LanguageOptionValue, string> = {
+  auto: "Prompt language",
+  en: "English",
+  es: "Español",
+  fr: "Français",
+  de: "Deutsch",
+  pt: "Português",
+  it: "Italiano",
+};
+
+const LANGUAGE_DICTIONARIES: Record<string, Record<string, string>> = {
+  es: {
+    start: "inicio",
+    startevent: "evento de inicio",
+    end: "fin",
+    event: "evento",
+    endevent: "evento final",
+    approve: "aprobar",
+    approval: "aprobación",
+    request: "solicitud",
+    review: "revisión",
+    task: "tarea",
+    user: "usuario",
+    service: "servicio",
+    process: "proceso",
+    data: "datos",
+    validation: "validación",
+    payment: "pago",
+    error: "error",
+    handling: "gestión",
+    customer: "cliente",
+    support: "soporte",
+    escalation: "escalamiento",
+    decision: "decisión",
+    gateway: "compuerta",
+    branch: "rama",
+    automation: "automatización",
+    monitoring: "monitoreo",
+    compliance: "cumplimiento",
+  },
+  fr: {
+    start: "début",
+    startevent: "événement de début",
+    end: "fin",
+    event: "événement",
+    endevent: "événement de fin",
+    approve: "approuver",
+    approval: "approbation",
+    request: "demande",
+    review: "revue",
+    task: "tâche",
+    user: "utilisateur",
+    service: "service",
+    process: "processus",
+    data: "données",
+    validation: "validation",
+    payment: "paiement",
+    error: "erreur",
+    handling: "gestion",
+    customer: "client",
+    support: "support",
+    escalation: "escalade",
+    decision: "décision",
+    gateway: "passerelle",
+    branch: "branche",
+    automation: "automatisation",
+    compliance: "conformité",
+  },
+  de: {
+    start: "start",
+    startevent: "startereignis",
+    end: "ende",
+    event: "ereignis",
+    endevent: "endereignis",
+    approve: "genehmigen",
+    approval: "genehmigung",
+    request: "anfrage",
+    review: "prüfung",
+    task: "aufgabe",
+    user: "benutzer",
+    service: "dienst",
+    process: "prozess",
+    data: "daten",
+    validation: "validierung",
+    payment: "zahlung",
+    error: "fehler",
+    handling: "bearbeitung",
+    customer: "kunde",
+    support: "support",
+    escalation: "eskalation",
+    decision: "entscheidung",
+    gateway: "gateway",
+    branch: "zweig",
+    automation: "automatisierung",
+    compliance: "compliance",
+  },
+  pt: {
+    start: "início",
+    startevent: "evento inicial",
+    end: "fim",
+    event: "evento",
+    endevent: "evento final",
+    approve: "aprovar",
+    approval: "aprovação",
+    request: "solicitação",
+    review: "revisão",
+    task: "tarefa",
+    user: "usuário",
+    service: "serviço",
+    process: "processo",
+    data: "dados",
+    validation: "validação",
+    payment: "pagamento",
+    error: "erro",
+    handling: "tratamento",
+    customer: "cliente",
+    support: "suporte",
+    escalation: "escalonamento",
+    decision: "decisão",
+    gateway: "gateway",
+    branch: "ramo",
+    automation: "automação",
+    compliance: "conformidade",
+  },
+  it: {
+    start: "inizio",
+    startevent: "evento iniziale",
+    end: "fine",
+    event: "evento",
+    endevent: "evento finale",
+    approve: "approvare",
+    approval: "approvazione",
+    request: "richiesta",
+    review: "revisione",
+    task: "attività",
+    user: "utente",
+    service: "servizio",
+    process: "processo",
+    data: "dati",
+    validation: "validazione",
+    payment: "pagamento",
+    error: "errore",
+    handling: "gestione",
+    customer: "cliente",
+    support: "supporto",
+    escalation: "escalation",
+    decision: "decisione",
+    gateway: "gateway",
+    branch: "ramo",
+    automation: "automazione",
+    compliance: "conformità",
+  },
+};
+
+const LANGUAGE_PHRASES: Record<string, Array<{ pattern: RegExp; replacement: string }>> = {
+  es: [
+    { pattern: /start event/gi, replacement: "Evento de Inicio" },
+    { pattern: /end event/gi, replacement: "Evento Final" },
+    { pattern: /user task/gi, replacement: "Tarea de Usuario" },
+    { pattern: /service task/gi, replacement: "Tarea de Servicio" },
+  ],
+  fr: [
+    { pattern: /start event/gi, replacement: "Événement de début" },
+    { pattern: /end event/gi, replacement: "Événement de fin" },
+    { pattern: /user task/gi, replacement: "Tâche utilisateur" },
+    { pattern: /service task/gi, replacement: "Tâche de service" },
+  ],
+  de: [
+    { pattern: /start event/gi, replacement: "Startereignis" },
+    { pattern: /end event/gi, replacement: "Endereignis" },
+    { pattern: /user task/gi, replacement: "Benutzeraufgabe" },
+    { pattern: /service task/gi, replacement: "Serviceaufgabe" },
+  ],
+  pt: [
+    { pattern: /start event/gi, replacement: "Evento de Início" },
+    { pattern: /end event/gi, replacement: "Evento Final" },
+    { pattern: /user task/gi, replacement: "Tarefa do Usuário" },
+    { pattern: /service task/gi, replacement: "Tarefa de Serviço" },
+  ],
+  it: [
+    { pattern: /start event/gi, replacement: "Evento Iniziale" },
+    { pattern: /end event/gi, replacement: "Evento Finale" },
+    { pattern: /user task/gi, replacement: "Attività Utente" },
+    { pattern: /service task/gi, replacement: "Attività di Servizio" },
+  ],
+};
+
+const LANGUAGE_STORAGE_KEY = "bpmn-language-preference";
+const SUPPORTED_LIVE_TRANSLATIONS = new Set(Object.keys(LANGUAGE_DICTIONARIES));
+
+const isLanguageValue = (value: string): value is LanguageOptionValue =>
+  LANGUAGE_OPTIONS.some((option) => option.value === value);
+
+const sanitizeDictionaryToken = (token: string) =>
+  token
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z]/g, "");
+
+const applyCaseStyle = (source: string, translated: string) => {
+  if (!source) return translated;
+  if (source === source.toUpperCase()) {
+    return translated.toUpperCase();
+  }
+  if (source[0] === source[0]?.toUpperCase()) {
+    return translated.charAt(0).toUpperCase() + translated.slice(1);
+  }
+  return translated;
+};
+
+const translateWithDictionary = (text: string, languageCode: string): string | null => {
+  const dictionary = LANGUAGE_DICTIONARIES[languageCode];
+  if (!dictionary) return null;
+
+  const phraseRules = LANGUAGE_PHRASES[languageCode];
+  let workingText = text;
+
+  if (phraseRules) {
+    phraseRules.forEach(({ pattern, replacement }) => {
+      workingText = workingText.replace(pattern, (match) =>
+        applyCaseStyle(match, replacement)
+      );
+    });
+  }
+
+  const tokens = workingText.split(/(\s+|[-/(),:]+)/g);
+  const translated = tokens.map((token) => {
+    if (!token.trim() || /(\s+|[-/(),:]+)/.test(token)) {
+      return token;
+    }
+    const sanitized = sanitizeDictionaryToken(token);
+    const translation = dictionary[sanitized];
+    if (!translation) {
+      return token;
+    }
+    return applyCaseStyle(token, translation);
+  });
+
+  return translated.join("");
+};
+
+/**
+ * Simple language detection based on common patterns and keywords
+ * Returns ISO 639-1 language code (e.g., 'en', 'es', 'fr', 'de', etc.)
+ * Falls back to 'en' if language cannot be determined
+ * This is a simplified frontend version of the backend language detection
+ */
+const detectLanguageFromText = (text: string): string => {
+  if (!text || text.trim().length === 0) {
+    return 'en';
+  }
+
+  const normalizedText = text.toLowerCase();
+  
+  // Check for German-specific characters and common words first (more reliable)
+  if (/[äöüßÄÖÜ]/.test(text)) {
+    return 'de';
+  }
+  
+  // Common language patterns - expanded with more common words
+  const languagePatterns: Record<string, RegExp[]> = {
+    'es': [/\b(es|está|están|con|para|por|del|la|el|de|en|un|una|son|ser|hacer|tiene|tener|proceso|diagrama|crear|generar|tarea|aprobar|revisión|validación)\b/i],
+    'fr': [/\b(est|sont|avec|pour|par|du|la|le|de|en|un|une|sont|être|faire|a|avoir|processus|diagramme|créer|générer|tâche|approuver|revue|validation)\b/i],
+    'de': [
+      /\b(ist|sind|mit|für|von|der|die|das|dem|den|des|ein|eine|einen|einem|einer|und|oder|prozess|prozesse|diagramm|erstellen|generieren|aufgabe|aktivität)\b/i
+    ],
+    'it': [/\b(è|sono|con|per|da|del|la|il|di|in|un|una|sono|essere|fare|ha|avere|processo|diagramma|creare|generare|compito)\b/i],
+    'pt': [/\b(é|são|com|para|por|do|da|de|em|um|uma|são|ser|fazer|tem|ter|processo|diagrama|criar|gerar|tarefa)\b/i],
+    'ru': [/\b(есть|с|для|от|в|на|процесс|диаграмма|создать|генерировать|начать|конец|задача)\b/i],
+    'ja': [/\b(は|が|を|に|で|プロセス|図|作成|生成|開始|終了|タスク)\b/i],
+    'ko': [/\b(은|는|을|를|에|에서|프로세스|다이어그램|생성|시작|종료|작업)\b/i],
+    'zh': [/\b(是|的|在|和|过程|图表|创建|生成|开始|结束|任务)\b/i],
+    'ar': [/\b(هو|هي|مع|ل|من|في|عملية|رسم|إنشاء|بداية|نهاية|مهمة)\b/i],
+    'hi': [/\b(है|के|से|में|प्रक्रिया|आरेख|बनाएं|शुरू|अंत|कार्य)\b/i],
+  };
+
+  // Count matches for each language
+  const scores: Record<string, number> = {};
+  
+  for (const [lang, patterns] of Object.entries(languagePatterns)) {
+    scores[lang] = 0;
+    for (const pattern of patterns) {
+      const matches = normalizedText.match(pattern);
+      if (matches) {
+        scores[lang] += matches.length;
+      }
+    }
+  }
+
+  // Find language with highest score
+  let maxScore = 0;
+  let detectedLang = 'en';
+  
+  for (const [lang, score] of Object.entries(scores)) {
+    if (score > maxScore) {
+      maxScore = score;
+      detectedLang = lang;
+    }
+  }
+
+  // If no strong match found, check for specific character sets
+  if (maxScore === 0) {
+    // Check for Chinese/Japanese/Korean characters
+    if (/[\u4e00-\u9fff]/.test(text)) {
+      return 'zh';
+    }
+    if (/[\u3040-\u309f\u30a0-\u30ff]/.test(text)) {
+      return 'ja';
+    }
+    if (/[\uac00-\ud7af]/.test(text)) {
+      return 'ko';
+    }
+    // Check for Arabic/Hebrew (RTL scripts)
+    if (/[\u0600-\u06ff]/.test(text)) {
+      return 'ar';
+    }
+    // Check for Cyrillic
+    if (/[\u0400-\u04ff]/.test(text)) {
+      return 'ru';
+    }
+    // Check for Devanagari (Hindi)
+    if (/[\u0900-\u097f]/.test(text)) {
+      return 'hi';
+    }
+  }
+
+  return detectedLang;
+};
+
+const getLanguageDirective = (languageCode: LanguageOptionValue): string => {
+  if (languageCode === "auto") {
+    return `LANGUAGE DIRECTIVE:
+- Mirror the language used in the user's prompt and on the current canvas.
+- If the existing diagram contains Spanish labels, every generated variant MUST also be Spanish.
+- Never switch to English unless the prompt itself is English.`;
+  }
+
+  const languageName = LANGUAGE_NATIVE_NAMES[languageCode] ?? languageCode.toUpperCase();
+  return `LANGUAGE DIRECTIVE:
+CRITICAL: Use ${languageName} for 100% of textual content (tasks, events, gateways, pools, lanes, annotations, documentation).
+Do NOT include English translations or bilingual labels.`;
+};
+
+/**
+ * Get language directive for Modelling Agent Mode based on detected language from content
+ */
+const getLanguageDirectiveFromContent = (contentText: string, fallbackLanguage: LanguageOptionValue): string => {
+  // Detect language from the content
+  const detectedLang = detectLanguageFromText(contentText);
+  
+  // Map detected language code to LanguageOptionValue format
+  const languageMap: Record<string, LanguageOptionValue> = {
+    'en': 'en',
+    'es': 'es',
+    'fr': 'fr',
+    'de': 'de',
+    'it': 'it',
+    'pt': 'pt',
+    'ru': 'ru',
+    'ja': 'ja',
+    'ko': 'ko',
+    'zh': 'zh',
+    'ar': 'ar',
+    'hi': 'hi',
+  };
+  
+  // Use detected language if available and not English, otherwise use fallback
+  const languageToUse = (detectedLang !== 'en' && languageMap[detectedLang]) 
+    ? languageMap[detectedLang] 
+    : fallbackLanguage;
+  
+  // If fallback is "auto" and we detected a non-English language, use detected language
+  if (fallbackLanguage === "auto" && detectedLang !== 'en' && languageMap[detectedLang]) {
+    const languageName = LANGUAGE_NATIVE_NAMES[languageMap[detectedLang]] ?? detectedLang.toUpperCase();
+    return `LANGUAGE DIRECTIVE:
+CRITICAL: The existing diagram content is in ${languageName}. Generate ALL variants using ${languageName} for 100% of textual content (tasks, events, gateways, pools, lanes, annotations, documentation).
+Do NOT switch to English. Do NOT include English translations or bilingual labels.
+Every generated variant MUST match the language of the existing diagram.`;
+  }
+  
+  // Otherwise use the standard directive
+  return getLanguageDirective(languageToUse);
+};
 
 const getElementXPath = (element: Element | null): string => {
   if (!element) return "";
@@ -945,11 +1357,191 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const [confirmAlternativeDialogOpen, setConfirmAlternativeDialogOpen] = useState(false);
   const systemActivitiesRef = useRef<SystemActivity[]>([]);
   const systemTrackingCleanupRef = useRef<(() => void) | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageOptionValue>("auto");
+  const [isApplyingLanguage, setIsApplyingLanguage] = useState(false);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const originalLabelsRef = useRef<Map<string, string>>(new Map());
+  const lastAppliedLanguageRef = useRef<LanguageOptionValue>("auto");
+  const [diagramReady, setDiagramReady] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      if (stored && isLanguageValue(stored)) {
+        setSelectedLanguage(stored);
+      }
+    } catch (error) {
+      console.warn("Unable to read saved language preference:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, selectedLanguage);
+    } catch (error) {
+      console.warn("Unable to persist language preference:", error);
+    }
+  }, [selectedLanguage]);
 
   const processSummary = useMemo(
     () => extractProcessSummary(xml, diagramType),
     [xml, diagramType]
   );
+  const languageDirective = useMemo(
+    () => getLanguageDirective(selectedLanguage),
+    [selectedLanguage]
+  );
+
+  const captureCurrentLabels = useCallback(() => {
+    if (!modelerRef.current) return;
+    try {
+      const elementRegistry = modelerRef.current.get("elementRegistry") as
+        | { getAll: () => Array<{ id: string; businessObject?: { name?: string } }> }
+        | undefined;
+      if (!elementRegistry) return;
+
+      const snapshot = new Map<string, string>();
+      elementRegistry.getAll().forEach((element) => {
+        const name = element?.businessObject?.name;
+        if (typeof name === "string" && name.trim()) {
+          snapshot.set(element.id, name);
+        }
+      });
+      originalLabelsRef.current = snapshot;
+    } catch (error) {
+      console.warn("Failed to capture diagram labels:", error);
+    }
+  }, []);
+
+  const restoreOriginalLabels = useCallback(() => {
+    if (!modelerRef.current || !originalLabelsRef.current.size) return;
+    try {
+      const modeling = modelerRef.current.get("modeling") as
+        | { updateProperties: (element: unknown, properties: { name?: string }) => void }
+        | undefined;
+      const elementRegistry = modelerRef.current.get("elementRegistry") as
+        | { get: (id: string) => { businessObject?: { name?: string } } | null }
+        | undefined;
+
+      if (!modeling || !elementRegistry) return;
+
+      originalLabelsRef.current.forEach((label, elementId) => {
+        const element = elementRegistry.get(elementId);
+        if (!element?.businessObject) return;
+        if (element.businessObject.name === label) return;
+        try {
+          modeling.updateProperties(element, { name: label });
+        } catch (error) {
+          console.warn(`Failed to restore label for ${elementId}`, error);
+        }
+      });
+      lastAppliedLanguageRef.current = "auto";
+    } catch (error) {
+      console.warn("Failed to restore original labels:", error);
+    }
+  }, []);
+
+  const applyLanguageToDiagram = useCallback(
+    async (languageCode: LanguageOptionValue, options?: { silent?: boolean }) => {
+      if (!modelerRef.current || languageCode === "auto") {
+        return true;
+      }
+
+      if (languageCode === "en") {
+        restoreOriginalLabels();
+        lastAppliedLanguageRef.current = "en";
+        return true;
+      }
+
+      if (!SUPPORTED_LIVE_TRANSLATIONS.has(languageCode)) {
+        if (!options?.silent) {
+          toast.info(
+            `Live translation not available for ${LANGUAGE_NATIVE_NAMES[languageCode] ?? languageCode}.`
+          );
+        }
+        return false;
+      }
+
+      if (!originalLabelsRef.current.size) {
+        captureCurrentLabels();
+      }
+
+      try {
+        const modeling = modelerRef.current.get("modeling") as
+          | { updateProperties: (element: unknown, properties: { name?: string }) => void }
+          | undefined;
+        const elementRegistry = modelerRef.current.get("elementRegistry") as
+          | { get: (id: string) => { businessObject?: { name?: string } } | null }
+          | undefined;
+
+        if (!modeling || !elementRegistry) return false;
+
+        originalLabelsRef.current.forEach((label, elementId) => {
+          const element = elementRegistry.get(elementId);
+          if (!element?.businessObject) return;
+          const translated = translateWithDictionary(label, languageCode);
+          if (!translated || translated === element.businessObject.name) return;
+          try {
+            modeling.updateProperties(element, { name: translated });
+          } catch (error) {
+            console.warn(`Failed to translate label for ${elementId}`, error);
+          }
+        });
+        lastAppliedLanguageRef.current = languageCode;
+        return true;
+      } catch (error) {
+        console.warn("Failed to apply language adaptation:", error);
+        return false;
+      }
+    },
+    [captureCurrentLabels, restoreOriginalLabels]
+  );
+
+  useEffect(() => {
+    if (!diagramReady || !modelerRef.current) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      setIsApplyingLanguage(true);
+      try {
+        if (selectedLanguage === "auto") {
+          restoreOriginalLabels();
+          captureCurrentLabels();
+        } else {
+          const success = await applyLanguageToDiagram(selectedLanguage, { silent: true });
+          if (!success && !cancelled) {
+            toast.info(
+              `Live translation not yet available for ${
+                LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? selectedLanguage
+              }.`
+            );
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Language adaptation failed:", error);
+          toast.error("Unable to adapt diagram language");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsApplyingLanguage(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLanguage, diagramReady, applyLanguageToDiagram, restoreOriginalLabels, captureCurrentLabels]);
+
+  const handleLanguageChange = useCallback((value: LanguageOptionValue) => {
+    setSelectedLanguage(value);
+  }, []);
 
   // Calculate recommended model based on complexity balance
   // Generate variant summary (strengths, weaknesses, use cases)
@@ -1658,6 +2250,9 @@ STRUCTURE: Complex routing with gateways, parallel flows, error handling, compli
               ? 'INTERMEDIATE: Must include 1+ gateway OR 1+ subprocess. Show structure and organization.'
               : 'ADVANCED: Must include 2-3 gateways, 2-4 parallel branches, 1-2 subprocesses, error handling, 4+ paths.';
             
+            // For Modelling Agent Mode, detect language from processSummary to ensure variants match the diagram's language
+            const contentBasedLanguageDirective = getLanguageDirectiveFromContent(processSummary || '', selectedLanguage);
+            
             prompt = `VARIANT: ${variant.title} (${variant.complexity.toUpperCase()})
 Description: ${variant.description}
 
@@ -1668,6 +2263,8 @@ ${variantSpecificInstructions}
 Constraints: Max ${constraints.maxElements} elements, ${constraints.maxTasks} tasks, ${constraints.maxBranches} branches, ${constraints.maxDecisionPoints} decisions, ${constraints.maxSubprocesses} subprocesses.
 
 ${tierWarning}
+
+${contentBasedLanguageDirective}
 
 Generate valid BPMN 2.0 XML matching the ${variant.complexity.toUpperCase()} tier. Include mandatory structures. Return ONLY XML, no markdown.
 
@@ -2161,6 +2758,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       processSummary,
       saveCurrentXml,
       alternativeCount,
+      languageDirective,
     ]
   );
 
@@ -2216,6 +2814,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       try {
         // Sanitize XML before applying to fix common LLM mistakes
         const sanitizedXml = sanitizeBpmnXml(model.xml);
+        setDiagramReady(false);
         await modelerRef.current.importXML(sanitizedXml);
         const canvas = modelerRef.current.get("canvas") as { 
           zoom: (mode: string) => void;
@@ -2240,30 +2839,38 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         setVersion((prev) => prev + 1);
         toast.success(`${model.title} applied to the canvas`);
         setAgentDialogOpen(false);
+        captureCurrentLabels();
+        setDiagramReady(true);
       } catch (error) {
         console.error("Failed to apply alternative model:", error);
         toast.error("Unable to apply this alternative diagram");
+        setDiagramReady(true);
       }
+    },
+    [captureCurrentLabels]
+  );
+
+  const downloadAlternativeModel = useCallback(
+    (model: AlternativeModel, format: "bpmn" | "xml" = "bpmn") => {
+      const blob = new Blob([model.xml], { type: "application/xml" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const safeTitle = model.title.replace(/\s+/g, "_").toLowerCase();
+      link.download = `${safeTitle}_${model.complexity}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     },
     []
   );
-
-  const downloadAlternativeModel = useCallback((model: AlternativeModel) => {
-    const blob = new Blob([model.xml], { type: "application/xml" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${model.title.replace(/\s+/g, "_").toLowerCase()}_${model.complexity}.bpmn`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, []);
 
   const applyHistoricalDiagram = useCallback(async (entry: LogHistoryEntry) => {
     if (!modelerRef.current) return;
 
     try {
+      setDiagramReady(false);
       await modelerRef.current.importXML(entry.generated_bpmn_xml);
       const canvas = modelerRef.current.get("canvas") as { 
         zoom: (mode: string) => void;
@@ -2283,11 +2890,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       setVersion((prev) => prev + 1);
       toast.success("Historical diagram loaded");
       setLogDialogOpen(false);
+      captureCurrentLabels();
+      setDiagramReady(true);
     } catch (error) {
       console.error("Failed to load historical diagram:", error);
       toast.error("Unable to load this historical snapshot");
+      setDiagramReady(true);
     }
-  }, []);
+  }, [captureCurrentLabels]);
 
   const downloadXmlSnapshot = useCallback((xmlContent: string, name: string) => {
     const blob = new Blob([xmlContent], { type: "application/xml" });
@@ -2307,6 +2917,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const [logDialogOpen, setLogDialogOpen] = useState(false);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
   const [systemDialogOpen, setSystemDialogOpen] = useState(false);
+  const [xmlViewerData, setXmlViewerData] = useState<XmlViewerData | null>(null);
 
   // File upload states
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -2463,7 +3074,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
   useEffect(() => {
     canEditRef.current = canEdit;
-  }, [canEdit]);
+  }, [canEdit, captureCurrentLabels]);
 
   useEffect(() => {
     hasGeneratedAlternativesRef.current = false;
@@ -2541,6 +3152,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         // Import the generated BPMN
         if (modelerRef.current) {
           try {
+            setDiagramReady(false);
             await modelerRef.current.importXML(data.bpmn_xml);
             const canvas = modelerRef.current.get("canvas") as { 
               zoom: (mode: string) => void;
@@ -2560,9 +3172,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             toast.success("BPMN diagram generated from your image!", {
               description: "Process extracted and visualized successfully"
             });
+            captureCurrentLabels();
+            setDiagramReady(true);
           } catch (importError) {
             console.error('Failed to import BPMN:', importError);
             toast.error("Failed to load generated diagram");
+            setDiagramReady(true);
           }
         }
 
@@ -2609,6 +3224,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
           if (job.status === 'completed' && job.bpmn_xml) {
             if (modelerRef.current) {
+              setDiagramReady(false);
               modelerRef.current.importXML(job.bpmn_xml).then(() => {
                 const canvas = modelerRef.current!.get("canvas") as { 
                   zoom: (mode: string) => void;
@@ -2628,9 +3244,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 toast.success("BPMN diagram generated from your image!", {
                   description: "Process extracted and visualized successfully"
                 });
+                captureCurrentLabels();
+                setDiagramReady(true);
               }).catch((importError) => {
                 console.error('Failed to import BPMN:', importError);
                 toast.error("Failed to load generated diagram");
+                setDiagramReady(true);
               });
             }
 
@@ -2688,7 +3307,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       supabase.removeChannel(channel);
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [visionJobId, diagramType]);
+  }, [visionJobId, diagramType, captureCurrentLabels]);
 
   // Initialize modeler once on mount
   useEffect(() => {
@@ -3143,6 +3762,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Store processedXml for later use
     const finalXml = processedXml;
 
+    setDiagramReady(false);
+
     modelerRef.current.importXML(finalXml).then(() => {
       const canvas = modelerRef.current!.get("canvas") as {
         zoom: (mode: string) => void;
@@ -3334,6 +3955,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           }, 500);
         }
       }
+      captureCurrentLabels();
+      setDiagramReady(true);
     }).catch((err: Error) => {
       console.error("Error rendering diagram:", err);
       const errorMsg = err.message || "Failed to load diagram";
@@ -3343,8 +3966,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       } else {
         toast.error("Failed to load BPMN diagram");
       }
+      setDiagramReady(true);
     });
-  }, [xml, diagramType]);
+  }, [xml, diagramType, captureCurrentLabels]);
 
   const handleSave = async () => {
     if (!canEdit) {
@@ -3453,7 +4077,10 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     if (versionIndex >= 0 && versionIndex < versions.length) {
       setVersion(versionIndex + 1);
       if (onSave && modelerRef.current) {
-        modelerRef.current.importXML(versions[versionIndex]).then(() => {
+        setDiagramReady(false);
+        modelerRef.current
+          .importXML(versions[versionIndex])
+          .then(() => {
           const canvas = modelerRef.current!.get("canvas") as { 
             zoom: (mode: string) => void;
             getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
@@ -3468,7 +4095,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           } catch (zoomError) {
             console.warn("Zoom error, continuing:", zoomError);
           }
-        });
+            captureCurrentLabels();
+            setDiagramReady(true);
+          })
+          .catch((error) => {
+            console.error("Failed to load historical version:", error);
+            toast.error("Unable to load this version");
+            setDiagramReady(true);
+          });
       }
     }
   };
@@ -3548,6 +4182,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           return;
         }
 
+        setDiagramReady(false);
         await modelerRef.current.importXML(text);
         const canvas = modelerRef.current.get("canvas") as { 
           zoom: (mode: string) => void;
@@ -3569,9 +4204,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           console.warn("Zoom error, continuing:", zoomError);
         }
         toast.success("Diagram imported successfully");
+        captureCurrentLabels();
+        setDiagramReady(true);
       } catch (error) {
         console.error("Import error:", error);
         toast.error("Failed to import diagram");
+        setDiagramReady(true);
       }
     };
     input.click();
@@ -3613,6 +4251,30 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     },
     [diagramType, version]
   );
+
+  const handleViewCurrentXml = useCallback(async () => {
+    if (!modelerRef.current) return;
+
+    try {
+      const { xml } = await modelerRef.current.saveXML({ format: true });
+      if (!xml) {
+        toast.error("No BPMN XML available");
+        return;
+      }
+      const title =
+        diagramType === "bpmn"
+          ? `Current BPMN Diagram (v${version})`
+          : `Current P&ID Diagram (v${version})`;
+      setXmlViewerData({
+        title,
+        xml,
+        source: "canvas",
+      });
+    } catch (error) {
+      console.error("Error opening XML viewer:", error);
+      toast.error("Unable to open XML viewer");
+    }
+  }, [diagramType, version]);
 
   // Safe zoom helper function that validates viewbox values before applying zoom
   const safeZoom = useCallback((zoomValue: number | string) => {
@@ -4650,6 +5312,37 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 shrink-0"
+            title="View BPMN XML"
+            onClick={handleViewCurrentXml}
+          >
+            <Code className="h-3.5 w-3.5" />
+          </Button>
+          <div className="flex items-center gap-2 pl-2">
+            <span className="text-[10px] uppercase text-muted-foreground">Language</span>
+            <Select
+              value={selectedLanguage}
+              onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+            >
+              <SelectTrigger className="h-7 w-[165px] text-xs">
+                <SelectValue placeholder="Auto" />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Badge variant="outline" className="text-[10px]">
+              {LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? "Auto"}
+            </Badge>
+            {isApplyingLanguage && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+          </div>
           <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
           <Button
             variant="ghost"
@@ -6433,9 +7126,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-6" style={{ minHeight: 0, scrollBehavior: 'smooth' }}>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-foreground mb-3 block">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-foreground">
                   How many alternative diagrams would you like to generate?
                 </label>
                 <div className="flex gap-4">
@@ -6467,10 +7160,39 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                     </label>
                   ))}
                 </div>
-                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                   <p>• <strong>3 alternatives:</strong> Quick comparison (fastest)</p>
                   <p>• <strong>5 alternatives:</strong> Comprehensive options (recommended)</p>
                   <p>• <strong>7 alternatives:</strong> Maximum variety (slowest)</p>
+                </div>
+              </div>
+              <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                <label className="text-sm font-medium text-foreground">
+                  Language preference
+                </label>
+                <Select
+                  value={selectedLanguage}
+                  onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+                  disabled={isApplyingLanguage}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Auto (match prompt)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <p>
+                    {selectedLanguage === "auto"
+                      ? "We detect the language from your prompt and existing canvas labels."
+                      : `All variants will be generated in ${LANGUAGE_NATIVE_NAMES[selectedLanguage]}.`}
+                  </p>
+                  {isApplyingLanguage && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
                 </div>
               </div>
             </div>
@@ -6695,14 +7417,32 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                // Preview is already shown, scroll to it
-                                const previewElement = document.querySelector('[data-preview-container]');
-                                previewElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                if (!selectedAlternative && alternativeModels.length) {
+                                  setSelectedAlternativeId(alternativeModels[0].id);
+                                }
+                                setPreviewDialogOpen(true);
                               }}
                               className="flex items-center gap-2"
                             >
                               <Eye className="h-4 w-4" />
                               Preview
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setXmlViewerData({
+                                  title: selectedAlternative.title,
+                                  xml: selectedAlternative.xml,
+                                  generatedAt: selectedAlternative.generatedAt,
+                                  complexity: selectedAlternative.complexity,
+                                  source: "alternative",
+                                })
+                              }
+                              className="flex items-center gap-2"
+                            >
+                              <Code className="h-4 w-4" />
+                              View XML
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -6717,6 +7457,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                               <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative)}>
                                 BPMN (.bpmn)
                               </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative, "xml")}>
+                                  XML (.xml)
+                                </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={async () => {
                                   try {
@@ -7054,6 +7797,137 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Alternative Preview Dialog */}
+      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedAlternative ? `Preview — ${selectedAlternative.title}` : "Preview alternative"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedAlternative
+                ? `Complexity: ${selectedAlternative.complexity.toUpperCase()}`
+                : "Select an alternative to preview it."}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAlternative ? (
+            <div className="space-y-3">
+              <div className="border rounded-lg bg-muted/30 h-[420px]" data-preview-container>
+                <AlternativeDiagramPreview
+                  xml={selectedAlternative.xml}
+                  title={selectedAlternative.title}
+                  onRetry={() => setSelectedAlternativeId(selectedAlternative.id)}
+                  onDownloadAvailable={() => {}}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPreviewDialogOpen(false);
+                    setXmlViewerData({
+                      title: selectedAlternative.title,
+                      xml: selectedAlternative.xml,
+                      generatedAt: selectedAlternative.generatedAt,
+                      complexity: selectedAlternative.complexity,
+                      source: "alternative",
+                    });
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Code className="h-4 w-4" />
+                  View XML
+                </Button>
+                <Button onClick={() => downloadAlternativeModel(selectedAlternative)}>
+                  Download .bpmn
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Pick an alternative model to preview it.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* XML Viewer Dialog */}
+      <Dialog
+        open={!!xmlViewerData}
+        onOpenChange={(open) => {
+          if (!open) {
+            setXmlViewerData(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>BPMN XML</DialogTitle>
+            <DialogDescription>
+              {xmlViewerData
+                ? `${xmlViewerData.title}${
+                    xmlViewerData.complexity
+                      ? ` (${xmlViewerData.complexity.toUpperCase()})`
+                      : ""
+                  }`
+                : "Inspect the generated BPMN XML."}
+            </DialogDescription>
+          </DialogHeader>
+          {xmlViewerData && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Generated{" "}
+                  {xmlViewerData.generatedAt
+                    ? new Date(xmlViewerData.generatedAt).toLocaleString()
+                    : xmlViewerData.source === "canvas"
+                      ? new Date().toLocaleString()
+                      : "just now"}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        if (typeof navigator === "undefined" || !navigator.clipboard) {
+                          throw new Error("Clipboard API unavailable");
+                        }
+                        await navigator.clipboard.writeText(xmlViewerData.xml);
+                        toast.success("XML copied to clipboard");
+                      } catch (error) {
+                        console.error("Failed to copy XML:", error);
+                        toast.error("Unable to copy XML");
+                      }
+                    }}
+                  >
+                    Copy XML
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const blob = new Blob([xmlViewerData.xml], { type: "application/xml" });
+                      const filename = `${(xmlViewerData.title || "diagram")
+                        .replace(/\s+/g, "_")
+                        .toLowerCase()}.xml`;
+                      downloadBlob(blob, filename);
+                    }}
+                  >
+                    Download XML
+                  </Button>
+                </div>
+              </div>
+              <ScrollArea className="max-h-[60vh] border rounded-md bg-muted/30">
+                <pre className="text-[11px] leading-5 p-4 whitespace-pre-wrap">
+                  {xmlViewerData.xml}
+                </pre>
+                <ScrollBar orientation="vertical" />
+              </ScrollArea>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
