@@ -510,12 +510,6 @@ const getLanguageDirectiveFromContent = (contentText: string, fallbackLanguage: 
     'de': 'de',
     'it': 'it',
     'pt': 'pt',
-    'ru': 'ru',
-    'ja': 'ja',
-    'ko': 'ko',
-    'zh': 'zh',
-    'ar': 'ar',
-    'hi': 'hi',
   };
   
   // Use detected language if available and not English, otherwise use fallback
