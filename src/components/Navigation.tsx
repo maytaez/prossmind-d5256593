@@ -188,9 +188,9 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
               aria-label="ProssMind Home"
             >
               <motion.img 
-                src="/prossmind-logo.jpeg" 
+                src="/Prossmind-Logo.png" 
                 alt="ProssMind Logo" 
-                className="h-10 w-auto"
+                className="h-12 w-auto"
                 whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
                 transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.2 }}
               />

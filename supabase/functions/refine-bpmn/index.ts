@@ -4,10 +4,31 @@ import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCa
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
 import { logPerformanceMetric } from '../_shared/metrics.ts';
 import { extractXmlSummary } from '../_shared/xml-utils.ts';
+import { instrumentBpmnXml } from '../../../bpmn-monitoring/instrumentation.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const applyMonitoringInstrumentation = (xml: string, context: string) => {
+  try {
+    const instrumentation = instrumentBpmnXml(xml);
+    if (instrumentation.warnings.length) {
+      instrumentation.warnings.forEach((warning) =>
+        console.warn(`[Instrumentation Warning][${context}]`, warning)
+      );
+    }
+    return instrumentation;
+  } catch (error) {
+    console.error(`[Instrumentation Error][${context}]`, error);
+    return {
+      xml,
+      warnings: [
+        `Monitoring instrumentation failed during ${context}. Diagram returned without telemetry hooks.`,
+      ],
+    };
+  }
 };
 
 serve(async (req) => {
@@ -72,6 +93,10 @@ serve(async (req) => {
     if (exactCache) {
       console.log('Exact hash cache hit for refinement');
       cacheType = 'exact_hash';
+      const instrumentation = applyMonitoringInstrumentation(
+        exactCache.bpmnXml,
+        'refine-bpmn cache'
+      );
       const responseTime = Date.now() - startTime;
 
       await logPerformanceMetric({
@@ -85,9 +110,10 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          bpmnXml: exactCache.bpmnXml,
+          bpmnXml: instrumentation.xml,
           instructions,
           cached: true,
+          monitoringWarnings: instrumentation.warnings,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -107,6 +133,10 @@ serve(async (req) => {
           console.log(`Semantic cache hit for refinement (similarity: ${semanticCache.similarity})`);
           cacheType = 'semantic';
           similarityScore = semanticCache.similarity;
+          const instrumentation = applyMonitoringInstrumentation(
+            semanticCache.bpmnXml,
+            'refine-bpmn semantic-cache'
+          );
           const responseTime = Date.now() - startTime;
 
           await logPerformanceMetric({
@@ -121,10 +151,11 @@ serve(async (req) => {
 
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache.bpmnXml,
+              bpmnXml: instrumentation.xml,
               instructions,
               cached: true,
               similarity: semanticCache.similarity,
+              monitoringWarnings: instrumentation.warnings,
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -356,6 +387,12 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
     console.log('BPMN refinement complete - XML validated');
     console.log('Refined XML length:', refinedBpmnXml.length);
 
+    const instrumentation = applyMonitoringInstrumentation(
+      refinedBpmnXml,
+      'refine-bpmn result'
+    );
+    refinedBpmnXml = instrumentation.xml;
+
     // Store in cache only after successful validation (200 response + valid XML)
     (async () => {
       try {
@@ -392,6 +429,7 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
         bpmnXml: refinedBpmnXml,
         instructions,
         cached: false,
+        monitoringWarnings: instrumentation.warnings,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
