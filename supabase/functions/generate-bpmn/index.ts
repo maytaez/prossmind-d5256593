@@ -1,4 +1,3 @@
-/* global Deno */
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
@@ -7,44 +6,11 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
 import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
 
-declare const Deno: {
-  env: {
-    get(key: string): string | undefined;
-    toObject(): Record<string, string>;
-  };
-  serve: (handler: (req: Request) => Response | Promise<Response>) => Promise<void> | void;
-};
-
-declare const DOMParser: {
-  new(): DOMParser;
-};
-
-declare const XMLSerializer: {
-  new(): XMLSerializer;
-};
-
-const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
-
 /**
  * Apply quick sanitization fixes for common LLM BPMN XML mistakes.
  */
 function sanitizeBpmnXml(xml: string): string {
-  if (!xml) {
-    return xml;
-  }
-
-  let sanitized = xml.trim();
-
-  // Strip anything that might precede the XML declaration (e.g., summaries, markdown)
-  const xmlDeclarationIndex = sanitized.indexOf('<?xml');
-  if (xmlDeclarationIndex > 0) {
-    sanitized = sanitized.slice(xmlDeclarationIndex);
-  }
-
-  // If there's no XML declaration but we have definitions, prepend one
-  if (xmlDeclarationIndex === -1 && /<\s*(?:bpmn:)?definitions\b/i.test(sanitized)) {
-    sanitized = `${XML_DECLARATION}\n${sanitized}`;
-  }
+  let sanitized = xml;
 
   // Fix namespace issues: bpmns: -> bpmn:
   sanitized = sanitized.replace(/bpmns:/gi, 'bpmn:');
@@ -53,24 +19,19 @@ function sanitizeBpmnXml(xml: string): string {
   sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, 'bpmndi:BPMNShape');
   sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, 'bpmndi:BPMNEdge');
 
-  // Normalize di:waypoint tags - ensure they are always self-closing and drop stray closing tags
-  sanitized = sanitized
-    // Convert <di:waypoint ...></di:waypoint> to self-closing
-    .replace(/<\s*di:waypoint([^>]*?)>\s*<\/\s*di:waypoint\s*>/gi, '<di:waypoint$1/>')
-    // Convert <di:waypoint ...> to self-closing when not already
-    .replace(/<\s*di:waypoint([^>]*?)>(?!\s*<\/)/gi, (_match: string, attrs: string) => {
-      const normalizedAttrs = attrs?.trim() ? ` ${attrs.trim().replace(/\s+/g, ' ')}` : '';
-      return `<di:waypoint${normalizedAttrs}/>`;
-    })
-    // Remove any lingering closing tags
-    .replace(/<\/\s*di:waypoint\s*>/gi, '');
-
-  // Fix any remaining uppercase DI namespace variants (e.g., DI:waypoint)
-  sanitized = sanitized
-    .replace(/<\s*DI:waypoint([^>]*?)\/?>/g, (_match: string, attrs: string) => {
-      const normalizedAttrs = attrs?.trim() ? ` ${attrs.trim().replace(/\s+/g, ' ')}` : '';
-      return `<di:waypoint${normalizedAttrs}/>`;
-    });
+  // Fix unclosed di:waypoint tags - they should be self-closing
+  // Pattern: <di:waypoint x="..." y="..."> should become <di:waypoint x="..." y="..."/>
+  // Match opening tags that don't end with /> and convert them to self-closing
+  sanitized = sanitized.replace(/<(\s*)di:waypoint\s+([^>]*?)>/gi, (match: string, whitespace: string, attrs: string) => {
+    // If it doesn't end with />, make it self-closing
+    if (!match.trim().endsWith('/>')) {
+      return `<${whitespace}di:waypoint ${attrs}/>`;
+    }
+    return match;
+  });
+  
+  // Fix any remaining unclosed waypoint tags without attributes (shouldn't happen but be safe)
+  sanitized = sanitized.replace(/<(\s*)di:waypoint\s*>/gi, '<$1di:waypoint/>');
 
   // Remove invalid tags that don't exist in BPMN 2.0 (flowNodeRef is not a valid element)
   sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmn:flowNodeRef\s*>/gi, '');
@@ -90,52 +51,6 @@ function sanitizeBpmnXml(xml: string): string {
   sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
 
   return sanitized.trim();
-}
-
-/**
- * Parse and reserialize BPMN XML to guarantee well-formed output.
- * Also scrubs di:waypoint children so serialization produces self-closing tags.
- */
-function normalizeBpmnXml(xml: string): string {
-  if (!xml) {
-    return xml;
-  }
-
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, "application/xml");
-    const parserErrors = doc.getElementsByTagName("parsererror");
-    if (parserErrors.length) {
-      const errorText = parserErrors[0]?.textContent || "Unknown parser error";
-      throw new Error(`BPMN XML parse error: ${errorText}`);
-    }
-
-    const waypointSelectors = [
-      "di\\:waypoint",
-      "bpmndi\\:waypoint",
-      "waypoint",
-      "di\\:Waypoint",
-    ];
-
-    waypointSelectors.forEach((selector) => {
-      doc.querySelectorAll(selector).forEach((node) => {
-        // Remove any child nodes/text to ensure serializer emits <di:waypoint .../>
-        while (node.firstChild) {
-          node.removeChild(node.firstChild);
-        }
-      });
-    });
-
-    const serializer = new XMLSerializer();
-    let normalized = serializer.serializeToString(doc);
-    if (!normalized.startsWith(XML_DECLARATION)) {
-      normalized = `${XML_DECLARATION}\n${normalized}`;
-    }
-    return normalized.trim();
-  } catch (error) {
-    console.warn("[normalizeBpmnXml] Failed to normalize BPMN XML:", error);
-    return xml;
-  }
 }
 
 const corsHeaders = {
@@ -173,20 +88,20 @@ Deno.serve(async (req) => {
     const diagramType = requestData.diagramType || 'bpmn';
     const skipCache = requestData.skipCache === true; // Check if caching should be skipped
     const modelingAgentMode = requestData.modelingAgentMode === true; // Modeling agent mode flag
-
+    
     if (!prompt) {
       throw new Error('Prompt is required');
     }
-
+    
     promptLength = prompt.length;
     console.log('Generating BPMN for prompt:', prompt);
     console.log('Request flags - skipCache:', skipCache, 'modelingAgentMode:', modelingAgentMode, 'diagramType:', diagramType);
-
+    
     // Detect language from user prompt FIRST (before cache check)
     const detectedLanguageCode = detectLanguage(prompt);
     const detectedLanguageName = getLanguageName(detectedLanguageCode);
     console.log(`Detected language: ${detectedLanguageName} (${detectedLanguageCode})`);
-
+    
     // Generate hash (needed for potential cache storage even if skipping cache lookup)
     let promptHash: string;
     try {
@@ -197,7 +112,7 @@ Deno.serve(async (req) => {
       throw new Error('Failed to generate prompt hash');
     }
 
-
+    
     if (skipCache || modelingAgentMode) {
       console.log('Cache disabled for this request (modeling agent mode)');
     } else {
@@ -213,7 +128,7 @@ Deno.serve(async (req) => {
         console.log('Exact hash cache hit');
         cacheType = 'exact_hash';
         const responseTime = Date.now() - startTime;
-
+        
         await logPerformanceMetric({
           function_name: 'generate-bpmn',
           cache_type: 'exact_hash',
@@ -246,12 +161,12 @@ Deno.serve(async (req) => {
     let maxTokens: number;
     let temperature: number;
     let complexityScore: number;
-
+    
     try {
       systemPrompt = diagramType === 'pid'
         ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
         : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
-
+      
       // Determine model based on prompt complexity using shared utility
       criteria = analyzePrompt(prompt, diagramType);
       modelSelection = selectModel(criteria);
@@ -260,7 +175,7 @@ Deno.serve(async (req) => {
       console.error('Error in prompt/model selection:', promptError);
       throw new Error(`Failed to prepare prompts: ${promptError instanceof Error ? promptError.message : String(promptError)}`);
     }
-
+    
     // Comprehensive logging for model selection
     console.log('[Model Selection] Criteria:', {
       promptLength: criteria.promptLength,
@@ -273,7 +188,7 @@ Deno.serve(async (req) => {
       hasMessageFlows: criteria.hasMessageFlows,
       diagramType: criteria.diagramType
     });
-
+    
     console.log('[Model Selection] Initial Selection:', {
       model,
       maxTokens,
@@ -281,7 +196,7 @@ Deno.serve(async (req) => {
       complexityScore,
       reasoning: modelSelection.reasoning
     });
-
+    
     // Adjust temperature for modeling agent mode
     // For complex prompts (Pro model), use lower temperature for more deterministic outputs
     // For simpler prompts (Flash model), slightly increase for variation
@@ -300,7 +215,7 @@ Deno.serve(async (req) => {
     }
 
     modelUsed = model;
-
+    
     console.log(`[Model Selection] Final Configuration: ${model} (complexity score: ${complexityScore}, max tokens: ${maxTokens}, temperature: ${temperature}, reasoning: ${modelSelection.reasoning})`);
 
     // Check semantic cache if enabled and exact hash missed (skip if cache disabled)
@@ -347,12 +262,12 @@ Deno.serve(async (req) => {
 
     // Map Lovable AI model names to Gemini model names
     const geminiModel = model.replace('google/', '');
-
+    
     // Build messages array for Gemini format with language awareness
     let messages: Array<{ role: string; content: string }>;
     let systemMessage: any;
     let userMessages: Array<{ role: string; content: string }>;
-
+    
     try {
       messages = buildMessagesWithExamples(systemPrompt, prompt, diagramType, detectedLanguageCode, detectedLanguageName);
       systemMessage = messages.find((m: any) => m.role === 'system');
@@ -362,25 +277,25 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to build messages: ${messageError instanceof Error ? messageError.message : String(messageError)}`);
     }
 
-
+    
     // Log the final user prompt for debugging
     if (detectedLanguageCode !== 'en') {
       console.log(`User prompt with language instruction: ${userMessages[userMessages.length - 1]?.content?.substring(0, 200)}...`);
     }
-
+    
     // Retry mechanism for handling transient API failures
     // Reduce retries for modeling agent mode to avoid rate limits when generating multiple variants in parallel
     const maxRetries = modelingAgentMode ? 2 : 3;
     const baseDelay = 1000; // 1 second
     let lastError: string | undefined;
-
+    
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       if (attempt > 0) {
         const delay = baseDelay * Math.pow(2, attempt - 1);
         console.log(`Retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
-
+      
       try {
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GOOGLE_API_KEY}`,
@@ -416,7 +331,7 @@ Deno.serve(async (req) => {
             model: modelUsed,
             promptLength: promptLength
           });
-
+          
           // Rate limit - don't retry
           if (response.status === 429) {
             return new Response(
@@ -424,7 +339,7 @@ Deno.serve(async (req) => {
               { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
-
+          
           // Service overloaded - retry with backoff
           if (response.status === 503) {
             lastError = 'Google Gemini service is temporarily overloaded.';
@@ -436,7 +351,7 @@ Deno.serve(async (req) => {
               { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
-
+          
           // Other errors - don't retry
           return new Response(
             JSON.stringify({ error: `Google API error: ${errorText}` }),
@@ -454,14 +369,14 @@ Deno.serve(async (req) => {
           finishReason: data.candidates?.[0]?.finishReason,
           safetyRatings: data.candidates?.[0]?.safetyRatings
         });
-
+        
         let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
+        
         if (!bpmnXml) {
           console.error('[API Response] Failed to extract BPMN XML from response. Full response:', JSON.stringify(data, null, 2));
           throw new Error('No content generated from AI model');
         }
-
+        
         console.log('[API Response] Extracted BPMN XML:', {
           length: bpmnXml.length,
           estimatedTokens: Math.ceil(bpmnXml.length / 4),
@@ -473,28 +388,15 @@ Deno.serve(async (req) => {
 
         // Sanitize XML to fix common LLM mistakes
         bpmnXml = sanitizeBpmnXml(bpmnXml);
-        bpmnXml = normalizeBpmnXml(bpmnXml);
 
         console.log('Cleaned BPMN XML:', bpmnXml);
 
-        // Ensure XML declaration is at the beginning even if the model prefixed explanations
-        const declarationIndex = bpmnXml.indexOf('<?xml');
-        if (declarationIndex > 0) {
-          console.warn('[Sanitize] Trimming text before XML declaration');
-          bpmnXml = bpmnXml.slice(declarationIndex);
-        } else if (declarationIndex === -1) {
-          const defsIndex = bpmnXml.search(/<\s*(?:bpmn:)?definitions\b/i);
-          if (defsIndex >= 0) {
-            console.warn('[Sanitize] Missing XML declaration, injecting standard header');
-            bpmnXml = `${XML_DECLARATION}\n${bpmnXml.slice(defsIndex)}`;
-          } else {
-            throw new Error('Generated content is not valid XML - no <?xml declaration or <definitions> block detected');
-          }
-        }
-
         // Validate XML structure before caching (only cache valid responses)
-        const hasDefinitions = /<\s*bpmn:definitions\b/i.test(bpmnXml) || /<\s*definitions\b/i.test(bpmnXml);
-        if (!hasDefinitions) {
+        if (!bpmnXml.startsWith('<?xml')) {
+          throw new Error('Generated content is not valid XML - missing XML declaration');
+        }
+        
+        if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
           throw new Error('Generated BPMN XML is invalid or incomplete');
         }
 
@@ -554,14 +456,14 @@ Deno.serve(async (req) => {
         }
       }
     }
-
+    
     // If we get here, all retries failed
     throw new Error(`Failed after ${maxRetries} attempts: ${lastError}`);
 
   } catch (error) {
     errorOccurred = true;
     errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
+    
     // Enhanced error logging
     console.error('Error in generate-bpmn function:', {
       error: errorMessage,
@@ -571,7 +473,7 @@ Deno.serve(async (req) => {
       modelUsed,
       cacheType
     });
-
+    
     // Log error details for debugging
     if (error instanceof Error) {
       console.error('Error name:', error.name);
@@ -580,9 +482,9 @@ Deno.serve(async (req) => {
         console.error('Error stack:', error.stack);
       }
     }
-
+    
     const responseTime = Date.now() - startTime;
-
+    
     // Try to log performance metric, but don't fail if it errors
     try {
       await logPerformanceMetric({
@@ -600,7 +502,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({
+      JSON.stringify({ 
         error: errorMessage
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
