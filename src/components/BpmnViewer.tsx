@@ -1340,6 +1340,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const alternativesScrollRef = useRef<HTMLDivElement>(null);
   const [selectedAlternativeId, setSelectedAlternativeId] = useState<string | null>(null);
   const [logHistory, setLogHistory] = useState<LogHistoryEntry[]>([]);
+  const [logPageSize, setLogPageSize] = useState(10);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [diagramFingerprint, setDiagramFingerprint] = useState<string | null>(null);
   const [visionJobId, setVisionJobId] = useState<string | null>(null);
@@ -1357,6 +1358,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const originalLabelsRef = useRef<Map<string, string>>(new Map());
   const lastAppliedLanguageRef = useRef<LanguageOptionValue>("auto");
   const [diagramReady, setDiagramReady] = useState(false);
+
+  const visibleLogHistory = useMemo(
+    () => logHistory.slice(0, logPageSize),
+    [logHistory, logPageSize]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -6912,7 +6918,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           setLogDialogOpen(open);
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="sm:max-w-3xl w-[95vw] max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Log Agent</DialogTitle>
             <DialogDescription>
@@ -6941,23 +6947,40 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               </div>
             )}
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <History className="h-4 w-4 text-muted-foreground" />
                   <p className="text-sm font-medium">Audit trail</p>
                 </div>
-                <Badge variant="outline">
-                  {logHistory.length} snapshots
-                </Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="outline">
+                    {logHistory.length} snapshots
+                  </Badge>
+                  <Select
+                    value={String(logPageSize)}
+                    onValueChange={(value) => setLogPageSize(Number(value))}
+                  >
+                    <SelectTrigger className="h-8 w-[150px] text-xs">
+                      <SelectValue placeholder="Logs per page" />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      {[5, 10, 20, 50].map((size) => (
+                        <SelectItem key={size} value={String(size)}>
+                          Show {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <ScrollArea className="max-h-64 border rounded-md">
+              <ScrollArea className="max-h-[45vh] border rounded-md">
                 <div className="divide-y">
                   {isLoadingLogs ? (
                     <div className="p-4 text-sm text-muted-foreground">
                       Loading audit trail...
                     </div>
-                  ) : logHistory.length ? (
-                    logHistory.map((entry) => {
+                  ) : visibleLogHistory.length ? (
+                    visibleLogHistory.map((entry) => {
                       const notes = Array.isArray(entry.alternative_models)
                         ? (entry.alternative_models as Array<Record<string, unknown>>)[0]
                         : undefined;
@@ -7080,8 +7103,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                         </div>
                       );
                     })
+                  ) : logHistory.length ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      No more entries at this page size.
+                    </div>
                   ) : (
-                    <div className="p-4 text-sm text-muted-foreground">
+                    <div className="p-4 text-sm text-muted-foreground text-center">
                       No historical logs archived yet.
                     </div>
                   )}
