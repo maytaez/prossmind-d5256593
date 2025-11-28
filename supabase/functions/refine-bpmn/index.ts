@@ -4,7 +4,7 @@ import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCa
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
 import { logPerformanceMetric } from '../_shared/metrics.ts';
 import { extractXmlSummary } from '../_shared/xml-utils.ts';
-import { instrumentBpmnXml } from '../../../bpmn-monitoring/instrumentation.ts';
+import { instrumentBpmnXml } from '../_shared/instrumentation.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
