@@ -98,9 +98,10 @@ Deno.serve(async (req) => {
     console.log('Request flags - skipCache:', skipCache, 'modelingAgentMode:', modelingAgentMode, 'diagramType:', diagramType);
     
     // Detect language from user prompt FIRST (before cache check)
-    const detectedLanguageCode = detectLanguage(prompt);
-    const detectedLanguageName = getLanguageName(detectedLanguageCode);
-    console.log(`Detected language: ${detectedLanguageName} (${detectedLanguageCode})`);
+    // In modeling agent mode, always use English to ensure consistent output regardless of input language
+    const detectedLanguageCode = modelingAgentMode ? 'en' : detectLanguage(prompt);
+    const detectedLanguageName = modelingAgentMode ? 'English' : getLanguageName(detectedLanguageCode);
+    console.log(`Language: ${detectedLanguageName} (${detectedLanguageCode})${modelingAgentMode ? ' [forced English for modeling agent mode]' : ''}`);
     
     // Generate hash (needed for potential cache storage even if skipping cache lookup)
     let promptHash: string;
