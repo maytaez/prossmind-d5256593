@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 export interface InstrumentationResult {
   xml: string;
   warnings: string[];
@@ -65,7 +67,7 @@ const ensureExtensionElements = (
   bpmnNamespace: string
 ): Element => {
   const existing = Array.from(element.children).find(
-    (child) => child.localName?.toLowerCase() === "extensionelements"
+    (child: Element) => child.localName?.toLowerCase() === "extensionelements"
   );
   if (existing) {
     return existing;
@@ -88,7 +90,7 @@ const ensureExecutionListener = (
   event: "start" | "end"
 ) => {
   const hasListener = Array.from(extensionElements.children).some(
-    (child) =>
+    (child: Element) =>
       child.namespaceURI === CAMUNDA_NS &&
       child.localName === "executionListener" &&
       child.getAttribute("event") === event &&
@@ -160,7 +162,7 @@ export function instrumentBpmnXml(
   const bpmnNamespace = definitions.namespaceURI || BPMN_NS;
 
   const usedIds = new Set<string>();
-  Array.from(doc.querySelectorAll("[id]")).forEach((node) => {
+  Array.from(doc.querySelectorAll("[id]")).forEach((node: Element) => {
     const id = node.getAttribute("id");
     if (id) {
       usedIds.add(id);
@@ -177,7 +179,7 @@ export function instrumentBpmnXml(
   };
 
   const allElements = Array.from(doc.getElementsByTagName("*"));
-  allElements.forEach((element) => {
+  allElements.forEach((element: Element) => {
     const localName = element.localName?.toLowerCase();
     if (!localName) return;
     if (!RELEVANT_LOCAL_NAMES.has(localName)) return;
