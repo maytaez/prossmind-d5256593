@@ -4,6 +4,7 @@ import BpmnModeler from "bpmn-js/lib/Modeler";
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
+import { featureFlags } from "@/config/featureFlags";
 import { Button } from "@/components/ui/button";
 import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List, Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -5315,28 +5316,30 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           >
             <Code className="h-3.5 w-3.5" />
           </Button>
-          <div className="flex items-center gap-2 pl-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Language</span>
-            <Select
-              value={selectedLanguage}
-              onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
-            >
-              <SelectTrigger className="h-7 w-[165px] text-xs">
-                <SelectValue placeholder="Auto" />
-              </SelectTrigger>
-              <SelectContent>
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Badge variant="outline" className="text-[10px]">
-              {LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? "Auto"}
-            </Badge>
-            {isApplyingLanguage && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-          </div>
+          {featureFlags.showLanguagePreference && (
+            <div className="flex items-center gap-2 pl-2">
+              <span className="text-[10px] uppercase text-muted-foreground">Language</span>
+              <Select
+                value={selectedLanguage}
+                onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+              >
+                <SelectTrigger className="h-7 w-[165px] text-xs">
+                  <SelectValue placeholder="Auto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Badge variant="outline" className="text-[10px]">
+                {LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? "Auto"}
+              </Badge>
+              {isApplyingLanguage && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+            </div>
+          )}
           <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
           <Button
             variant="ghost"
@@ -7160,35 +7163,37 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                   <p>• <strong>7 alternatives:</strong> Maximum variety (slowest)</p>
                 </div>
               </div>
-              <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
-                <label className="text-sm font-medium text-foreground">
-                  Language preference
-                </label>
-                <Select
-                  value={selectedLanguage}
-                  onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
-                  disabled={isApplyingLanguage}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Auto (match prompt)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LANGUAGE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <p>
-                    {selectedLanguage === "auto"
-                      ? "We detect the language from your prompt and existing canvas labels."
-                      : `All variants will be generated in ${LANGUAGE_NATIVE_NAMES[selectedLanguage]}.`}
-                  </p>
-                  {isApplyingLanguage && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+              {featureFlags.showLanguagePreference && (
+                <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                  <label className="text-sm font-medium text-foreground">
+                    Language preference
+                  </label>
+                  <Select
+                    value={selectedLanguage}
+                    onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+                    disabled={isApplyingLanguage}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Auto (match prompt)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LANGUAGE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <p>
+                      {selectedLanguage === "auto"
+                        ? "We detect the language from your prompt and existing canvas labels."
+                        : `All variants will be generated in ${LANGUAGE_NATIVE_NAMES[selectedLanguage]}.`}
+                    </p>
+                    {isApplyingLanguage && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {isLoadingAlternatives ? (
               <div className="flex flex-col items-center justify-center gap-4 py-8">

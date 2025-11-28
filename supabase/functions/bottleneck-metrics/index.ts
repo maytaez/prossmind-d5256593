@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     let query = supabase
-      .from<EventRecord>("bpmn_events")
+      .from("bpmn_events")
       .select("case_id, activity_id, activity_name, event_type, ts, resource")
       .order("ts", { ascending: true });
 
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       query = query.gte("ts", since);
     }
 
-    const { data: events, error } = await query.limit(100000);
+    const { data: events, error } = await query.limit(100000) as { data: EventRecord[] | null; error: Error | null };
 
     if (error) {
       console.error("Failed to fetch bpmn_events:", error);
@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
         const stat = stats.get(activityId) ?? {
           activityId,
           activityName,
-          durations: [],
+          durations: [] as number[],
           total: 0,
           cases: new Set<string>(),
         };

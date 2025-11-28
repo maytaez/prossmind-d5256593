@@ -10,5 +10,11 @@ export const featureFlags = {
    * Set to false to hide the team section completely
    */
   showTeamSection: false,
-} as const;
 
+  /**
+   * Show language preference selector in BPMN Viewer and Modeling Agent Mode
+   * Set to true to display the language preference dropdown
+   * Set to false to hide the language preference feature
+   */
+  showLanguagePreference: false,
+} as const;
