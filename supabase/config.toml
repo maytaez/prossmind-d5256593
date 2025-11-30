@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.screen-recording-to-bpmn]
 verify_jwt = false
+
+[functions.refine-dmn]
+verify_jwt = false
