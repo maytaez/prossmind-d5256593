@@ -16,7 +16,7 @@ function extractXmlFromResponse(text: string): string {
     // Extract from XML declaration onwards
     return text.substring(xmlStart).trim();
   }
-  
+
   // If no XML declaration, try to find <definitions> tag
   const definitionsMatch = text.match(/<definitions[^>]*>/i) || text.match(/<Definitions[^>]*>/i);
   if (definitionsMatch) {
@@ -25,7 +25,7 @@ function extractXmlFromResponse(text: string): string {
     const xmlContent = text.substring(xmlStart).trim();
     return `<?xml version="1.0" encoding="UTF-8"?>\n${xmlContent}`;
   }
-  
+
   // If neither found, return the original text (will be caught by validation)
   return text.trim();
 }
@@ -38,60 +38,98 @@ function sanitizeDmnXml(xml: string): string {
 
   // Fix namespace issues
   sanitized = sanitized.replace(/dmn:/gi, '');
-  
-  // Step 1: Fix ALL self-closing text tags with content
-  // This is the most critical fix - must be done thoroughly
-  // Pattern: <text/> followed by content then </text>
-  let maxIterations = 10;
-  let iteration = 0;
-  while (iteration < maxIterations) {
-    const before = sanitized;
-    
-    // Fix <text/>Content</text> pattern
-    sanitized = sanitized.replace(/<text\s*\/>\s*([^<]*?)\s*<\/text>/g, '<text>$1</text>');
-    
-    // Fix cases where there might be tags between
-    sanitized = sanitized.replace(/<text\s*\/>\s*([\s\S]*?)<\/text>/g, '<text>$1</text>');
-    
-    if (before === sanitized) break;
-    iteration++;
-  }
-  
-  // Step 2: Fix self-closing inputEntry/outputEntry that should have content
-  // These patterns appear in decision tables
-  maxIterations = 10;
-  iteration = 0;
-  while (iteration < maxIterations) {
-    const before = sanitized;
-    
-    // Pattern: <inputEntry/> followed by content (text tag or text) then </inputEntry>
-    sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\s*\/>\s*(<text>[\s\S]*?<\/text>)\s*<\/\1>/g, '<$1$2>$3</$1>');
-    
-    // Pattern: <inputEntry id="..."/> with any content before closing tag
-    sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\s*\/>\s*([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
-      const trimmedContent = content.trim();
-      if (!trimmedContent) return match;
-      
-      // Check if content already has text tag
-      if (trimmedContent.startsWith('<text>')) {
-        return `<${tag}${attrs}>${content}</${tag}>`;
+
+  // Step 0: Fix namespace declarations - ensure all required namespaces are in root <definitions> element
+  // Standard DMN 1.3 namespace URIs
+  const standardNamespaces = {
+    dmndi: 'https://www.omg.org/spec/DMN/20191111/DMNDI/',
+    dc: 'http://www.omg.org/spec/DMN/20180521/DC/',
+    di: 'http://www.omg.org/spec/DMN/20180521/DI/'
+  };
+
+  // Check if root definitions element exists
+  const rootDefinitionsMatch = sanitized.match(/<definitions([^>]*)>/i);
+  if (rootDefinitionsMatch) {
+    const rootAttrs = rootDefinitionsMatch[1];
+    let needsUpdate = false;
+    let updatedAttrs = rootAttrs;
+
+    // Check and add missing namespaces
+    for (const [prefix, uri] of Object.entries(standardNamespaces)) {
+      const namespacePattern = new RegExp(`xmlns:${prefix}=`, 'i');
+      if (!namespacePattern.test(rootAttrs)) {
+        // Check if it's declared elsewhere (e.g., in dmndi:DMNDI)
+        const elsewhereMatch = sanitized.match(new RegExp(`xmlns:${prefix}="([^"]+)"`, 'i'));
+        const namespaceUri = elsewhereMatch ? elsewhereMatch[1] : uri;
+        updatedAttrs += ` xmlns:${prefix}="${namespaceUri}"`;
+        needsUpdate = true;
       }
-      
-      // If content has no tags, wrap in text tag
-      if (!trimmedContent.includes('<')) {
-        return `<${tag}${attrs}><text>${trimmedContent}</text></${tag}>`;
-      }
-      
-      return `<${tag}${attrs}>${content}</${tag}>`;
-    });
-    
-    if (before === sanitized) break;
-    iteration++;
+    }
+
+    if (needsUpdate) {
+      sanitized = sanitized.replace(/<definitions([^>]*)>/i, `<definitions${updatedAttrs}>`);
+
+      // Remove duplicate namespace declarations from dmndi:DMNDI element (they should only be in root)
+      // Remove each namespace declaration regardless of position in attributes
+      sanitized = sanitized.replace(/<dmndi:DMNDI([^>]*?)\s+xmlns:dmndi="[^"]+"([^>]*?)>/gi, '<dmndi:DMNDI$1$2>');
+      sanitized = sanitized.replace(/<dmndi:DMNDI([^>]*?)\s+xmlns:dc="[^"]+"([^>]*?)>/gi, '<dmndi:DMNDI$1$2>');
+      sanitized = sanitized.replace(/<dmndi:DMNDI([^>]*?)\s+xmlns:di="[^"]+"([^>]*?)>/gi, '<dmndi:DMNDI$1$2>');
+      // Handle cases where namespace might be at the start (no space before)
+      sanitized = sanitized.replace(/<dmndi:DMNDI\s*xmlns:dmndi="[^"]+"\s*([^>]*?)>/gi, '<dmndi:DMNDI $1>');
+      sanitized = sanitized.replace(/<dmndi:DMNDI\s*xmlns:dc="[^"]+"\s*([^>]*?)>/gi, '<dmndi:DMNDI $1>');
+      sanitized = sanitized.replace(/<dmndi:DMNDI\s*xmlns:di="[^"]+"\s*([^>]*?)>/gi, '<dmndi:DMNDI $1>');
+      // Clean up any remaining whitespace issues (multiple spaces, trailing spaces)
+      sanitized = sanitized.replace(/<dmndi:DMNDI\s{2,}/g, '<dmndi:DMNDI ');
+      sanitized = sanitized.replace(/<dmndi:DMNDI\s+>/g, '<dmndi:DMNDI>');
+    }
   }
 
-  // Step 3: Fix any remaining malformed entry tags without proper structure
-  // Pattern: <inputEntry/> as self-closing when it should have text content
-  sanitized = sanitized.replace(/<(inputEntry|outputEntry)\s+([^>]*?)\/>\s*<\/(inputEntry|outputEntry)>/g, '<$1 $2><text>-</text></$1>');
+  // Step 1: Fix self-closing text tags with content: <text/>Content</text> -> <text>Content</text>
+  // This must be done first - handle all variations including with whitespace
+  // Run multiple times to catch nested or complex cases
+  for (let i = 0; i < 3; i++) {
+    const before = sanitized;
+    // Pattern: <text/> followed by optional whitespace, then content, then </text>
+    // Non-greedy match to avoid matching across multiple text tags
+    sanitized = sanitized.replace(/<text\/>\s*([\s\S]*?)<\/text>/g, '<text>$1</text>');
+    if (before === sanitized) break; // No more changes
+  }
+
+  // Step 2: Fix malformed inputEntry/outputEntry patterns
+  // Pattern 1: <inputEntry id="..."/>\n    <text/>content</text>\n</inputEntry>
+  // This handles the case where inputEntry is self-closing, then there's a malformed text tag
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*\n\s*<text\/>([\s\S]*?)<\/text>\s*\n\s*<\/\1>/g, '<$1$2><text>$3</text></$1>');
+
+  // Pattern 2: <inputEntry id="..."/>\n    <text>content</text>\n</inputEntry>
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*\n\s*<text>([\s\S]*?)<\/text>\s*\n\s*<\/\1>/g, '<$1$2><text>$3</text></$1>');
+
+  // Pattern 3: <inputEntry id="..."/> <text/>content</text> </inputEntry> (no newlines)
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*<text\/>([\s\S]*?)<\/text>\s*<\/\1>/g, '<$1$2><text>$3</text></$1>');
+
+  // Pattern 4: <inputEntry id="..."/> <text>content</text> </inputEntry> (no newlines)
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*<text>([\s\S]*?)<\/text>\s*<\/\1>/g, '<$1$2><text>$3</text></$1>');
+
+  // Step 3: Fix any remaining self-closing inputEntry/outputEntry that have a closing tag
+  // This catches edge cases where there's content between the self-closing tag and closing tag
+  sanitized = sanitized.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+    const trimmed = content.trim();
+    // If there's content between the self-closing tag and closing tag
+    if (trimmed) {
+      // If content contains a text tag (already fixed), extract it and wrap properly
+      const textMatch = trimmed.match(/<text>([\s\S]*?)<\/text>/);
+      if (textMatch) {
+        return `<${tag}${attrs}><text>${textMatch[1]}</text></${tag}>`;
+      }
+      // If content is just text without tags, wrap it in a text tag
+      if (!trimmed.includes('<')) {
+        return `<${tag}${attrs}><text>${trimmed}</text></${tag}>`;
+      }
+      // If it has other tags, wrap the entire content
+      return `<${tag}${attrs}>${content}</${tag}>`;
+    }
+    // If no content, this shouldn't happen but return as-is
+    return match;
+  });
 
   // Fix unescaped ampersands (but not already escaped ones)
   sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
@@ -100,6 +138,224 @@ function sanitizeDmnXml(xml: string): string {
   sanitized = sanitized.replace(/<\s*\/\?xml/gi, '<?xml');
 
   return sanitized.trim();
+}
+
+/**
+ * Ensure DMNDI section exists - add it if missing
+ */
+function ensureDmndiExists(xml: string): string {
+  // Check if DMNDI section exists
+  if (xml.includes('<dmndi:DMNDI>') || xml.includes('<dmndi:DMNDiagram')) {
+    return xml; // DMNDI already exists
+  }
+
+  console.log('[DMNDI Fix] DMNDI section missing, generating it...');
+
+  // Extract all decision and inputData IDs
+  const decisionMatches = xml.matchAll(/<decision[^>]*id="([^"]+)"[^>]*name="([^"]*)"[^>]*>/gi);
+  const inputDataMatches = xml.matchAll(/<inputData[^>]*id="([^"]+)"[^>]*name="([^"]*)"[^>]*>/gi);
+
+  const decisions: Array<{ id: string; name: string }> = [];
+  const inputData: Array<{ id: string; name: string }> = [];
+
+  for (const match of decisionMatches) {
+    decisions.push({ id: match[1], name: match[2] || match[1] });
+  }
+
+  for (const match of inputDataMatches) {
+    inputData.push({ id: match[1], name: match[2] || match[1] });
+  }
+
+  // Extract information requirements
+  const infoReqMatches = xml.matchAll(/<informationRequirement[^>]*>[\s\S]*?<requiredInput[^>]*href="#([^"]+)"[^>]*\/>[\s\S]*?<\/informationRequirement>/gi);
+  const infoReqs: Array<{ decisionId: string; inputId: string }> = [];
+
+  // Find which decisions require which inputs
+  const decisionBlocks = xml.matchAll(/<decision[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/decision>/gi);
+  for (const decisionBlock of decisionBlocks) {
+    const decisionId = decisionBlock[1];
+    const decisionContent = decisionBlock[2];
+    const reqMatches = decisionContent.matchAll(/<requiredInput[^>]*href="#([^"]+)"[^>]*\/>/gi);
+    for (const reqMatch of reqMatches) {
+      infoReqs.push({ decisionId, inputId: reqMatch[1] });
+    }
+  }
+
+  // Generate DMNDI section
+  let dmndiSection = '\n  <dmndi:DMNDI>\n    <dmndi:DMNDiagram id="DMNDiagram_1">\n';
+
+  // Add shapes for input data (positioned on the left)
+  let inputY = 100;
+  for (const input of inputData) {
+    dmndiSection += `      <dmndi:DMNShape id="DMNShape_${input.id}" dmnElementRef="${input.id}">\n`;
+    dmndiSection += `        <dc:Bounds x="100" y="${inputY}" width="150" height="50"/>\n`;
+    dmndiSection += `      </dmndi:DMNShape>\n`;
+    inputY += 100;
+  }
+
+  // Add shapes for decisions (positioned on the right)
+  let decisionY = 100;
+  for (const decision of decisions) {
+    dmndiSection += `      <dmndi:DMNShape id="DMNShape_${decision.id}" dmnElementRef="${decision.id}">\n`;
+    dmndiSection += `        <dc:Bounds x="400" y="${decisionY}" width="600" height="300"/>\n`;
+    dmndiSection += `      </dmndi:DMNShape>\n`;
+    decisionY += 350;
+  }
+
+  // Add edges for information requirements
+  let edgeCounter = 1;
+  for (const req of infoReqs) {
+    const inputShape = inputData.find(inp => inp.id === req.inputId);
+    const decisionShape = decisions.find(dec => dec.id === req.decisionId);
+    if (inputShape && decisionShape) {
+      const inputIndex = inputData.findIndex(inp => inp.id === req.inputId);
+      const decisionIndex = decisions.findIndex(dec => dec.id === req.decisionId);
+      const inputYPos = 100 + (inputIndex * 100) + 25; // Center of input shape
+      const decisionYPos = 100 + (decisionIndex * 350) + 150; // Center of decision shape
+
+      dmndiSection += `      <dmndi:DMNEdge id="DMNEdge_InfoReq_${edgeCounter}">\n`;
+      dmndiSection += `        <di:waypoint x="250" y="${inputYPos}"/>\n`;
+      dmndiSection += `        <di:waypoint x="400" y="${decisionYPos}"/>\n`;
+      dmndiSection += `      </dmndi:DMNEdge>\n`;
+      edgeCounter++;
+    }
+  }
+
+  dmndiSection += '    </dmndi:DMNDiagram>\n  </dmndi:DMNDI>\n';
+
+  // Insert DMNDI before closing </definitions> tag
+  if (xml.includes('</definitions>')) {
+    return xml.replace('</definitions>', `${dmndiSection}</definitions>`);
+  }
+
+  // If no closing tag found, append before end
+  return xml.trim() + dmndiSection;
+}
+
+/**
+ * Fix DMNDI layout issues - ensure proper bounds and spacing
+ */
+function fixDmndiLayout(xml: string): string {
+  let fixed = xml;
+
+  // First ensure DMNDI exists
+  fixed = ensureDmndiExists(fixed);
+
+  // Remove ALL name attributes from definitions element
+  // Remove ALL name attributes from definitions element
+  fixed = fixed.replace(/<definitions[^>]*>/gi, (match) => {
+    return match.replace(/\s+name\s*=\s*("[^"]*"|'[^']*')/gi, ' name=" "');
+  });
+
+  // Remove ALL name attributes from DMNDiagram elements
+  fixed = fixed.replace(/<dmndi:DMNDiagram[^>]*>/gi, (match) => {
+    return match.replace(/\s+name\s*=\s*("[^"]*"|'[^']*')/gi, ' name=" "');
+  });
+
+  // Ensure DMNShape elements have reasonable bounds
+  // Fix bounds that are too large or positioned incorrectly
+  // First, identify decision shapes vs input data shapes
+  fixed = fixed.replace(/<dmndi:DMNShape[^>]*dmnElementRef="([^"]+)"[^>]*>[\s\S]*?<dc:Bounds\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"\s*\/>/gi, (match, elementRef, x, y, width, height) => {
+    const isDecision = elementRef.includes('Decision_') || elementRef.startsWith('Decision');
+    const isInputData = elementRef.includes('InputData_') || elementRef.startsWith('InputData');
+
+    const xNum = parseFloat(x) || 0;
+    const yNum = parseFloat(y) || 0;
+    let widthNum = parseFloat(width) || (isDecision ? 600 : 150);
+    let heightNum = parseFloat(height) || (isDecision ? 300 : 50);
+
+    // Ensure minimum and maximum reasonable sizes
+    if (isDecision) {
+      // Decision tables need larger bounds
+      if (widthNum < 400) widthNum = 600;
+      if (widthNum > 1200) widthNum = 800; // Cap at reasonable max
+      if (heightNum < 200) heightNum = 300;
+      if (heightNum > 800) heightNum = 500; // Cap at reasonable max
+    } else if (isInputData) {
+      // Input data can be smaller
+      if (widthNum < 80) widthNum = 150;
+      if (widthNum > 300) widthNum = 200;
+      if (heightNum < 40) heightNum = 50;
+      if (heightNum > 200) heightNum = 80;
+    } else {
+      // Default bounds for unknown types
+      if (widthNum < 80) widthNum = 100;
+      if (widthNum > 300) widthNum = 200;
+      if (heightNum < 40) heightNum = 50;
+      if (heightNum > 200) heightNum = 80;
+    }
+
+    // Ensure coordinates are reasonable (not negative, not too large)
+    const fixedX = Math.max(0, Math.min(xNum, 2000));
+    // Ensure y position leaves room at top for labels (minimum 80px from top)
+    const fixedY = Math.max(80, Math.min(yNum, 2000));
+
+    // Return the full DMNShape with updated bounds
+    return match.replace(/<dc:Bounds\s+x="[^"]+"\s+y="[^"]+"\s+width="[^"]+"\s+height="[^"]+"\s*\/>/,
+      `<dc:Bounds x="${fixedX}" y="${fixedY}" width="${widthNum}" height="${heightNum}"/>`);
+  });
+
+  // Ensure waypoints are reasonable
+  fixed = fixed.replace(/<di:waypoint\s+x="([^"]+)"\s+y="([^"]+)"\s*\/>/gi, (match, x, y) => {
+    const xNum = parseFloat(x) || 0;
+    const yNum = parseFloat(y) || 0;
+    const fixedX = Math.max(0, Math.min(xNum, 2000));
+    const fixedY = Math.max(0, Math.min(yNum, 2000));
+    return `<di:waypoint x="${fixedX}" y="${fixedY}"/>`;
+  });
+
+  // If there are multiple DMNDiagram elements, ensure they're properly structured
+  // Count diagrams and ensure they have proper structure
+  const diagramCount = (fixed.match(/<dmndi:DMNDiagram/g) || []).length;
+  if (diagramCount > 1) {
+    console.log(`[Layout Fix] Found ${diagramCount} diagrams, ensuring proper structure`);
+  }
+
+  // Ensure DMNDiagram has reasonable positioning
+  // The diagram itself doesn't have bounds, but we can ensure shapes are well-positioned
+  // Recalculate positions to ensure proper spacing if needed
+  const shapeMatches = fixed.matchAll(/<dmndi:DMNShape[^>]*dmnElementRef="([^"]+)"[^>]*>[\s\S]*?<dc:Bounds\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"[^>]*\/>/gi);
+  const shapes: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
+
+  for (const match of shapeMatches) {
+    const elementRef = match[1];
+    const x = parseFloat(match[2]) || 0;
+    const y = parseFloat(match[3]) || 0;
+    const width = parseFloat(match[4]) || 100;
+    const height = parseFloat(match[5]) || 50;
+    shapes.push({ id: elementRef, x, y, width, height });
+  }
+
+  // If shapes are too close together or overlapping, adjust them
+  // This is a simple fix - in production you might want more sophisticated layout
+  if (shapes.length > 0) {
+    // Sort shapes by y position, then x
+    shapes.sort((a, b) => {
+      if (Math.abs(a.y - b.y) < 10) {
+        return a.x - b.x;
+      }
+      return a.y - b.y;
+    });
+
+    // Ensure minimum spacing between shapes
+    const minSpacing = 20;
+    for (let i = 1; i < shapes.length; i++) {
+      const prev = shapes[i - 1];
+      const curr = shapes[i];
+
+      // If shapes are on similar y-level and too close, adjust
+      if (Math.abs(curr.y - prev.y) < 10 && (curr.x - (prev.x + prev.width)) < minSpacing) {
+        const newX = prev.x + prev.width + minSpacing;
+        // Update the XML with new position
+        fixed = fixed.replace(
+          new RegExp(`(<dmndi:DMNShape[^>]*dmnElementRef="${curr.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>[\\s\\S]*?<dc:Bounds\\s+x=")[^"]+("\\s+y="[^"]+"[^>]*\\/>)`, 'gi'),
+          `$1${newX}$2`
+        );
+      }
+    }
+  }
+
+  return fixed;
 }
 
 const corsHeaders = {
@@ -135,14 +391,14 @@ Deno.serve(async (req) => {
     }
     prompt = requestData.prompt;
     const skipCache = requestData.skipCache === true;
-    
+
     if (!prompt) {
       throw new Error('Prompt is required');
     }
-    
+
     promptLength = prompt.length;
     console.log('Generating DMN for prompt:', prompt);
-    
+
     // Generate hash
     let promptHash: string;
     try {
@@ -151,7 +407,7 @@ Deno.serve(async (req) => {
       console.error('Failed to generate hash:', hashError);
       throw new Error('Failed to generate prompt hash');
     }
-    
+
     if (!skipCache) {
       // Check exact hash cache first
       let exactCache;
@@ -165,7 +421,7 @@ Deno.serve(async (req) => {
         console.log('Exact hash cache hit');
         cacheType = 'exact_hash';
         const responseTime = Date.now() - startTime;
-        
+
         await logPerformanceMetric({
           function_name: 'generate-dmn',
           cache_type: 'exact_hash',
@@ -190,13 +446,13 @@ Deno.serve(async (req) => {
 
     // Use DMN system prompt
     const systemPrompt = getDmnSystemPrompt();
-    
+
     // Determine model based on prompt complexity
     const criteria = analyzePrompt(prompt, 'bpmn'); // Use BPMN criteria for now
     const modelSelection = selectModel(criteria);
     const { model, maxTokens, temperature } = modelSelection;
     modelUsed = model;
-    
+
     console.log(`[Model Selection] Using ${model} for DMN generation`);
 
     // Check semantic cache if enabled
@@ -241,24 +497,24 @@ Deno.serve(async (req) => {
 
     // Map model name to Gemini model name
     const geminiModel = model.replace('google/', '');
-    
+
     // Build messages array for Gemini format
     const messages = buildMessagesWithExamples(systemPrompt, prompt, 'dmn');
     const systemMessage = messages.find((m: any) => m.role === 'system');
     const userMessages = messages.filter((m: any) => m.role === 'user');
-    
+
     // Retry mechanism
     const maxRetries = 3;
     const baseDelay = 1000;
     let lastError: string | undefined;
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       if (attempt > 0) {
         const delay = baseDelay * Math.pow(2, attempt - 1);
         console.log(`Retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
-      
+
       try {
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GOOGLE_API_KEY}`,
@@ -294,14 +550,14 @@ Deno.serve(async (req) => {
             model: modelUsed,
             promptLength: promptLength
           });
-          
+
           if (response.status === 429) {
             return new Response(
               JSON.stringify({ error: 'Google API rate limit exceeded. Please try again later.' }),
               { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
-          
+
           if (response.status === 503) {
             lastError = 'Google Gemini service is temporarily overloaded.';
             if (attempt < maxRetries - 1) {
@@ -312,7 +568,7 @@ Deno.serve(async (req) => {
               { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
           }
-          
+
           return new Response(
             JSON.stringify({ error: `Google API error: ${errorText}` }),
             { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -321,7 +577,7 @@ Deno.serve(async (req) => {
 
         const data = await response.json();
         let rawResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        
+
         if (!rawResponse) {
           console.error('[API Response] Failed to extract DMN XML from response. Full response:', JSON.stringify(data, null, 2));
           throw new Error('No content generated from AI model');
@@ -335,17 +591,65 @@ Deno.serve(async (req) => {
         // Extract XML from response (handles cases where there's text before XML)
         let dmnXml = extractXmlFromResponse(rawResponse);
 
+        console.log('[API Response] Before sanitization (first 1000 chars):', dmnXml.substring(0, 1000));
+
         // Sanitize XML to fix common LLM mistakes
         dmnXml = sanitizeDmnXml(dmnXml);
 
-        console.log('[API Response] Extracted DMN XML (first 500 chars):', dmnXml.substring(0, 500));
+        // Fix DMNDI layout issues (bounds, spacing, positioning)
+        const beforeLayout = dmnXml;
+        dmnXml = fixDmndiLayout(dmnXml);
+        if (beforeLayout !== dmnXml) {
+          console.log('[Layout Fix] Applied layout corrections to DMN diagram');
+        }
+
+        // Additional pass: Check for any remaining malformed patterns and fix them
+        // This is a safety net for edge cases - run sanitization multiple times if needed
+        let beforeFinal = dmnXml;
+        let iterations = 0;
+        const maxIterations = 5;
+
+        while (iterations < maxIterations) {
+          // Fix any remaining <text/>Content</text> patterns
+          dmnXml = dmnXml.replace(/<text\/>\s*([\s\S]*?)<\/text>/g, '<text>$1</text>');
+
+          // Fix any remaining self-closing inputEntry/outputEntry with content
+          dmnXml = dmnXml.replace(/<(inputEntry|outputEntry)([^>]*?)\/>\s*([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+            const trimmed = content.trim();
+            if (trimmed) {
+              // Extract text content if it exists
+              const textMatch = trimmed.match(/<text>([\s\S]*?)<\/text>/);
+              if (textMatch) {
+                return `<${tag}${attrs}><text>${textMatch[1]}</text></${tag}>`;
+              }
+              // If no text tag but has content, wrap in text tag
+              if (!trimmed.includes('<')) {
+                return `<${tag}${attrs}><text>${trimmed}</text></${tag}>`;
+              }
+              return `<${tag}${attrs}>${content}</${tag}>`;
+            }
+            return match;
+          });
+
+          if (beforeFinal === dmnXml) {
+            break; // No more changes needed
+          }
+          beforeFinal = dmnXml;
+          iterations++;
+        }
+
+        if (iterations > 0) {
+          console.log(`[Sanitization] Additional fixes applied in ${iterations} iteration(s)`);
+        }
+
+        console.log('[API Response] After sanitization (first 1000 chars):', dmnXml.substring(0, 1000));
 
         // Validate XML structure
         if (!dmnXml.startsWith('<?xml')) {
           console.error('[Validation Error] Missing XML declaration. First 200 chars:', dmnXml.substring(0, 200));
           throw new Error('Generated content is not valid XML - missing XML declaration');
         }
-        
+
         if (!dmnXml.includes('<definitions') && !dmnXml.includes('<Definitions')) {
           console.error('[Validation Error] Missing definitions tag. First 200 chars:', dmnXml.substring(0, 200));
           throw new Error('Generated DMN XML is invalid or incomplete - missing definitions element');
@@ -401,13 +705,13 @@ Deno.serve(async (req) => {
         }
       }
     }
-    
+
     throw new Error(`Failed after ${maxRetries} attempts: ${lastError}`);
 
   } catch (error) {
     errorOccurred = true;
     errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     console.error('Error in generate-dmn function:', {
       error: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
@@ -415,9 +719,9 @@ Deno.serve(async (req) => {
       modelUsed,
       cacheType
     });
-    
+
     const responseTime = Date.now() - startTime;
-    
+
     try {
       await logPerformanceMetric({
         function_name: 'generate-dmn',
@@ -434,7 +738,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: errorMessage
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
