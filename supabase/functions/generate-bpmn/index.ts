@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
     if (!GOOGLE_API_KEY) throw new Error('Google API key not configured');
     const systemPrompt = diagramType === 'pid' ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName) : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
     const criteria = analyzePrompt(prompt, diagramType);
-    const modelSelection = selectModel(criteria, prompt);
+    const modelSelection = selectModel(criteria);
     let { model, temperature } = modelSelection;
     const { complexityScore } = modelSelection;
     if (modelingAgentMode) temperature = model === 'google/gemini-2.5-pro' ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
