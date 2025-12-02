@@ -1,14 +1,217 @@
 /**
- * Optimized system prompts for BPMN/P&ID generation
- * Shorter, focused versions with examples moved to few-shot learning
+ * Comprehensive system prompts for BPMN/P&ID generation
+ * Based on prompt engineering principles: role definition, knowledge, negative prompting, and few-shot learning
  */
 
 /**
- * Get optimized BPMN system prompt (condensed version)
+ * Add role definition for BPMN expert
+ * Similar to add_role() in prompt_engineering.py
+ */
+function addBpmnRole(strictMode: boolean = false): string {
+  let role = `Your role: You are an expert in business process modeling, familiar with BPMN 2.0 notation and common process constructs such as exclusive gateways (XOR), parallel gateways (AND), inclusive gateways (OR), loops, subprocesses, and event handling. Your task is to analyze textual descriptions of business processes and transform them into valid BPMN 2.0 XML models. When generating a model, be as precise as possible and capture all details of the process in the model.`;
+  
+  if (strictMode) {
+    role += `\n\nPlease create the process model strictly depending on the provided description, without using any domain knowledge you might have. You are not supposed to correct any information in the process, rather fully rely on the provided textual description.`;
+  } else {
+    role += `\n\nAlso act as the process owner and use your expertise and familiarity with the process context to fill in any missing knowledge when necessary.`;
+  }
+  
+  return role;
+}
+
+/**
+ * Add comprehensive BPMN 2.0 knowledge
+ * Similar to add_knowledge() in prompt_engineering.py
+ */
+function addBpmnKnowledge(resourceAware: boolean = false): string {
+  let knowledge = `Use the following knowledge about the BPMN 2.0 process modeling language:
+
+BPMN 2.0 is a standardized notation for modeling business processes. A BPMN model consists of flow objects (events, activities, gateways), connecting objects (sequence flows, message flows), swimlanes (pools and lanes), and artifacts (data objects, annotations).
+
+CORE ELEMENTS:
+
+1. EVENTS:
+   - startEvent: Marks the beginning of a process. Types include: None (default), Message, Timer, Error, Signal, etc.
+   - endEvent: Marks the end of a process. Types include: None (default), Message, Error, Escalation, Signal, Terminate, etc.
+   - intermediateCatchEvent: Catches events during process execution (e.g., waiting for a message, timer)
+   - intermediateThrowEvent: Throws events during process execution
+   - boundaryEvent: Attached to activities to handle exceptions, escalations, or timeouts
+
+2. ACTIVITIES (Tasks):
+   - task: Generic task (default)
+   - userTask: Task performed by a human user
+   - serviceTask: Task performed by an automated service/system
+   - manualTask: Task performed without IT support
+   - scriptTask: Task executed by a script/automation
+   - sendTask: Task that sends a message
+   - receiveTask: Task that receives a message
+   - businessRuleTask: Task that evaluates business rules
+
+3. GATEWAYS (Control Flow):
+   - exclusiveGateway (XOR): Models exclusive choice - exactly one path is taken
+     * Use for: "if/else", "either/or", "choose one", decision points
+     * Split: One incoming flow, multiple outgoing flows (only one executes)
+     * Join: Multiple incoming flows, one outgoing flow (first to complete continues)
+   - parallelGateway (AND): Models parallel execution - all paths execute simultaneously
+     * Use for: "at the same time", "in parallel", "simultaneously", "while doing A, also do B"
+     * Split: One incoming flow, multiple outgoing flows (all execute)
+     * Join: Multiple incoming flows, one outgoing flow (waits for all to complete)
+   - inclusiveGateway (OR): Models inclusive choice - one or more paths can be taken
+     * Use for: "one or more", "any combination", "can do A, B, or both"
+     * Split: One incoming flow, multiple outgoing flows (one or more execute based on conditions)
+     * Join: Multiple incoming flows, one outgoing flow (waits for all active paths to complete)
+
+4. SUBPROCESSES:
+   - subProcess (Embedded): Groups related activities into a logical unit within the main process
+     * Collapsed: Shows as a single task with "+" icon (isExpanded="false")
+     * Expanded: Shows all internal tasks, gateways, and flows (isExpanded="true")
+     * Use for: Related activities that form a logical unit (e.g., "Order Processing", "Payment Verification")
+   - callActivity: Calls an external, reusable process
+     * Use for: Reusable subprocesses that appear in multiple processes
+   - eventSubProcess: Triggered by events (messages, timeouts, errors)
+     * Use for: Exception handling, delays, event-driven flows
+   - adHocSubProcess: Tasks can be executed in any order
+     * Use for: Informal workflows without predefined sequence
+   - transaction: All-or-nothing operations
+     * Use for: Financial/legal operations requiring atomicity
+
+5. SEQUENCE FLOWS:
+   - sequenceFlow: Connects flow objects in the same pool/lane
+     * Must have: sourceRef (source element ID) and targetRef (target element ID)
+     * Can have: name (label), conditionExpression (for conditional flows from gateways)
+
+6. MESSAGE FLOWS:
+   - messageFlow: Connects elements across different pools (participants)
+     * Use for: Communication between different organizations/participants
+
+7. POOLS AND LANES:
+   - pool: Represents a participant (organization, system, department)
+   - lane: Represents a role or department within a pool
+   - Use pools for: Different organizations or major participants
+   - Use lanes for: Different roles/departments within the same organization
+
+8. DATA OBJECTS:
+   - dataObject: Represents data in the process
+   - dataStore: Represents persistent data storage
+   - dataObjectReference: Reference to a data object
+
+LAYOUT REQUIREMENTS:
+- Use hierarchical/layered (Sugiyama) layout for process flows
+- Apply orthogonal edge routing (right-angle connectors, avoid diagonals)
+- Minimize edge crossings using crossing-minimization heuristics
+- Route connectors around nodes - insert waypoints to prevent overlap
+- Maintain minimum clearance (padding) between edges and nodes
+- Place labels outside connectors or on unobtrusive label boxes
+- Align swimlane widths uniformly; ensure tasks fit inside lanes
+- Normalize node sizes based on label length with consistent padding
+- Horizontal spacing: 150px minimum between nodes
+- Vertical spacing: 100px minimum between layers
+
+VALIDATION RULES:
+- Every sequenceFlow must have valid sourceRef and targetRef
+- Gateways must have proper split/join pairs for parallel flows
+- All bpmndi shapes must have valid bounds (x, y, width, height > 0)
+- All bpmndi edges must have at least 2 waypoints
+- ALL di:waypoint tags MUST be self-closing: <di:waypoint x="..." y="..."/>
+- Subprocesses must be properly nested (expanded) or marked as collapsed
+- No orphan flows (flows without valid source or target)
+- Gateway types must match their usage (XOR for decisions, AND for parallel, OR for inclusive)`;
+
+  if (resourceAware) {
+    knowledge += `\n\nRESOURCE AWARENESS:
+- Pools represent different organizations or major participants
+- Lanes represent roles or departments within a pool
+- Use generic pool names: "Customer", "Supplier", "System", "Department", etc.
+- Avoid repeating the same pool name for different pools
+- Each lane belongs to only one pool
+- Different departments/roles within the same organization should be modeled as lanes within one pool
+- If pools/lanes cannot be identified, assign to 'None'
+- If at least one pool is identified, do not use 'None' for other pools (same for lanes)`;
+  }
+
+  return knowledge;
+}
+
+/**
+ * Add negative prompting (common mistakes to avoid)
+ * Similar to negative_prompting() in prompt_engineering.py
+ */
+function addNegativePrompting(): string {
+  return `Avoid common mistakes:
+
+1. GATEWAY ERRORS:
+   - Do NOT skip gateways when decision points or parallel flows are mentioned
+   - Do NOT use parallelGateway (AND) for exclusive choices (use exclusiveGateway/XOR)
+   - Do NOT use exclusiveGateway (XOR) for parallel execution (use parallelGateway/AND)
+   - Ensure gateways have proper split/join pairs for parallel flows
+   - Gateway types must match their usage (XOR for decisions, AND for parallel, OR for inclusive)
+
+2. SUBPROCESS ERRORS:
+   - Do NOT skip subprocesses when grouped activities are mentioned
+   - Related tasks (2+) should be grouped in subprocesses
+   - Use proper subprocess naming: "verb + complement" format (e.g., "Review Application", "Handle Order Processing")
+   - Default to collapsed subprocesses (isExpanded="false") for cleaner diagrams
+   - Expanded subprocesses must include ALL internal elements with proper bounds
+
+3. XML STRUCTURE ERRORS:
+   - NEVER use "flowNodeRef" - this is NOT a valid BPMN 2.0 element
+   - NEVER use "bpmns:" namespace - always use "bpmn:" (not "bpmns:")
+   - ALL di:waypoint tags MUST be self-closing: <di:waypoint x="..." y="..."/>
+   - ALL opening tags must have matching closing tags
+   - Use proper XML structure with correct namespaces
+
+4. LAYOUT ERRORS:
+   - Do NOT create overlapping connectors or nodes
+   - Do NOT place labels overlapping other elements
+   - Ensure proper spacing between elements
+   - Route connectors around nodes, not through them
+
+5. FLOW ERRORS:
+   - Do NOT create orphan flows (flows without valid source or target)
+   - Ensure all sequenceFlows have valid sourceRef and targetRef
+   - Do NOT create flows that skip required gateways
+
+6. LABEL ERRORS:
+   - Preserve EXACT text from the process description
+   - Do NOT paraphrase or translate unless explicitly requested
+   - Use the same language as the input description
+
+7. VALIDATION ERRORS:
+   - Ensure all bpmndi shapes have valid bounds (x, y, width, height > 0)
+   - Ensure all bpmndi edges have at least 2 waypoints
+   - Ensure proper XML structure with XML declaration`;
+}
+
+/**
+ * Add process description
+ * Similar to add_process_description() in prompt_engineering.py
+ */
+function addProcessDescription(description: string): string {
+  return `This is the process description: ${description}`;
+}
+
+/**
+ * Add code generation instructions
+ * Similar to code_generation() in prompt_engineering.py
+ */
+function addCodeGenerationInstructions(): string {
+  return `At the end of your response, provide a single BPMN 2.0 XML snippet (starting with '<?xml') that contains the complete, valid BPMN 2.0 XML. Return ONLY the XML, no markdown code fences, no explanations, no additional text.`;
+}
+
+/**
+ * Get comprehensive BPMN system prompt
+ * Based on prompt_engineering.py structure
  * @param languageCode - ISO 639-1 language code (e.g., 'en', 'es', 'fr', etc.)
  * @param languageName - Human-readable language name (e.g., 'English', 'Spanish', etc.)
+ * @param strictMode - If true, strictly follow description without domain knowledge
+ * @param resourceAware - If true, include pool and lane information
  */
-export function getBpmnSystemPrompt(languageCode: string = 'en', languageName: string = 'English'): string {
+export function getBpmnSystemPrompt(
+  languageCode: string = 'en', 
+  languageName: string = 'English',
+  strictMode: boolean = false,
+  resourceAware: boolean = false
+): string {
   const languageInstruction = languageCode !== 'en' 
     ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
@@ -28,25 +231,18 @@ Example: If user writes "Erstelle einen Bestellprozess" (German), use German lab
 THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGLISH LABELS WHEN THE USER WRITES IN ${languageName.toUpperCase()}, YOU HAVE FAILED.`
     : '';
 
-  const basePrompt = `You are a BPMN 2.0 XML expert. Generate valid BPMN 2.0 XML based on user descriptions.
+  // Build prompt using structured approach from prompt_engineering.py
+  let prompt = addBpmnRole(strictMode);
+  prompt += '\n\n' + addBpmnKnowledge(resourceAware);
+  prompt += '\n\n' + addNegativePrompting();
+  prompt += '\n\n' + addCodeGenerationInstructions();
 
-CRITICAL RULES:
-1. Return ONLY valid BPMN 2.0 XML format
-2. Use namespace: xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
-3. Use elements: startEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, endEvent
-4. Include sequenceFlow with sourceRef and targetRef
-5. Add bpmndi:BPMNDiagram section for visual layout
-6. ALL di:waypoint tags MUST be self-closing: <di:waypoint x="..." y="..."/> (NOT <di:waypoint x="..." y="...">)
-7. ALL XML tags must be properly closed (either self-closing with /> or with matching closing tags)
-8. Return ONLY XML, no markdown or explanations`;
+  // Add language instruction at the beginning for maximum visibility
+  if (languageCode !== 'en') {
+    prompt = `${languageInstruction}\n\n${prompt}`;
+  }
 
-  // Put language instruction at the beginning for maximum visibility
-  return languageCode !== 'en' 
-    ? `${languageInstruction}
-
-${basePrompt}`
-    : basePrompt;
-
+  return prompt;
 }
 
 /**
@@ -89,9 +285,10 @@ CRITICAL RULES:
 }
 
 /**
- * Get BPMN example for few-shot learning
+ * Get BPMN example for few-shot learning with error explanations
+ * Similar to add_few_shots() in prompt_engineering.py
  */
-export function getBpmnExample(): { user: string; assistant: string } {
+export function getBpmnExample(): { user: string; assistant: string; errors?: string } {
   return {
     user: 'Create a simple order process: start, create order, approve order, end',
     assistant: `<?xml version="1.0" encoding="UTF-8"?>
@@ -133,14 +330,20 @@ export function getBpmnExample(): { user: string; assistant: string } {
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
-</definitions>`
+</definitions>`,
+    errors: `Common errors to avoid for this example:
+- Do NOT use <di:waypoint> tags (must be self-closing: <di:waypoint x="..." y="..."/>)
+- Do NOT forget to include bpmndi:BPMNDiagram section for visual layout
+- Do NOT use invalid namespaces like "bpmns:" (use "bpmn:")
+- Do NOT create flows without valid sourceRef and targetRef
+- Ensure all bounds have positive x, y, width, height values`
   };
 }
 
 /**
- * Get German BPMN example for few-shot learning
+ * Get German BPMN example for few-shot learning with error explanations
  */
-export function getGermanBpmnExample(): { user: string; assistant: string } {
+export function getGermanBpmnExample(): { user: string; assistant: string; errors?: string } {
   return {
     user: 'Erstelle einen einfachen Bestellprozess: Start, Bestellung erstellen, Bestellung genehmigen, Ende',
     assistant: `<?xml version="1.0" encoding="UTF-8"?>
@@ -182,7 +385,12 @@ export function getGermanBpmnExample(): { user: string; assistant: string } {
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
-</definitions>`
+</definitions>`,
+    errors: `Common errors to avoid for this example:
+- CRITICAL: Do NOT translate German labels to English - use "Bestellung erstellen" NOT "Create Order"
+- Do NOT use English event names - use "Start" and "Ende" NOT "Start" and "End"
+- Preserve the exact German terminology from the user's description
+- All other XML structure errors apply (waypoints, namespaces, etc.)`
   };
 }
 
@@ -318,12 +526,24 @@ export function buildMessagesWithExamples(
       const languageInstruction = `
 
 ⚠️⚠️⚠️ CRITICAL: Generate ALL text in German (Deutsch). Use German labels like in the example above.`;
-      return [
+      
+      const messages: Array<{ role: string; content: string }> = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: germanExample.user },
-        { role: 'assistant', content: germanExample.assistant },
-        { role: 'user', content: userPrompt + languageInstruction }
+        { role: 'assistant', content: germanExample.assistant }
       ];
+
+      // Add error explanations if available
+      if (germanExample.errors) {
+        messages.push({ 
+          role: 'user', 
+          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}` 
+        });
+      } else {
+        messages.push({ role: 'user', content: userPrompt + languageInstruction });
+      }
+
+      return messages;
     }
 
     // For other non-English languages, add explicit instruction
@@ -356,10 +576,97 @@ DO NOT translate to English. DO NOT use English labels. Use ${languageName} for 
     example = getBpmnExample();
   }
 
-  return [
+  // Include error explanations if available (similar to prompt_engineering.py)
+  const messages: Array<{ role: string; content: string }> = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: example.user },
-    { role: 'assistant', content: example.assistant },
-    { role: 'user', content: userPrompt }
+    { role: 'assistant', content: example.assistant }
   ];
+
+  // Add error explanations if available
+  if ('errors' in example && example.errors) {
+    messages.push({ 
+      role: 'user', 
+      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}` 
+    });
+  } else {
+    messages.push({ role: 'user', content: userPrompt });
+  }
+
+  return messages;
+}
+
+/**
+ * Create initial conversation for BPMN generation
+ * Similar to create_conversation() in prompt_engineering.py
+ * @param processDescription - The process description to model
+ * @param languageCode - ISO 639-1 language code
+ * @param languageName - Human-readable language name
+ * @param strictMode - If true, strictly follow description without domain knowledge
+ * @param resourceAware - If true, include pool and lane information
+ */
+export function createBpmnConversation(
+  processDescription: string,
+  languageCode: string = 'en',
+  languageName: string = 'English',
+  strictMode: boolean = false,
+  resourceAware: boolean = false
+): Array<{ role: string; content: string }> {
+  const systemPrompt = getBpmnSystemPrompt(languageCode, languageName, strictMode, resourceAware);
+  const userPrompt = addProcessDescription(processDescription);
+  const conversation = [
+    { role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }
+  ];
+  return conversation;
+}
+
+/**
+ * Update conversation with feedback for model refinement
+ * Similar to update_conversation() in prompt_engineering.py
+ * @param conversation - Existing conversation array
+ * @param feedback - Feedback to incorporate
+ */
+export function updateBpmnConversation(
+  conversation: Array<{ role: string; content: string }>,
+  feedback: string
+): Array<{ role: string; content: string }> {
+  const updatePrompt = `Please update the BPMN model to fix it based on the provided feedback. Please make sure the returned model matches the initial process description, all previously provided feedback, and the new feedback comment as well. Make sure to return valid BPMN 2.0 XML. This is the new feedback comment: ${feedback}`;
+  conversation.push({ role: 'user', content: updatePrompt });
+  return conversation;
+}
+
+/**
+ * Model self-improvement prompt
+ * Similar to model_self_improvement_prompt() in prompt_engineering.py
+ */
+export function getBpmnSelfImprovementPrompt(): string {
+  return `Thank you! The model was generated successfully! Could you further improve the model? Please critically evaluate the BPMN process model and improve it accordingly **only where genuinely beneficial**. Potential improvement steps might for instance include adding missing activities, managing additional exceptions, increasing concurrency in execution, or elevating choices to higher levels. If you find the model already optimized or see no significant areas for enhancement, it is perfectly acceptable to make minimal adjustments (e.g., relabeling some activities) or to return the same model without any changes.`;
+}
+
+/**
+ * Model self-improvement prompt (short version)
+ * Similar to model_self_improvement_prompt_short() in prompt_engineering.py
+ */
+export function getBpmnSelfImprovementPromptShort(): string {
+  return `Thank you! The model was generated successfully! Could you further improve the model? Please critically evaluate the BPMN process model against the initial process description and improve it accordingly **only where genuinely beneficial**. If you see no significant areas for enhancement, it is perfectly acceptable to return the same model without any changes. Regardless of whether you improve the model or not, make sure to include valid BPMN 2.0 XML in your response.`;
+}
+
+/**
+ * Description self-improvement prompt
+ * Similar to description_self_improvement_prompt() in prompt_engineering.py
+ * @param description - The process description to improve
+ */
+export function getDescriptionSelfImprovementPrompt(description: string): string {
+  return `You are provided with a process description. Your task is to optimize this description to make it richer and more detailed, while ensuring that all additions are relevant, accurate, and directly related to the original process. The goal is to make the description more comprehensive and suitable for BPMN process modeling purposes.
+
+Possible areas for enhancement include:
+- **Detail Enhancement:** Add specific details that are missing but crucial for understanding the process flow.
+- **Clarity Improvement:** Clarify any ambiguous or vague statements to ensure that the description is clear and understandable.
+- **Explicit Process Constructs:** Rephrase parts of the description to explicitly incorporate BPMN constructs. For example, change 'X happens in most cases' to 'there is an exclusive choice between performing X or skipping it'.
+
+Please answer by only returning the improved process description without any additional text in your response. Do not define concrete activity labels yourself!
+
+The process description:
+
+${description}`;
 }

@@ -1,0 +1,63 @@
+# Gemini Fine-tuning Configuration v1.0.0
+# Production-ready training configuration for consistent XML output
+
+model:
+  base_model: "gemini-2.0-flash-exp"
+  fine_tuning_method: "supervised_fine_tuning"
+  model_name: "gemini-finetuned-v1.0.0"
+
+data:
+  train_path: "data/processed/train.jsonl"
+  val_path: "data/processed/val.jsonl"
+  test_path: "data/processed/test.jsonl"
+  max_examples: 12000
+  shuffle: true
+  seed: 42
+
+training:
+  learning_rate: 1e-5
+  batch_size: 8
+  num_epochs: 3
+  warmup_steps: 100
+  max_seq_length: 16384
+  gradient_accumulation_steps: 4
+  save_strategy: "epoch"
+  evaluation_strategy: "epoch"
+  load_best_model_at_end: true
+  metric_for_best_model: "schema_validation_rate"
+  greater_is_better: true
+
+decoding:
+  temperature: 0.0
+  top_p: 1.0
+  top_k: 1
+  max_output_tokens: 16384
+  num_beams: 1  # Greedy decoding
+
+regularization:
+  dropout: 0.1
+  weight_decay: 1e-5
+  early_stopping_patience: 3
+
+reproducibility:
+  seed: 42
+  deterministic: true
+  dataloader_num_workers: 0  # For reproducibility
+
+output:
+  output_dir: "models/gemini-finetuned-v1.0.0"
+  logging_dir: "logs/gemini-finetuned-v1.0.0"
+  save_total_limit: 3  # Keep only last 3 checkpoints
+
+validation:
+  xsd_schema_path: "validation/schema/BPMN20.xsd"
+  min_schema_validation_rate: 0.90
+  min_exact_match_rate: 0.70
+  max_schema_violations: 0.05
+
+monitoring:
+  use_wandb: false
+  use_mlflow: true
+  experiment_name: "gemini-xml-finetuning-v1"
+  log_every_n_steps: 10
+
