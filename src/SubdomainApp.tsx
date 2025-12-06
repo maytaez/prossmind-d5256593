@@ -1,6 +1,7 @@
 import { getSubdomain } from "./utils/subdomain";
 import BpmnPage from "./pages/BpmnSubdomain";
 import { PidSubdomainPage } from "./pages/PidSubdomain";
+import { DmnSubdomainPage } from "./pages/DmnSubdomain";
 import AppSubdomain from "./pages/AppSubdomain";
 import DocsSubdomain from "./pages/DocsSubdomain";
 import StatusSubdomain from "./pages/StatusSubdomain";
@@ -47,6 +48,10 @@ const SubdomainApp = () => {
 
   if (subdomain === "pid") {
     return <PidSubdomainPage />;
+  }
+
+  if (subdomain === "dmn") {
+    return <DmnSubdomainPage />;
   }
 
   // Fallback to main app for non-subdomain or unrecognized subdomains

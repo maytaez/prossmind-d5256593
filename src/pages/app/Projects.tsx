@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Workflow, Factory, Search, Trash2, Edit, FileText, Loader2, RefreshCw } from "lucide-react";
+import { Workflow, Factory, Search, Trash2, Edit, FileText, Loader2, RefreshCw, Gauge } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
 import {
   Select,
@@ -37,7 +37,7 @@ const Projects = ({ user }: ProjectsProps) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "bpmn" | "pid">("all");
+  const [filterType, setFilterType] = useState<"all" | "bpmn" | "pid" | "dmn">("all");
   const [isLoading, setIsLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
@@ -108,12 +108,12 @@ const Projects = ({ user }: ProjectsProps) => {
     await updateLastAccessed(project.id, user.id);
 
     // Store project data and navigate to generator
-    const storageKey = project.diagram_type === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
+    const storageKey = project.diagram_type === 'bpmn' ? 'generatedBpmn' : project.diagram_type === 'pid' ? 'generatedPid' : 'generatedDmn';
     localStorage.setItem(storageKey, project.bpmn_xml);
     localStorage.setItem('diagramType', project.diagram_type);
     localStorage.setItem('currentProjectId', project.id);
 
-    const route = project.diagram_type === 'bpmn' ? '/bpmn-generator' : '/pid-generator';
+    const route = project.diagram_type === 'bpmn' ? '/bpmn-generator' : project.diagram_type === 'pid' ? '/pid-generator' : '/dmn-generator';
     navigateWithSubdomain(navigate, route);
   };
 
@@ -161,7 +161,7 @@ const Projects = ({ user }: ProjectsProps) => {
               className="pl-10"
             />
           </div>
-          <Select value={filterType} onValueChange={(v) => setFilterType(v as "all" | "bpmn" | "pid")}>
+          <Select value={filterType} onValueChange={(v) => setFilterType(v as "all" | "bpmn" | "pid" | "dmn")}>
             <SelectTrigger className="w-full md:w-[180px]">
               <SelectValue placeholder="Filter by type" />
             </SelectTrigger>
@@ -169,6 +169,7 @@ const Projects = ({ user }: ProjectsProps) => {
               <SelectItem value="all">All Types</SelectItem>
               <SelectItem value="bpmn">BPMN</SelectItem>
               <SelectItem value="pid">P&ID</SelectItem>
+              <SelectItem value="dmn">DMN</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={() => navigateWithSubdomain(navigate, '/bpmn-generator')}>
@@ -187,8 +188,10 @@ const Projects = ({ user }: ProjectsProps) => {
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {project.diagram_type === 'bpmn' ? (
                         <Workflow className="h-6 w-6 text-primary flex-shrink-0" />
-                      ) : (
+                      ) : project.diagram_type === 'pid' ? (
                         <Factory className="h-6 w-6 text-primary flex-shrink-0" />
+                      ) : (
+                        <Gauge className="h-6 w-6 text-primary flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-lg truncate">{project.name}</CardTitle>

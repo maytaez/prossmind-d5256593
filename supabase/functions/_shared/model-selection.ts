@@ -70,24 +70,58 @@ export function selectModel(criteria: ModelSelectionCriteria): ModelSelectionRes
                       promptLength > 3000 ||
                       (promptLength > 2000 && complexityScore >= 5);
 
+  // Maximum output tokens for Gemini models:
+  // Gemini 2.5 Pro: 65,536 tokens (theoretical max, use high value to prevent truncation)
+  // Gemini 2.5 Flash: 8,192 tokens (typical limit)
+  // Use high token limits to prevent truncation, especially for complex diagrams
+  const PRO_MAX_OUTPUT_TOKENS = 65536; // Gemini 2.5 Pro maximum
+  const FLASH_MAX_OUTPUT_TOKENS = 8192; // Gemini 2.5 Flash typical maximum
+  
   if (useProModel) {
+    // For Pro model, use very high token limit to handle complex BPMN diagrams
+    // Diagrams with lanes, collaborations, and multiple subprocesses can be very large
+    // Use higher token limits when complexity indicators suggest a large diagram
+    const hasLanesOrCollaboration = criteria.hasMultipleParticipants || criteria.hasMultiplePools || criteria.hasMessageFlows;
+    const hasComplexStructure = criteria.hasSubprocesses && (criteria.hasComplexGateways || criteria.hasErrorHandling);
+    
+    // Determine token limit based on complexity
+    let proMaxTokens: number;
+    if (complexityScore >= 8 || promptLength > 4000) {
+      // Very complex: use absolute max
+      proMaxTokens = PRO_MAX_OUTPUT_TOKENS;
+    } else if (hasLanesOrCollaboration || hasComplexStructure || complexityScore >= 7) {
+      // Complex with lanes/collaboration or high complexity: use 75% of max
+      proMaxTokens = 49152; // 75% of 65536
+    } else {
+      // Moderately complex: use 50% of max
+      proMaxTokens = 32768; // 50% of 65536
+    }
+    
     return {
       model: 'google/gemini-2.5-pro',
-      maxTokens: 16384,
+      maxTokens: proMaxTokens,
       temperature: 0.3, // Lower temperature for Pro model (more deterministic)
       complexityScore,
       reasoning: `Using Pro model: ${diagramType === 'pid' ? 'P&ID requires Pro' : 
                   promptLength > 3000 ? `Very long prompt (${promptLength} chars)` :
                   promptLength > 2000 && complexityScore >= 5 ? `Long prompt (${promptLength} chars) with complexity score ${complexityScore}` :
-                  `Complexity score ${complexityScore} >= 7`}`,
+                  `Complexity score ${complexityScore} >= 7`}, maxTokens: ${proMaxTokens}${hasLanesOrCollaboration ? ' (lanes/collaboration detected)' : ''}`,
     };
   } else {
+    // For Flash model, use maximum available tokens to prevent truncation
+    // BPMN XML can be quite long, especially with lanes and subprocesses
+    // Check if prompt suggests complex structure that might need more tokens
+    const hasLanesOrCollaboration = criteria.hasMultipleParticipants || criteria.hasMultiplePools || criteria.hasMessageFlows;
+    const flashMaxTokens = hasLanesOrCollaboration || criteria.hasSubprocesses 
+      ? FLASH_MAX_OUTPUT_TOKENS  // Use max for complex diagrams
+      : FLASH_MAX_OUTPUT_TOKENS; // Always use max for Flash to prevent truncation
+    
     return {
       model: 'google/gemini-2.5-flash',
-      maxTokens: 12288,
+      maxTokens: flashMaxTokens,
       temperature: 0.5, // Higher temperature for Flash (more creative)
       complexityScore,
-      reasoning: `Using Flash model: Complexity score ${complexityScore} < 7, prompt length ${promptLength}`,
+      reasoning: `Using Flash model: Complexity score ${complexityScore} < 7, prompt length ${promptLength}, maxTokens: ${flashMaxTokens}`,
     };
   }
 }

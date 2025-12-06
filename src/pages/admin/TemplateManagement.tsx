@@ -51,7 +51,7 @@ interface TemplateManagementProps {
 }
 
 const categories = ["Business", "E-Commerce", "Finance", "IT", "Manufacturing", "Utilities"];
-const diagramTypes = ["bpmn", "pid"];
+const diagramTypes = ["bpmn", "pid", "dmn"];
 const iconNames = ["Users", "ShoppingCart", "Building2", "Cog", "Factory", "Workflow"];
 
 const TemplateManagement = ({ user }: TemplateManagementProps) => {

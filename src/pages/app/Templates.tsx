@@ -73,15 +73,17 @@ const Templates = ({ user }: TemplatesProps) => {
       }
 
       // Store template XML in localStorage (same pattern as Projects)
-      const storageKey = template.diagram_type === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
+      const storageKey = template.diagram_type === 'bpmn' ? 'generatedBpmn' : template.diagram_type === 'pid' ? 'generatedPid' : 'generatedDmn';
       localStorage.setItem(storageKey, xml);
       localStorage.setItem('diagramType', template.diagram_type);
 
       // Navigate to appropriate generator
       if (template.diagram_type === 'bpmn') {
         navigateWithSubdomain(navigate, '/bpmn-generator');
-      } else {
+      } else if (template.diagram_type === 'pid') {
         navigateWithSubdomain(navigate, '/pid-generator');
+      } else {
+        navigateWithSubdomain(navigate, '/dmn-generator');
       }
 
       toast.success("Template loaded successfully!");

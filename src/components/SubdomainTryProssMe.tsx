@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import BpmnViewerComponent from "./BpmnViewer";
+import DmnEditor from "./DmnEditor";
 import { Input } from "@/components/ui/input";
 import {
     Select,
@@ -29,7 +30,7 @@ import { Loader2 } from "lucide-react";
 
 interface SubdomainTryProssMeProps {
     user: User | null;
-    diagramType: "bpmn" | "pid";
+    diagramType: "bpmn" | "pid" | "dmn";
 }
 
 const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) => {
@@ -66,17 +67,25 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
             "Generate an employee hiring workflow",
             "Create an invoice approval process",
         ]
-        : [
+        : diagramType === "pid"
+        ? [
             "Create a chemical reactor cooling system",
             "Design a water treatment process flow",
             "Build a distillation column control loop",
             "Generate a pump and valve configuration",
             "Create a heat exchanger system",
+        ]
+        : [
+            "Create a loan approval decision table",
+            "Design a pricing decision based on customer tier",
+            "Build a risk assessment decision table",
+            "Generate a discount eligibility decision",
+            "Create a product recommendation decision",
         ];
 
     // Load generated diagram from localStorage on mount
     useEffect(() => {
-        const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
+        const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : diagramType === 'pid' ? 'generatedPid' : 'generatedDmn';
         const generatedDiagram = localStorage.getItem(storageKey);
 
         if (generatedDiagram) {
@@ -84,7 +93,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
             localStorage.removeItem(storageKey);
             localStorage.removeItem('diagramType');
 
-            const diagramName = diagramType === 'bpmn' ? 'BPMN' : 'P&ID';
+            const diagramName = diagramType === 'bpmn' ? 'BPMN' : diagramType === 'pid' ? 'P&ID' : 'DMN';
             toast.success(`Your generated ${diagramName} diagram is ready!`, {
                 description: "You can now view and edit your process diagram"
             });
@@ -120,7 +129,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
             console.log('Job status:', data.status);
 
             if (data.status === 'completed' && data.bpmn_xml) {
-                const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+                const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
                 setBpmnXml(data.bpmn_xml);
                 setGenerationStep("idle");
                 setIsGenerating(false);
@@ -173,7 +182,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                     console.log('Realtime job status update:', job.status);
 
                     if (job.status === 'completed' && job.bpmn_xml) {
-                        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+                        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
                         setBpmnXml(job.bpmn_xml);
                         setGenerationStep("idle");
                         setIsGenerating(false);
@@ -273,7 +282,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
         }
 
         setIsGenerating(true);
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
 
         // Step 1: Reading prompt
         setGenerationStep("reading");
@@ -284,9 +293,10 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
 
         try {
             const { invokeFunction } = await import('@/utils/api-client');
-            const { data, error } = await invokeFunction('generate-bpmn', {
+            const functionName = diagramType === 'dmn' ? 'generate-dmn' : 'generate-bpmn';
+            const { data, error } = await invokeFunction(functionName, {
                 prompt,
-                diagramType
+                diagramType: diagramType === 'dmn' ? undefined : diagramType
             }, { deduplicate: true });
 
             if (error) {
@@ -306,8 +316,9 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
             setGenerationStep("drawing");
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            if (data?.bpmnXml) {
-                setBpmnXml(data.bpmnXml);
+            const xmlData = data?.bpmnXml || data?.dmnXml;
+            if (xmlData) {
+                setBpmnXml(xmlData);
                 setGenerationStep("idle");
                 toast.success(`${diagramName} model generated successfully!`);
             } else {
@@ -358,7 +369,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
         }
 
         setIsGenerating(true);
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
         toast.info(`Analyzing document and generating ${diagramName}...`);
 
         const reader = new FileReader();
@@ -457,7 +468,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
 
         setIsGenerating(true);
         setShowPreview(false);
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
 
         // Step 1: Reading prompt
         setGenerationStep("reading");
@@ -560,23 +571,23 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
         }
     };
 
-    const handleRefineBpmn = async () => {
+    const handleRefineDiagram = async () => {
         if (!bpmnXml || !refinementPrompt.trim()) {
-            const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+            const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
             toast.error(`Please enter instructions to refine the ${diagramName}`);
             return;
         }
 
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (!currentUser) {
-            const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+            const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
             toast.error(`Please log in to refine ${diagramName}`);
             navigate("/auth");
             return;
         }
 
         setIsRefining(true);
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
         toast.info(`Refining ${diagramName} based on your instructions...`);
 
         // Step 1: Analyzing instructions
@@ -587,13 +598,15 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
         setRefinementStep("refining");
 
         try {
-            const { data, error } = await supabase.functions.invoke('refine-bpmn', {
-                body: {
-                    currentBpmnXml: bpmnXml,
-                    instructions: refinementPrompt,
-                    userId: currentUser.id,
-                    diagramType
-                }
+            const { invokeFunction } = await import('@/utils/api-client');
+            const functionName = diagramType === 'dmn' ? 'refine-dmn' : 'refine-bpmn';
+
+            const { data, error } = await invokeFunction(functionName, {
+                currentBpmnXml: diagramType === 'dmn' ? undefined : bpmnXml,
+                currentDmnXml: diagramType === 'dmn' ? bpmnXml : undefined,
+                instructions: refinementPrompt,
+                userId: currentUser.id,
+                diagramType: diagramType === 'dmn' ? undefined : diagramType
             });
 
             // Check for errors in both error field and data.error
@@ -630,20 +643,21 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                 return;
             }
 
-            if (data?.bpmnXml) {
+            if (data?.bpmnXml || data?.dmnXml) {
                 // Step 3: Applying changes
                 setRefinementStep("applying");
                 await new Promise(resolve => setTimeout(resolve, 300));
 
                 // Validate that we received valid XML before updating (accept both </bpmn:definitions> and </definitions>)
-                const hasValidClosing = data.bpmnXml.includes('</bpmn:definitions>') || data.bpmnXml.includes('</definitions>');
-                if (data.bpmnXml.includes('<?xml') && hasValidClosing) {
-                    setBpmnXml(data.bpmnXml);
+                const xmlData = data.bpmnXml || data.dmnXml;
+                const hasValidClosing = xmlData.includes('</bpmn:definitions>') || xmlData.includes('</definitions>') || xmlData.includes('</dmn:definitions>');
+                if (xmlData.includes('<?xml') && hasValidClosing) {
+                    setBpmnXml(xmlData);
                     setRefinementStep("idle");
                     toast.success(`${diagramName} refined successfully!`);
                     setRefinementPrompt("");
                 } else {
-                    console.error('Received invalid diagram XML:', data.bpmnXml.substring(0, 200));
+                    console.error('Received invalid diagram XML:', xmlData.substring(0, 200));
                     setRefinementStep("idle");
                     toast.error("Received invalid diagram structure. Please try again.");
                 }
@@ -657,9 +671,9 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
             setRefinementStep("idle");
             const errorMessage = error instanceof Error ? error.message : String(error);
             if (errorMessage.includes('Failed to fetch') || errorMessage.includes('load the resource')) {
-                toast.error(`Network error: Unable to reach refine-bpmn function. Please check if the function is deployed.`);
+                toast.error(`Network error: Unable to reach refinement function. Please check if the function is deployed.`);
             } else {
-                toast.error(`Failed to refine ${diagramType === "bpmn" ? "BPMN" : "P&ID"}: ${errorMessage}`);
+                toast.error(`Failed to refine ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}: ${errorMessage}`);
             }
         } finally {
             setIsRefining(false);
@@ -689,7 +703,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                                 <Sparkles className="h-5 w-5 text-primary" />
                             </div>
                             <h3 className="font-semibold text-lg">
-                                Try these {diagramType === "bpmn" ? "BPMN" : "P&ID"} examples:
+                                Try these {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} examples:
                             </h3>
                         </div>
                         <div className="flex flex-wrap gap-3">
@@ -883,9 +897,9 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                                 className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all w-full"
                                 size="lg"
                                 disabled={isGenerating || !message.trim()}
-                                aria-label={`Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram`}
+                                aria-label={`Generate ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} diagram`}
                             >
-                                {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"}`}
+                                {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}`}
                                 <Send className="h-4 w-4" aria-hidden="true" />
                             </Button>
                         </div>
@@ -926,7 +940,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                                         className="flex-1"
                                         disabled={isGenerating}
                                     >
-                                        {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"} from this file`}
+                                        {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} from this file`}
                                     </Button>
                                     <Button
                                         variant="outline"
@@ -935,38 +949,45 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                                             setUploadedFile(null);
                                         }}
                                     >
-                        Cancel
-                    </Button>
-                </div>
-            </div>
-        </div>
-    )}
+                                        Cancel
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-    {/* BPMN Viewer */}
-    {bpmnXml && (
-        <div id="bpmn-viewer" className="mt-12">
-            <BpmnViewerComponent
-                xml={bpmnXml}
-                onSave={setBpmnXml}
-                diagramType={diagramType}
-                onRefine={() => setShowRefineDialog(true)}
-            />
-        </div>
-    )}
+                    {/* Diagram Viewer */}
+                    {bpmnXml && (
+                        <div id="bpmn-viewer" className="mt-12">
+                            {diagramType === "dmn" ? (
+                                <DmnEditor
+                                    xml={bpmnXml}
+                                    onChange={setBpmnXml}
+                                />
+                            ) : (
+                                <BpmnViewerComponent
+                                    xml={bpmnXml}
+                                    onSave={setBpmnXml}
+                                    diagramType={diagramType}
+                                    onRefine={() => setShowRefineDialog(true)}
+                                />
+                            )}
+                        </div>
+                    )}
 
     {/* Refine Dialog */}
     <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
         <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-                <DialogTitle>Refine {diagramType === "bpmn" ? "BPMN" : "P&ID"} Diagram</DialogTitle>
+                <DialogTitle>Refine {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} Diagram</DialogTitle>
                 <DialogDescription>
-                    Describe the changes you'd like to make to your {diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram
+                    Describe the changes you'd like to make to your {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} diagram
                 </DialogDescription>
             </DialogHeader>
             <Textarea
                 value={refinementPrompt}
                 onChange={(e) => setRefinementPrompt(e.target.value)}
-                placeholder={`e.g., "Add a ${diagramType === "bpmn" ? "decision gateway" : "control valve"} after the first ${diagramType === "bpmn" ? "task" : "process unit"}"`}
+                placeholder={`e.g., "Add a ${diagramType === "bpmn" ? "decision gateway" : diagramType === "pid" ? "control valve" : "new rule"} after the first ${diagramType === "bpmn" ? "task" : diagramType === "pid" ? "process unit" : "input column"}"`}
                 className="min-h-[120px]"
             />
             <div className="flex gap-2 justify-end">
@@ -980,7 +1001,7 @@ const SubdomainTryProssMe = ({ user, diagramType }: SubdomainTryProssMeProps) =>
                     Cancel
                 </Button>
                 <Button
-                    onClick={handleRefineBpmn}
+                    onClick={handleRefineDiagram}
                     disabled={isRefining || !refinementPrompt.trim()}
                 >
                     {isRefining ? "Refining..." : "Apply Changes"}

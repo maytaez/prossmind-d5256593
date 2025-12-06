@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import BpmnViewerComponent from "./BpmnViewer";
+import DmnEditor from "./DmnEditor";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AnimatedTabs, AnimatedTabsList, AnimatedTabsTrigger, AnimatedTabsContent } from "@/components/ui/AnimatedTabs";
@@ -49,7 +50,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [message, setMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [bpmnXml, setBpmnXml] = useState<string | null>(null);
-  const [diagramType, setDiagramType] = useState<"bpmn" | "pid">("bpmn");
+  const [diagramType, setDiagramType] = useState<"bpmn" | "pid" | "dmn">("bpmn");
   const isApp = isAppSubdomain();
   const [isRecording, setIsRecording] = useState(false);
   const [language, setLanguage] = useState("en-US");
@@ -75,10 +76,10 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [pendingXml, setPendingXml] = useState<string | null>(null);
 
-  // Load generated BPMN or P&ID from localStorage on mount
+  // Load generated diagram from localStorage on mount
   useEffect(() => {
     const diagramType = localStorage.getItem('diagramType') || 'bpmn';
-    const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
+    const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : diagramType === 'pid' ? 'generatedPid' : 'generatedDmn';
     const generatedDiagram = localStorage.getItem(storageKey);
     const projectId = localStorage.getItem('currentProjectId');
     
@@ -91,7 +92,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         localStorage.removeItem('currentProjectId');
       }
       
-      const diagramName = diagramType === 'bpmn' ? 'BPMN' : 'P&ID';
+      const diagramName = diagramType === 'bpmn' ? 'BPMN' : diagramType === 'pid' ? 'P&ID' : 'DMN';
       toast.success(`Your generated ${diagramName} diagram is ready!`, {
         description: "You can now view and edit your process diagram"
       });
@@ -127,7 +128,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       console.log('Job status:', data.status);
 
       if (data.status === 'completed' && data.bpmn_xml) {
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
         setBpmnXml(data.bpmn_xml);
         setGenerationStep("idle");
         setIsGenerating(false);
@@ -180,7 +181,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           console.log('Realtime job status update:', job.status);
 
                     if (job.status === 'completed' && job.bpmn_xml) {
-                        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+                        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
                         setBpmnXml(job.bpmn_xml);
                         setGenerationStep("idle");
                         setIsGenerating(false);
@@ -286,7 +287,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     }
 
     setIsGenerating(true);
-    const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+    const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
     
     // Step 1: Reading prompt
     setGenerationStep("reading");
@@ -297,9 +298,10 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
     try {
       const { invokeFunction } = await import('@/utils/api-client');
-      const { data, error } = await invokeFunction('generate-bpmn', {
+      const functionName = diagramType === 'dmn' ? 'generate-dmn' : 'generate-bpmn';
+      const { data, error } = await invokeFunction(functionName, {
         prompt,
-        diagramType
+        diagramType: diagramType === 'dmn' ? undefined : diagramType
       }, { deduplicate: true });
 
       if (error) {
@@ -319,14 +321,15 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       setGenerationStep("drawing");
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      if (data?.bpmnXml) {
-        setBpmnXml(data.bpmnXml);
+      const xmlData = data?.bpmnXml || data?.dmnXml;
+      if (xmlData) {
+        setBpmnXml(xmlData);
         setGenerationStep("idle");
         toast.success(`${diagramName} model generated successfully!`);
         
         // Show save project dialog if user is authenticated
         if (user) {
-          setPendingXml(data.bpmnXml);
+          setPendingXml(xmlData);
           setShowSaveProjectDialog(true);
         }
       } else {
@@ -581,7 +584,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     }
   };
 
-  const handleRefineBpmn = async () => {
+  const handleRefineDiagram = async () => {
     if (!bpmnXml || !refinementPrompt.trim()) {
       const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
       toast.error(`Please enter instructions to refine the ${diagramName}`);
@@ -597,7 +600,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     }
 
     setIsRefining(true);
-    const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+    const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
     toast.info(`Refining ${diagramName} based on your instructions...`);
 
     // Step 1: Analyzing instructions
@@ -608,14 +611,15 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     setRefinementStep("refining");
 
     try {
-      const { data, error } = await supabase.functions.invoke('refine-bpmn', {
-        body: {
-          currentBpmnXml: bpmnXml,
-          instructions: refinementPrompt,
-          userId: currentUser.id,
-          diagramType
-        },
-        headers: user ? undefined : { Authorization: '' }
+      const { invokeFunction } = await import('@/utils/api-client');
+      const functionName = diagramType === 'dmn' ? 'refine-dmn' : 'refine-bpmn';
+      
+      const { data, error } = await invokeFunction(functionName, {
+        currentBpmnXml: diagramType === 'dmn' ? undefined : bpmnXml,
+        currentDmnXml: diagramType === 'dmn' ? bpmnXml : undefined,
+        instructions: refinementPrompt,
+        userId: currentUser.id,
+        diagramType: diagramType === 'dmn' ? undefined : diagramType
       });
 
       // Check for errors in both error field and data.error
@@ -658,14 +662,15 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         await new Promise(resolve => setTimeout(resolve, 300));
 
         // Validate that we received valid XML before updating (accept both </bpmn:definitions> and </definitions>)
-        const hasValidClosing = data.bpmnXml.includes('</bpmn:definitions>') || data.bpmnXml.includes('</definitions>');
-        if (data.bpmnXml.includes('<?xml') && hasValidClosing) {
-          setBpmnXml(data.bpmnXml);
+        const xmlData = data.bpmnXml || data.dmnXml;
+        const hasValidClosing = xmlData.includes('</bpmn:definitions>') || xmlData.includes('</definitions>') || xmlData.includes('</dmn:definitions>');
+        if (xmlData.includes('<?xml') && hasValidClosing) {
+          setBpmnXml(xmlData);
           setRefinementStep("idle");
           toast.success(`${diagramName} refined successfully!`);
           setRefinementPrompt("");
         } else {
-          console.error('Received invalid diagram XML:', data.bpmnXml.substring(0, 200));
+          console.error('Received invalid diagram XML:', xmlData.substring(0, 200));
           setRefinementStep("idle");
           toast.error("Received invalid diagram structure. Please try again.");
         }
@@ -679,9 +684,9 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       setRefinementStep("idle");
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('Failed to fetch') || errorMessage.includes('load the resource')) {
-        toast.error(`Network error: Unable to reach refine-bpmn function. Please check if the function is deployed.`);
+        toast.error(`Network error: Unable to reach refinement function. Please check if the function is deployed.`);
       } else {
-        toast.error(`Failed to refine ${diagramType === "bpmn" ? "BPMN" : "P&ID"}: ${errorMessage}`);
+        toast.error(`Failed to refine ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}: ${errorMessage}`);
       }
     } finally {
       setIsRefining(false);
@@ -716,8 +721,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         )}
         
         <div className="max-w-5xl mx-auto mt-12 space-y-8">
-          <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-            <AnimatedTabsList className={`grid w-full max-w-md mx-auto grid-cols-2 mb-8 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
+          <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid" | "dmn")} className="w-full">
+            <AnimatedTabsList className={`grid w-full max-w-2xl mx-auto grid-cols-3 mb-8 ${diagramType === "pid" ? 'bg-engineering-green/10' : diagramType === "dmn" ? 'bg-purple-500/10' : ''}`}>
               <AnimatedTabsTrigger 
                 value="bpmn"
                 className={`${diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}`}
@@ -730,6 +735,12 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               >
                 <Factory className="h-4 w-4 mr-2 flex-shrink-0" />
                 P&ID Diagram
+              </AnimatedTabsTrigger>
+              <AnimatedTabsTrigger 
+                value="dmn"
+                className={`${diagramType === "dmn" ? "data-[state=active]:bg-purple-500 data-[state=active]:text-white" : ""}`}
+              >
+                DMN Decision
               </AnimatedTabsTrigger>
             </AnimatedTabsList>
             
@@ -1117,6 +1128,67 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               </div>
             </div>
           </AnimatedTabsContent>
+          
+          <AnimatedTabsContent value="dmn" className="space-y-8">
+            {/* DMN Suggestion Prompts */}
+            <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="rounded-full bg-purple-500/10 p-2">
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                </div>
+                <h3 className="font-semibold text-lg">Try these DMN examples:</h3>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  "Create a loan approval decision table",
+                  "Design a pricing decision based on customer tier",
+                  "Build a risk assessment decision table",
+                  "Generate a discount eligibility decision",
+                  "Create a product recommendation decision"
+                ].map((suggestion, index) => (
+                  <Button
+                    key={index}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSuggestionClick(suggestion)}
+                    className="text-sm hover:bg-purple-500/10 hover:border-purple-500/50 transition-all whitespace-nowrap"
+                    disabled={isGenerating}
+                    style={{ minWidth: 'max-content', paddingLeft: '1.2em', paddingRight: '1.2em' }}
+                    aria-label={`Use suggestion: ${suggestion}`}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* DMN Input Area */}
+            <div className="bg-card border border-border rounded-2xl p-8 shadow-xl slide-up stagger-2">
+              <div className="space-y-6">
+                <Textarea
+                  placeholder="Describe your decision logic, rules, and conditions..."
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="min-h-[120px] resize-none border-muted"
+                  disabled={isGenerating}
+                  aria-label="DMN decision description input"
+                />
+                
+                <div className="flex items-center justify-end">
+                  <Button 
+                    onClick={handleSend} 
+                    className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
+                    size="lg"
+                    disabled={isGenerating || !message.trim()}
+                    aria-label="Generate DMN diagram"
+                  >
+                    {isGenerating ? "Generating..." : "Generate DMN"}
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </AnimatedTabsContent>
           </AnimatedTabs>
 
           {/* File Preview Modal */}
@@ -1154,7 +1226,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                     className="flex-1"
                     disabled={isGenerating}
                   >
-                    {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"} from this file`}
+                    {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} from this file`}
                   </Button>
                   <Button 
                     variant="outline"
@@ -1170,15 +1242,21 @@ const TryProssMe = ({ user }: { user: User | null }) => {
             </div>
           )}
 
-          {/* BPMN Editor with Refinement */}
+          {/* Diagram Editor with Refinement */}
           {bpmnXml ? (
             <div id="bpmn-viewer" className="space-y-6 relative">
               <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
-                <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
-                <BpmnViewerComponent 
-                  xml={bpmnXml}
-                  diagramType={diagramType}
-                  onSave={async (updatedXml) => {
+                <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} Model</h3>
+                {diagramType === "dmn" ? (
+                  <DmnEditor 
+                    xml={bpmnXml}
+                    onChange={setBpmnXml}
+                  />
+                ) : (
+                  <BpmnViewerComponent 
+                    xml={bpmnXml}
+                    diagramType={diagramType}
+                    onSave={async (updatedXml) => {
                     setBpmnXml(updatedXml);
                     
                     // If we have a current project, update it
@@ -1203,6 +1281,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                   }}
                   onRefine={() => setShowRefineDialog(true)}
                 />
+                )}
                 {/* Model Feedback */}
                 <p className="text-xs text-muted-foreground mt-4 text-right">
                   Generated via Gemini 2.5 Pro · v1
@@ -1212,7 +1291,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               {/* Refinement Progress Indicator */}
               {isRefining && refinementStep !== "idle" && (
                 <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border">
-                  <p className="text-sm font-medium text-foreground mb-2">Refining your {diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram...</p>
+                  <p className="text-sm font-medium text-foreground mb-2">Refining your {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} diagram...</p>
                   <div className="flex items-center justify-between text-sm">
                     <span className={refinementStep === "analyzing" ? "font-semibold" : "text-muted-foreground"}>
                       {refinementStep === "analyzing" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
@@ -1244,7 +1323,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Refine Your {diagramType === "bpmn" ? "BPMN" : "P&ID"}</DialogTitle>
+                    <DialogTitle>Refine Your {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}</DialogTitle>
                     <DialogDescription>
                       Use natural language to modify the current diagram. The AI will update the latest version based on your instructions.
                     </DialogDescription>
@@ -1260,13 +1339,13 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                     
                     <Button 
                       onClick={() => {
-                        handleRefineBpmn();
+                        handleRefineDiagram();
                         setShowRefineDialog(false);
                       }}
                       disabled={isRefining || !refinementPrompt.trim()}
                       className="w-full"
                     >
-                      {isRefining ? "Refining..." : `Apply Changes to Current ${diagramType === "bpmn" ? "BPMN" : "P&ID"}`}
+                      {isRefining ? "Refining..." : `Apply Changes to Current ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}`}
                     </Button>
                   </div>
                 </DialogContent>
@@ -1313,7 +1392,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               animate={{ opacity: 1 }}
               transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
             >
-              <h3 className="text-xl font-semibold mb-4">Generating {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
+              <h3 className="text-xl font-semibold mb-4">Generating {diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"} Model</h3>
               <div className="space-y-4">
                 {/* Skeleton loader for BPMN preview */}
                 <div className="w-full h-[400px] bg-muted/50 rounded-lg animate-pulse border border-border/50 flex items-center justify-center">

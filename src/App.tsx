@@ -8,6 +8,7 @@ import Contact from "./pages/Contact";
 import Auth from "./pages/Auth";
 import Admin from "./pages/Admin";
 import LoadDiagram from "./pages/LoadDiagram";
+import CombinedModelerPage from "./pages/CombinedModelerPage";
 import NotFound from "./pages/NotFound";
 
 const App = () => (
@@ -20,6 +21,7 @@ const App = () => (
     <Route path="/auth" element={<PageTransition><Auth /></PageTransition>} />
     <Route path="/admin" element={<PageTransition><Admin /></PageTransition>} />
     <Route path="/load-diagram" element={<PageTransition><LoadDiagram /></PageTransition>} />
+    <Route path="/modeler" element={<PageTransition><CombinedModelerPage /></PageTransition>} />
     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
     <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
   </Routes>

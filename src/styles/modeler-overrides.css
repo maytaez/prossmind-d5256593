@@ -1,0 +1,129 @@
+/* Custom styles for Combined BPMN + DMN Modeler */
+/* Force white background for the modeler canvas - override dark mode */
+
+/* Main containers - highest priority */
+.bjs-container,
+.dmn-js-parent,
+.djs-container,
+.dmn-decision-table-container,
+.dmn-literal-expression-container,
+.dmn-js-drd,
+.dmn-js-decision-table,
+.dmn-js-literal-expression {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+}
+
+/* Canvas SVG elements */
+.bjs-container svg,
+.dmn-js-parent svg,
+.djs-container svg,
+.dmn-js-drd svg {
+    background-color: #ffffff !important;
+}
+
+/* Canvas background layers */
+.djs-canvas,
+.dmn-canvas {
+    background-color: #ffffff !important;
+}
+
+/* Fix any dark overlays */
+.djs-overlay,
+.dmn-overlay,
+.djs-overlay-container,
+.dmn-overlay-container {
+    background-color: transparent !important;
+}
+
+/* Ensure text is visible on white background */
+.djs-element text,
+.dmn-element text,
+text {
+    fill: #000000 !important;
+}
+
+/* Fix the properties panel background */
+.bio-properties-panel,
+.dmn-properties-panel,
+.djs-properties-panel {
+    background-color: #f8f9fa !important;
+    color: #000000 !important;
+}
+
+/* Fix the palette background */
+.djs-palette,
+.dmn-palette {
+    background-color: #ffffff !important;
+    border-right: 1px solid #e0e0e0 !important;
+}
+
+/* Fix context pad */
+.djs-context-pad,
+.dmn-context-pad {
+    background-color: #ffffff !important;
+}
+
+/* Ensure grid is visible on white background */
+.djs-grid,
+.dmn-grid {
+    background-color: #ffffff !important;
+}
+
+/* Override dark mode at all levels */
+html.dark .bjs-container,
+html.dark .dmn-js-parent,
+html.dark .djs-container,
+html.dark .dmn-decision-table-container,
+html.dark .dmn-literal-expression-container,
+.dark .bjs-container,
+.dark .dmn-js-parent,
+.dark .djs-container,
+.dark .dmn-decision-table-container,
+.dark .dmn-literal-expression-container {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+}
+
+/* Fix the modeler container wrapper */
+.modeler-container,
+.bpmn-modeler,
+.dmn-modeler {
+    background-color: #ffffff !important;
+}
+
+/* Override any inherited dark backgrounds with maximum specificity */
+body.dark .bjs-container,
+body.dark .dmn-js-parent,
+body.dark .djs-container,
+html.dark body .bjs-container,
+html.dark body .dmn-js-parent,
+html.dark body .djs-container {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+}
+
+/* Fix table cells in DMN decision tables */
+.dmn-decision-table-container table,
+.dmn-decision-table-container td,
+.dmn-decision-table-container th {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #e0e0e0 !important;
+}
+
+/* Fix input fields in the modeler */
+.djs-input,
+.dmn-input,
+input[type="text"] {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+}
+
+/* Fix any remaining dark elements */
+.djs-shape,
+.dmn-shape,
+.djs-connection,
+.dmn-connection {
+    color: #000000 !important;
+}

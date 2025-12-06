@@ -374,6 +374,51 @@ export type Database = {
         }
         Relationships: []
       }
+      dmn_links: {
+        Row: {
+          id: string
+          project_id: string
+          bpmn_gateway_id: string
+          dmn_decision_id: string
+          dmn_project_id: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          bpmn_gateway_id: string
+          dmn_decision_id: string
+          dmn_project_id: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          bpmn_gateway_id?: string
+          dmn_decision_id?: string
+          dmn_project_id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dmn_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dmn_links_dmn_project_id_fkey"
+            columns: ["dmn_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       screen_recording_jobs: {
         Row: {
           bpmn_xml: string | null

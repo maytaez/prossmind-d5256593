@@ -11,7 +11,7 @@ type TemplateUpdate = Database["public"]["Tables"]["templates"]["Update"];
 
 export interface TemplateFilters {
   category?: string;
-  diagramType?: "bpmn" | "pid";
+  diagramType?: "bpmn" | "pid" | "dmn";
 }
 
 /**

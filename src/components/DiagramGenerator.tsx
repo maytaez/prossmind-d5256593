@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
-type DiagramType = "bpmn" | "pid";
+type DiagramType = "bpmn" | "pid" | "dmn";
 
 export function DiagramGenerator() {
   const [diagramType, setDiagramType] = useState<DiagramType>("bpmn");
@@ -26,9 +26,10 @@ export function DiagramGenerator() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="bpmn" onValueChange={(value) => setDiagramType(value as DiagramType)}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="bpmn">BPMN Diagram</TabsTrigger>
               <TabsTrigger value="pid">P&ID Diagram</TabsTrigger>
+              <TabsTrigger value="dmn">DMN Decision</TabsTrigger>
             </TabsList>
             <TabsContent value="bpmn">
               <div className="space-y-4 py-4">
@@ -48,6 +49,18 @@ export function DiagramGenerator() {
                 <Textarea
                   id="pid-description"
                   placeholder="e.g., A centrifugal pump draws water from a storage tank and sends it to a heat exchanger. A control valve regulates the flow..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={5}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="dmn">
+              <div className="space-y-4 py-4">
+                <Label htmlFor="dmn-description">Describe the decision logic:</Label>
+                <Textarea
+                  id="dmn-description"
+                  placeholder="e.g., Create a loan approval decision table based on credit score and income. If credit score >= 700 and income >= 50000, approve with 3.5% interest rate..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={5}

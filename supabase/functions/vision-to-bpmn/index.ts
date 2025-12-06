@@ -98,7 +98,13 @@ Deno.serve(async (req) => {
         let cacheType: 'exact_hash' | 'semantic' | 'none' = 'none';
         let selectedModel = 'gemini-2.5-pro'; // Track which model succeeded
 
-        if (isImage || isPDF || isDocument) {
+        // Handle .docx and .doc files separately - Gemini doesn't support these MIME types directly
+        if (isDocument) {
+          console.log('Word document (.docx/.doc) detected - Gemini does not support this MIME type directly');
+          
+          // Provide helpful error message with alternatives
+          throw new Error('Word document (.docx/.doc) files are not directly supported by Gemini. Please try one of these alternatives:\n\n1. Convert to PDF: Save your document as PDF and upload the PDF file\n2. Extract text: Copy the text content from your document, save it as a .txt file, and upload that\n3. Use text input: Copy and paste the text content directly as text input\n\nPDF files are fully supported and will work with Vision AI.');
+        } else if (isImage || isPDF) {
           // Extract base64 data (remove data URL prefix) and normalize
           const base64Data = imageBase64.includes(',') 
             ? imageBase64.split(',')[1].trim().replace(/\s+/g, '')
@@ -405,10 +411,8 @@ Return ONLY the XML, no other text.`;
           
           console.log('✅ Success with gemini-2.5-pro (text)');
           selectedModel = 'gemini-2.5-pro';
-        } else if (isPDF || isDocument) {
-          throw new Error('PDF/Document processing not yet supported - please upload images or text');
         } else {
-          throw new Error('Unsupported file type');
+          throw new Error('Unsupported file type. Please upload images (JPG, PNG, WEBP), PDF files, or text files (.txt)');
         }
 
         console.log('BPMN generation complete');

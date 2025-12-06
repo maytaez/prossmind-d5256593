@@ -16,7 +16,7 @@ interface ProjectNameDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (name: string, description: string) => void;
-  diagramType?: "bpmn" | "pid";
+  diagramType?: "bpmn" | "pid" | "dmn";
   defaultName?: string;
   defaultDescription?: string;
   isLoading?: boolean;
@@ -54,7 +54,7 @@ export function ProjectNameDialog({
     onOpenChange(false);
   };
 
-  const diagramTypeName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+  const diagramTypeName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

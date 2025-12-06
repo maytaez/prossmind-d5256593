@@ -8,7 +8,8 @@ import Projects from "./app/Projects";
 import Templates from "./app/Templates";
 import Account from "./app/Account";
 import Settings from "./app/Settings";
-import TryProssMe from "@/components/TryProssMe";
+import CombinedCamundaWebModeler from "@/components/CombinedCamundaWebModeler";
+import "@miragon/camunda-web-modeler/dist/bundle.css";
 import VisionAI from "./VisionAI";
 import Auth from "./Auth";
 import { navigateWithSubdomain, getSubdomainQuery } from "@/utils/subdomain";
@@ -82,11 +83,36 @@ const AppSubdomain = () => {
         />
         <Route 
           path="/bpmn-generator" 
-          element={user ? <TryProssMe user={user} /> : <Navigate to={authPath} replace />} 
+          element={user ? (
+            <div className="h-screen w-full">
+              <CombinedCamundaWebModeler 
+                initialMode="bpmn"
+                userId={user.id}
+              />
+            </div>
+          ) : <Navigate to={authPath} replace />} 
         />
         <Route 
           path="/pid-generator" 
-          element={user ? <TryProssMe user={user} /> : <Navigate to={authPath} replace />} 
+          element={user ? (
+            <div className="h-screen w-full">
+              <CombinedCamundaWebModeler 
+                initialMode="bpmn"
+                userId={user.id}
+              />
+            </div>
+          ) : <Navigate to={authPath} replace />} 
+        />
+        <Route 
+          path="/dmn-generator" 
+          element={user ? (
+            <div className="h-screen w-full">
+              <CombinedCamundaWebModeler 
+                initialMode="dmn"
+                userId={user.id}
+              />
+            </div>
+          ) : <Navigate to={authPath} replace />} 
         />
         <Route 
           path="/vision-ai" 
@@ -111,4 +137,3 @@ const AppSubdomain = () => {
 };
 
 export default AppSubdomain;
-

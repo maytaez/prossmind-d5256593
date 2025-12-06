@@ -4,7 +4,7 @@ import { User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useFreePrompts } from "@/hooks/useFreePrompts";
-import { Workflow, Factory, Eye, FileText, Plus, Clock, Loader2 } from "lucide-react";
+import { Workflow, Factory, Eye, FileText, Plus, Clock, Loader2, Gauge } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import PageContainer from "@/components/layout/PageContainer";
 import { navigateWithSubdomain } from "@/utils/subdomain";
@@ -44,12 +44,12 @@ const Dashboard = ({ user }: DashboardProps) => {
     await updateLastAccessed(project.id, user.id);
 
     // Store project data and navigate to editor
-    const storageKey = project.diagram_type === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
+    const storageKey = project.diagram_type === 'bpmn' ? 'generatedBpmn' : project.diagram_type === 'pid' ? 'generatedPid' : 'generatedDmn';
     localStorage.setItem(storageKey, project.bpmn_xml);
     localStorage.setItem('diagramType', project.diagram_type);
     localStorage.setItem('currentProjectId', project.id);
 
-    const route = project.diagram_type === 'bpmn' ? '/bpmn-generator' : '/pid-generator';
+    const route = project.diagram_type === 'bpmn' ? '/bpmn-generator' : project.diagram_type === 'pid' ? '/pid-generator' : '/dmn-generator';
     navigateWithSubdomain(navigate, route);
   };
 
@@ -62,7 +62,7 @@ const Dashboard = ({ user }: DashboardProps) => {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/bpmn-generator')}>
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
@@ -91,6 +91,22 @@ const Dashboard = ({ user }: DashboardProps) => {
               <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateWithSubdomain(navigate, '/pid-generator'); }}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create P&ID
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/dmn-generator')}>
+            <CardHeader className="flex-1">
+              <div className="flex flex-col items-center text-center mb-4">
+                <Gauge className="h-10 w-10 text-primary mb-4" />
+                <CardTitle>New DMN Decision</CardTitle>
+              </div>
+              <CardDescription className="text-center">Create a new decision model and notation diagram</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-auto">
+              <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateWithSubdomain(navigate, '/dmn-generator'); }}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create DMN
               </Button>
             </CardContent>
           </Card>
@@ -181,15 +197,17 @@ const Dashboard = ({ user }: DashboardProps) => {
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           {project.diagram_type === 'bpmn' ? (
                             <Workflow className="h-4 w-4 text-primary flex-shrink-0" />
-                          ) : (
+                          ) : project.diagram_type === 'pid' ? (
                             <Factory className="h-4 w-4 text-primary flex-shrink-0" />
+                          ) : (
+                            <Gauge className="h-4 w-4 text-primary flex-shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">
                               {project.name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {project.diagram_type === 'bpmn' ? 'BPMN' : 'P&ID'} · {new Date(project.last_accessed_at).toLocaleDateString()}
+                              {project.diagram_type === 'bpmn' ? 'BPMN' : project.diagram_type === 'pid' ? 'P&ID' : 'DMN'} · {new Date(project.last_accessed_at).toLocaleDateString()}
                             </p>
                           </div>
                         </div>

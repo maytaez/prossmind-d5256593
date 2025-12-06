@@ -19,7 +19,7 @@ const VisionAI = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [diagramType, setDiagramType] = useState<"bpmn" | "pid">("bpmn");
+  const [diagramType, setDiagramType] = useState<"bpmn" | "pid" | "dmn">("bpmn");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,16 +46,16 @@ const VisionAI = () => {
 
       if (data.status === 'completed' && data.bpmn_xml) {
         // Store the result based on diagram type
-        const storageKey = diagramType === "bpmn" ? 'generatedBpmn' : 'generatedPid';
+        const storageKey = diagramType === "bpmn" ? 'generatedBpmn' : diagramType === "pid" ? 'generatedPid' : 'generatedDmn';
         localStorage.setItem(storageKey, data.bpmn_xml);
         localStorage.setItem('diagramType', diagramType);
         
-        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+        const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
         setUploadProgress(100);
         setProgressText("Complete!");
         
         // Redirect to generator page where project saving will be handled
-        const route = diagramType === "bpmn" ? '/bpmn-generator' : '/pid-generator';
+        const route = diagramType === "bpmn" ? '/bpmn-generator' : diagramType === "pid" ? '/pid-generator' : '/dmn-generator';
         toast.success(`${diagramName} diagram generated successfully!`, {
           description: "Redirecting to editor...",
         });
@@ -110,16 +110,16 @@ const VisionAI = () => {
           console.log('Realtime job status update:', job.status);
 
           if (job.status === 'completed' && job.bpmn_xml) {
-            const storageKey = diagramType === "bpmn" ? 'generatedBpmn' : 'generatedPid';
+            const storageKey = diagramType === "bpmn" ? 'generatedBpmn' : diagramType === "pid" ? 'generatedPid' : 'generatedDmn';
             localStorage.setItem(storageKey, job.bpmn_xml);
             localStorage.setItem('diagramType', diagramType);
             
-            const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+            const diagramName = diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN";
             setUploadProgress(100);
             setProgressText("Complete!");
             
             // Redirect to generator page where project saving will be handled
-            const route = diagramType === "bpmn" ? '/bpmn-generator' : '/pid-generator';
+            const route = diagramType === "bpmn" ? '/bpmn-generator' : diagramType === "pid" ? '/pid-generator' : '/dmn-generator';
             toast.success(`${diagramName} diagram generated successfully!`, {
               description: "Redirecting to editor...",
             });
@@ -470,10 +470,11 @@ const VisionAI = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
-            <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-              <AnimatedTabsList className="grid w-full grid-cols-2">
+            <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid" | "dmn")} className="w-full">
+              <AnimatedTabsList className="grid w-full grid-cols-3">
                 <AnimatedTabsTrigger value="bpmn">BPMN Diagram</AnimatedTabsTrigger>
                 <AnimatedTabsTrigger value="pid">P&ID Diagram</AnimatedTabsTrigger>
+                <AnimatedTabsTrigger value="dmn">DMN Decision</AnimatedTabsTrigger>
               </AnimatedTabsList>
               <AnimatedTabsContent value="bpmn" className="mt-6 space-y-6">
             <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
@@ -538,7 +539,7 @@ const VisionAI = () => {
                   Cancel
                 </Button>
                 <Button onClick={handleUpload} disabled={!selectedFile || processing}>
-                  {processing ? "Generating..." : "Generate BPMN"}
+                  {processing ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : diagramType === "pid" ? "P&ID" : "DMN"}`}
                 </Button>
               </div>
               </AnimatedTabsContent>
@@ -606,6 +607,73 @@ const VisionAI = () => {
                   </Button>
                   <Button onClick={handleUpload} disabled={!selectedFile || processing}>
                     {processing ? "Generating..." : "Generate P&ID"}
+                  </Button>
+                </div>
+              </AnimatedTabsContent>
+              <AnimatedTabsContent value="dmn" className="mt-6 space-y-6">
+                <div className="bg-card border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx,.txt"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="file-upload-dmn"
+                    disabled={processing}
+                  />
+                  <label htmlFor="file-upload-dmn" className="cursor-pointer flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      <ImageFileIcon className="w-8 h-8 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold mb-1">
+                        {selectedFile ? selectedFile.name : "Drop your decision document or image"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Images, PDF, Word documents, or text files
+                      </p>
+                    </div>
+                  </label>
+                  
+                  {/* Progress Feedback */}
+                  {processing && uploadProgress > 0 && (
+                    <div className="mt-6 space-y-2">
+                      <Progress value={uploadProgress} className="w-full" />
+                      <p className="text-sm text-muted-foreground">{progressText}</p>
+                    </div>
+                  )}
+                  
+                  {/* Error Display */}
+                  {errorMessage && (
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                      <p className="text-sm text-destructive">{errorMessage}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="flex flex-col items-center gap-2 p-4 bg-muted rounded-lg">
+                    <ImageFileIcon className="w-8 h-8 text-primary" />
+                    <span className="text-sm font-medium">Images</span>
+                    <span className="text-xs text-muted-foreground">JPG, PNG, WEBP</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2 p-4 bg-muted rounded-lg">
+                    <FileText className="w-8 h-8 text-primary" />
+                    <span className="text-sm font-medium">Documents</span>
+                    <span className="text-xs text-muted-foreground">PDF, DOC, DOCX</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2 p-4 bg-muted rounded-lg">
+                    <FileText className="w-8 h-8 text-primary" />
+                    <span className="text-sm font-medium">Text</span>
+                    <span className="text-xs text-muted-foreground">TXT files</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-4">
+                  <Button variant="outline" onClick={() => setShowUpload(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleUpload} disabled={!selectedFile || processing}>
+                    {processing ? "Generating..." : "Generate DMN"}
                   </Button>
                 </div>
               </AnimatedTabsContent>

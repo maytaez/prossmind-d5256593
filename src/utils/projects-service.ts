@@ -9,7 +9,7 @@ export interface Project {
   user_id: string;
   name: string;
   description: string | null;
-  diagram_type: "bpmn" | "pid";
+  diagram_type: "bpmn" | "pid" | "dmn";
   bpmn_xml: string;
   created_at: string;
   updated_at: string;
@@ -20,7 +20,7 @@ export interface ProjectInsert {
   user_id: string;
   name: string;
   description?: string | null;
-  diagram_type: "bpmn" | "pid";
+  diagram_type: "bpmn" | "pid" | "dmn";
   bpmn_xml: string;
 }
 
@@ -31,7 +31,7 @@ export interface ProjectUpdate {
 }
 
 export interface ProjectFilters {
-  diagramType?: "all" | "bpmn" | "pid";
+  diagramType?: "all" | "bpmn" | "pid" | "dmn";
 }
 
 /**

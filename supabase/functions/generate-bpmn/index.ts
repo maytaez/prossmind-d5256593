@@ -6,10 +6,242 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
 
 /**
+ * Check if XML appears to be truncated/incomplete
+ */
+function isXmlIncomplete(xml: string): boolean {
+  const trimmed = xml.trim();
+  
+  // Check for incomplete waypoint tags (most common truncation point)
+  // Pattern: <di:waypoint x="..." y="..." (missing closing /> or >)
+  // Use multiline mode to catch incomplete tags at end of string
+  if (/<di:waypoint\s+[^>]*$/m.test(trimmed)) {
+    return true;
+  }
+  
+  // Check for incomplete waypoint tags with partial attributes
+  // Pattern: <di:waypoint x="123 y="456 (incomplete, missing quotes or closing)
+  if (/<di:waypoint\s+[^>]*[xXyY]="[^"]*$/m.test(trimmed)) {
+    return true;
+  }
+  
+  // More specific: Check if it ends with <di:waypoint followed by just "x" or "y"
+  // Pattern: <di:waypoint x or <di:waypoint y (very incomplete)
+  if (/<di:waypoint\s+[xXyY]\s*$/m.test(trimmed)) {
+    return true;
+  }
+  
+  // Check for incomplete attribute values (unclosed quotes)
+  const openQuotes = (trimmed.match(/="[^"]*$/gm) || []).length;
+  if (openQuotes > 0) {
+    return true;
+  }
+  
+  // Check if XML ends abruptly (not with proper closing tags)
+  if (!trimmed.endsWith('>') && !trimmed.endsWith('/>') && !trimmed.endsWith('</bpmn:definitions>')) {
+    // But allow if it ends with whitespace before a tag
+    if (!trimmed.match(/>\s*$/)) {
+      return true;
+    }
+  }
+  
+  // Check if XML doesn't end with proper closing tag
+  if (!trimmed.endsWith('</bpmn:definitions>') && trimmed.includes('<bpmn:definitions')) {
+    // Check if it's just missing the closing tag (has all content)
+    const lastTag = trimmed.lastIndexOf('>');
+    if (lastTag > 0 && lastTag < trimmed.length - 10) {
+      // There's content after the last tag, might be incomplete
+      const afterLastTag = trimmed.substring(lastTag + 1).trim();
+      if (afterLastTag && !afterLastTag.startsWith('<')) {
+        return true;
+      }
+    }
+  }
+  
+  // Final check: if the last 50 characters contain an incomplete waypoint tag
+  const last50 = trimmed.substring(Math.max(0, trimmed.length - 50));
+  if (/<di:waypoint\s+[^>]*$/.test(last50)) {
+    return true;
+  }
+  
+  // Very specific check: ends with <di:waypoint followed by just "x" or space and "x"
+  // This catches cases like: <di:waypoint x
+  if (trimmed.match(/<di:waypoint\s+x\s*$/)) {
+    return true;
+  }
+  
+  // Check if it ends with <di:waypoint and any partial attribute
+  if (trimmed.match(/<di:waypoint\s+[^>]*[^/>]\s*$/)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Fix truncated/incomplete XML by removing incomplete tags and closing properly
+ */
+function fixIncompleteXml(xml: string): string {
+  let fixed = xml.trim();
+  
+  // More aggressive: Find the last occurrence of an incomplete waypoint tag
+  // and remove everything from that point onwards
+  // Pattern: <di:waypoint followed by attributes but no closing />
+  const incompleteWaypointRegex = /<di:waypoint\s+[^>]*$/m;
+  let match = fixed.match(incompleteWaypointRegex);
+  if (match) {
+    const startIndex = fixed.lastIndexOf(match[0]);
+    if (startIndex >= 0) {
+      // Remove from the start of the incomplete tag
+      fixed = fixed.substring(0, startIndex).trim();
+    }
+  }
+  
+  // Also check for the very specific case: <di:waypoint x (just "x" after the tag)
+  const incompleteWaypointXRegex = /<di:waypoint\s+x\s*$/m;
+  match = fixed.match(incompleteWaypointXRegex);
+  if (match) {
+    const startIndex = fixed.lastIndexOf(match[0]);
+    if (startIndex >= 0) {
+      fixed = fixed.substring(0, startIndex).trim();
+    }
+  }
+  
+  // Check for <di:waypoint followed by any incomplete attribute pattern
+  const incompleteWaypointAnyRegex = /<di:waypoint\s+[^/>]*[^/>]\s*$/m;
+  match = fixed.match(incompleteWaypointAnyRegex);
+  if (match && !match[0].includes('/>') && !match[0].includes('>')) {
+    const startIndex = fixed.lastIndexOf(match[0]);
+    if (startIndex >= 0) {
+      fixed = fixed.substring(0, startIndex).trim();
+    }
+  }
+  
+  // Also check for incomplete waypoint tags that might have partial attributes
+  // Pattern: <di:waypoint x="123 (incomplete, no closing quote or />)
+  const incompleteWaypointPartialRegex = /<di:waypoint\s+[xXyY]="[^"]*$/m;
+  const partialMatch = fixed.match(incompleteWaypointPartialRegex);
+  if (partialMatch) {
+    const startIndex = fixed.lastIndexOf(partialMatch[0]);
+    if (startIndex >= 0) {
+      fixed = fixed.substring(0, startIndex).trim();
+    }
+  }
+  
+  // Remove incomplete attribute declarations at the end
+  // Pattern: x="123 y="456 (incomplete quotes) - but only if not part of a complete tag
+  fixed = fixed.replace(/[xXyY]="[^"]*$/gm, '');
+  
+  // Remove incomplete tags at the end (tags that don't close)
+  // Pattern: <bpmndi:BPMNEdge (incomplete, no closing >)
+  const lastIncompleteTag = fixed.match(/<[^/>]+$/);
+  if (lastIncompleteTag) {
+    const startIndex = fixed.lastIndexOf(lastIncompleteTag[0]);
+    if (startIndex >= 0) {
+      fixed = fixed.substring(0, startIndex).trim();
+    }
+  }
+  
+  // Find the last complete tag (ends with > or />)
+  const lastCompleteTagIndex = Math.max(
+    fixed.lastIndexOf('/>'),
+    fixed.lastIndexOf('>')
+  );
+  
+  if (lastCompleteTagIndex > 0) {
+    // Remove everything after the last complete tag
+    fixed = fixed.substring(0, lastCompleteTagIndex + 1).trim();
+  }
+  
+  // Remove any trailing incomplete content (text after last >)
+  const lastGreaterThan = fixed.lastIndexOf('>');
+  if (lastGreaterThan >= 0 && lastGreaterThan < fixed.length - 1) {
+    const afterLastTag = fixed.substring(lastGreaterThan + 1).trim();
+    // If there's content after the last tag that doesn't look like valid XML, remove it
+    if (afterLastTag && !afterLastTag.startsWith('<')) {
+      fixed = fixed.substring(0, lastGreaterThan + 1).trim();
+    }
+  }
+  
+  return fixed;
+}
+
+/**
+ * Ensure XML has all required closing tags
+ */
+function ensureXmlComplete(xml: string): string {
+  let complete = xml.trim();
+  
+  // Count opening and closing tags for major BPMN elements
+  // Note: We need to count self-closing tags separately
+  const tagPairs: { [key: string]: { open: RegExp; selfClosing: RegExp; close: string } } = {
+    'definitions': { 
+      open: /<bpmn:definitions(?![^>]*\/>)/gi, 
+      selfClosing: /<bpmn:definitions[^>]*\/>/gi,
+      close: '</bpmn:definitions>' 
+    },
+    'process': { 
+      open: /<bpmn:process(?![^>]*\/>)/gi, 
+      selfClosing: /<bpmn:process[^>]*\/>/gi,
+      close: '</bpmn:process>' 
+    },
+    'collaboration': { 
+      open: /<bpmn:collaboration(?![^>]*\/>)/gi, 
+      selfClosing: /<bpmn:collaboration[^>]*\/>/gi,
+      close: '</bpmn:collaboration>' 
+    },
+    'diagram': { 
+      open: /<bpmndi:BPMNDiagram(?![^>]*\/>)/gi, 
+      selfClosing: /<bpmndi:BPMNDiagram[^>]*\/>/gi,
+      close: '</bpmndi:BPMNDiagram>' 
+    },
+    'plane': { 
+      open: /<bpmndi:BPMNPlane(?![^>]*\/>)/gi, 
+      selfClosing: /<bpmndi:BPMNPlane[^>]*\/>/gi,
+      close: '</bpmndi:BPMNPlane>' 
+    },
+  };
+  
+  // Check and close missing tags (in reverse order of nesting)
+  const closingOrder = ['plane', 'diagram', 'process', 'collaboration', 'definitions'];
+  
+  for (const tagName of closingOrder) {
+    const tagInfo = tagPairs[tagName];
+    const openMatches = complete.match(tagInfo.open);
+    const selfClosingMatches = complete.match(tagInfo.selfClosing);
+    const closeMatches = complete.match(new RegExp(tagInfo.close.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'));
+    
+    const openCount = openMatches ? openMatches.length : 0;
+    const selfClosingCount = selfClosingMatches ? selfClosingMatches.length : 0;
+    const closeCount = closeMatches ? closeMatches.length : 0;
+    
+    // Total opened = explicitly opened (not self-closing) + self-closing
+    // Total closed = explicitly closed + self-closing
+    const totalOpened = openCount + selfClosingCount;
+    const totalClosed = closeCount + selfClosingCount;
+    
+    if (totalOpened > totalClosed) {
+      // Add missing closing tags
+      const missing = totalOpened - totalClosed;
+      for (let i = 0; i < missing; i++) {
+        complete += '\n' + tagInfo.close;
+      }
+    }
+  }
+  
+  return complete;
+}
+
+/**
  * Apply quick sanitization fixes for common LLM BPMN XML mistakes.
  */
 function sanitizeBpmnXml(xml: string): string {
   let sanitized = xml;
+
+  // First, check if XML is incomplete and try to fix it
+  if (isXmlIncomplete(sanitized)) {
+    console.warn('Detected incomplete XML, attempting to fix...');
+    sanitized = fixIncompleteXml(sanitized);
+  }
 
   // Fix namespace issues: bpmns: -> bpmn:
   sanitized = sanitized.replace(/bpmns:/gi, 'bpmn:');
@@ -18,13 +250,22 @@ function sanitizeBpmnXml(xml: string): string {
   sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, 'bpmndi:BPMNShape');
   sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, 'bpmndi:BPMNEdge');
 
+  // Fix truncated waypoint tags first (incomplete attributes at end of string)
+  // Pattern: <di:waypoint x="123 y="456 (incomplete, no closing)
+  sanitized = sanitized.replace(/<di:waypoint\s+[^>]*$/gm, '');
+  
   // Fix unclosed di:waypoint tags - they should be self-closing
   // Pattern: <di:waypoint x="..." y="..."> should become <di:waypoint x="..." y="..."/>
   // Match opening tags that don't end with /> and convert them to self-closing
   sanitized = sanitized.replace(/<(\s*)di:waypoint\s+([^>]*?)>/gi, (match: string, whitespace: string, attrs: string) => {
     // If it doesn't end with />, make it self-closing
     if (!match.trim().endsWith('/>')) {
-      return `<${whitespace}di:waypoint ${attrs}/>`;
+      // Clean up attributes - remove incomplete attribute values
+      const cleanAttrs = attrs.replace(/[xXyY]="[^"]*$/g, '').trim();
+      if (cleanAttrs) {
+        return `<${whitespace}di:waypoint ${cleanAttrs}/>`;
+      }
+      return `<${whitespace}di:waypoint/>`;
     }
     return match;
   });
@@ -48,6 +289,9 @@ function sanitizeBpmnXml(xml: string): string {
 
   // Remove orphaned closing tags (tags that don't have matching opening tags)
   sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
+
+  // Ensure XML is complete with all closing tags
+  sanitized = ensureXmlComplete(sanitized);
 
   return sanitized.trim();
 }
@@ -118,22 +362,65 @@ Deno.serve(async (req) => {
       }
       if (exactCache) {
         console.log('Exact hash cache hit');
-        cacheType = 'exact_hash';
-        const responseTime = Date.now() - startTime;
         
-        await logPerformanceMetric({
-          function_name: 'generate-bpmn',
-          cache_type: 'exact_hash',
-          prompt_length: prompt.length,
-          response_time_ms: responseTime,
-          cache_hit: true,
-          error_occurred: false,
-        });
+        // Validate cached XML before returning it
+        let cachedXml = exactCache.bpmnXml;
+        
+        // Log the end of the XML for debugging
+        const xmlEnd = cachedXml.trim().substring(Math.max(0, cachedXml.length - 100));
+        console.log('[Cache Validation] Checking exact cache XML, last 100 chars:', xmlEnd);
+        
+        // Check if XML is incomplete or invalid
+        const isIncomplete = isXmlIncomplete(cachedXml);
+        const hasProperEnding = cachedXml.trim().endsWith('</bpmn:definitions>');
+        
+        if (isIncomplete || !hasProperEnding) {
+          console.warn('[Cache Validation] Exact cached XML is invalid or incomplete:', {
+            isIncomplete,
+            hasProperEnding,
+            xmlLength: cachedXml.length,
+            last50Chars: cachedXml.trim().substring(Math.max(0, cachedXml.length - 50))
+          });
+          
+          // Try to fix the cached XML
+          cachedXml = sanitizeBpmnXml(cachedXml);
+          
+          // Check again if it's still invalid
+          const stillIncomplete = isXmlIncomplete(cachedXml);
+          const stillNoEnding = !cachedXml.trim().endsWith('</bpmn:definitions>');
+          
+          if (stillIncomplete || stillNoEnding) {
+            console.warn('[Cache Validation] Exact cached XML could not be fixed, will regenerate:', {
+              stillIncomplete,
+              stillNoEnding,
+              fixedXmlLength: cachedXml.length,
+              last50Chars: cachedXml.trim().substring(Math.max(0, cachedXml.length - 50))
+            });
+            // Continue to generation instead of returning invalid cache
+            exactCache = null;
+          } else {
+            console.log('[Cache Validation] Exact cached XML fixed successfully');
+          }
+        }
+        
+        if (exactCache) {
+          cacheType = 'exact_hash';
+          const responseTime = Date.now() - startTime;
+          
+          await logPerformanceMetric({
+            function_name: 'generate-bpmn',
+            cache_type: 'exact_hash',
+            prompt_length: prompt.length,
+            response_time_ms: responseTime,
+            cache_hit: true,
+            error_occurred: false,
+          });
 
-        return new Response(
-          JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+          return new Response(
+            JSON.stringify({ bpmnXml: cachedXml, cached: true }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       }
     }
 
@@ -220,29 +507,78 @@ Deno.serve(async (req) => {
 
         if (semanticCache) {
           console.log(`Semantic cache hit (similarity: ${semanticCache.similarity})`);
-          cacheType = 'semantic';
-          similarityScore = semanticCache.similarity;
-          const responseTime = Date.now() - startTime;
+          
+          // Validate cached XML before returning it
+          let cachedXml = semanticCache.bpmnXml;
+          
+          // Log the end of the XML for debugging
+          const xmlEnd = cachedXml.trim().substring(Math.max(0, cachedXml.length - 100));
+          console.log('[Cache Validation] Checking semantic cache XML, last 100 chars:', xmlEnd);
+          
+          // Check if XML is incomplete or invalid
+          const isIncomplete = isXmlIncomplete(cachedXml);
+          const hasProperEnding = cachedXml.trim().endsWith('</bpmn:definitions>');
+          
+          if (isIncomplete || !hasProperEnding) {
+            console.warn('[Cache Validation] Semantic cached XML is invalid or incomplete:', {
+              isIncomplete,
+              hasProperEnding,
+              xmlLength: cachedXml.length,
+              last50Chars: cachedXml.trim().substring(Math.max(0, cachedXml.length - 50))
+            });
+            
+            // Try to fix the cached XML
+            cachedXml = sanitizeBpmnXml(cachedXml);
+            
+            // Check again if it's still invalid
+            const stillIncomplete = isXmlIncomplete(cachedXml);
+            const stillNoEnding = !cachedXml.trim().endsWith('</bpmn:definitions>');
+            
+            if (stillIncomplete || stillNoEnding) {
+              console.warn('[Cache Validation] Semantic cached XML could not be fixed, will regenerate:', {
+                stillIncomplete,
+                stillNoEnding,
+                fixedXmlLength: cachedXml.length,
+                last50Chars: cachedXml.trim().substring(Math.max(0, cachedXml.length - 50))
+              });
+              // Continue to generation instead of returning invalid cache
+              // Don't return, let it fall through to generation
+            } else {
+              console.log('[Cache Validation] Semantic cached XML fixed successfully');
+            }
+          }
+          
+          // Only return if we have valid XML
+          const finalIsIncomplete = isXmlIncomplete(cachedXml);
+          const finalHasEnding = cachedXml.trim().endsWith('</bpmn:definitions>');
+          
+          if (!finalIsIncomplete && finalHasEnding) {
+            cacheType = 'semantic';
+            similarityScore = semanticCache.similarity;
+            const responseTime = Date.now() - startTime;
 
-          await logPerformanceMetric({
-            function_name: 'generate-bpmn',
-            cache_type: 'semantic',
-            prompt_length: prompt.length,
-            complexity_score: complexityScore,
-            response_time_ms: responseTime,
-            cache_hit: true,
-            similarity_score: semanticCache.similarity,
-            error_occurred: false,
-          });
+            await logPerformanceMetric({
+              function_name: 'generate-bpmn',
+              cache_type: 'semantic',
+              prompt_length: prompt.length,
+              complexity_score: complexityScore,
+              response_time_ms: responseTime,
+              cache_hit: true,
+              similarity_score: semanticCache.similarity,
+              error_occurred: false,
+            });
 
-          return new Response(
-            JSON.stringify({
-              bpmnXml: semanticCache.bpmnXml,
-              cached: true,
-              similarity: semanticCache.similarity,
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+            return new Response(
+              JSON.stringify({
+                bpmnXml: cachedXml,
+                cached: true,
+                similarity: semanticCache.similarity,
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          } else {
+            console.warn('Semantic cache XML invalid, skipping cache and regenerating');
+          }
         }
       } catch (embeddingError) {
         console.warn('Semantic cache check failed, continuing with generation:', embeddingError);
@@ -344,13 +680,14 @@ Deno.serve(async (req) => {
         }
 
         const data = await response.json();
+        const finishReason = data.candidates?.[0]?.finishReason;
         console.log('[API Response] Received from Gemini:', {
           hasCandidates: !!data.candidates,
           candidateCount: data.candidates?.length || 0,
           hasContent: !!data.candidates?.[0]?.content,
           hasParts: !!data.candidates?.[0]?.content?.parts,
           partCount: data.candidates?.[0]?.content?.parts?.length || 0,
-          finishReason: data.candidates?.[0]?.finishReason,
+          finishReason: finishReason,
           safetyRatings: data.candidates?.[0]?.safetyRatings
         });
         
@@ -361,19 +698,87 @@ Deno.serve(async (req) => {
           throw new Error('No content generated from AI model');
         }
         
+        // Check if response was truncated due to token limit
+        const isTruncatedByFinishReason = finishReason === 'MAX_TOKENS' || finishReason === 'OTHER';
+        if (isTruncatedByFinishReason) {
+          console.warn('[API Response] Response may be truncated (finishReason:', finishReason, ')');
+        }
+        
         console.log('[API Response] Extracted BPMN XML:', {
           length: bpmnXml.length,
           estimatedTokens: Math.ceil(bpmnXml.length / 4),
-          first100Chars: bpmnXml.substring(0, 100)
+          first100Chars: bpmnXml.substring(0, 100),
+          last100Chars: bpmnXml.substring(Math.max(0, bpmnXml.length - 100)),
+          finishReason: finishReason
         });
 
         // Clean up the response - remove markdown code blocks if present
         bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
 
+        // Quick check for incomplete XML BEFORE sanitization
+        // IMPORTANT: Check for incomplete XML regardless of finishReason, as sometimes
+        // the model stops without setting finishReason correctly
+        const rawIsIncomplete = isXmlIncomplete(bpmnXml);
+        const rawNoEnding = !bpmnXml.trim().endsWith('</bpmn:definitions>');
+        const isIncomplete = rawIsIncomplete || rawNoEnding;
+        
+        // If XML is incomplete (regardless of finishReason), retry with higher maxTokens
+        if (isIncomplete && attempt < maxRetries - 1) {
+          const currentMaxTokens = maxTokens;
+          // Gemini 2.5 Pro supports up to 65,536 output tokens
+          // Gemini 2.5 Flash supports up to 8,192 output tokens
+          const maxAllowedTokens = model === 'google/gemini-2.5-pro' ? 65536 : 8192;
+          
+          if (currentMaxTokens < maxAllowedTokens) {
+            // Increase maxTokens more aggressively for incomplete XML
+            // For Pro model: jump to at least 50% of max, or 1.5x current (whichever is higher)
+            // For Flash model: use max available
+            let newMaxTokens: number;
+            if (model === 'google/gemini-2.5-pro') {
+              const minTokens = Math.max(32768, Math.floor(currentMaxTokens * 1.5));
+              newMaxTokens = Math.min(minTokens, maxAllowedTokens);
+            } else {
+              // Flash model: use max available
+              newMaxTokens = maxAllowedTokens;
+            }
+            
+            console.warn(`[Retry] XML incomplete (finishReason: ${finishReason}, incomplete: ${rawIsIncomplete}, noEnding: ${rawNoEnding}), retrying with higher maxTokens: ${currentMaxTokens} -> ${newMaxTokens}`);
+            maxTokens = newMaxTokens;
+            continue; // Retry with higher token limit
+          } else {
+            console.error('[Validation] XML incomplete but already at max tokens:', {
+              finishReason,
+              currentMaxTokens,
+              maxAllowedTokens,
+              attempt,
+              maxRetries,
+              rawIsIncomplete,
+              rawNoEnding,
+              last100Chars: bpmnXml.substring(Math.max(0, bpmnXml.length - 100))
+            });
+            throw new Error(`Generated BPMN XML was incomplete (maxTokens: ${currentMaxTokens} already at maximum). The diagram is too complex. Please try simplifying your prompt.`);
+          }
+        } else if (isIncomplete && attempt >= maxRetries - 1) {
+          // All retries exhausted
+          console.error('[Validation] XML incomplete after all retries:', {
+            finishReason,
+            maxTokens,
+            attempt,
+            maxRetries,
+            rawIsIncomplete,
+            rawNoEnding,
+            last100Chars: bpmnXml.substring(Math.max(0, bpmnXml.length - 100))
+          });
+          throw new Error(`Generated BPMN XML was incomplete after ${maxRetries} attempts. The diagram may be too complex. Please try simplifying your prompt.`);
+        }
+
         // Sanitize XML to fix common LLM mistakes
         bpmnXml = sanitizeBpmnXml(bpmnXml);
 
-        console.log('Cleaned BPMN XML:', bpmnXml);
+        console.log('Cleaned BPMN XML:', {
+          length: bpmnXml.length,
+          last200Chars: bpmnXml.substring(Math.max(0, bpmnXml.length - 200))
+        });
 
         // Validate XML structure before caching (only cache valid responses)
         if (!bpmnXml.startsWith('<?xml')) {
@@ -382,6 +787,57 @@ Deno.serve(async (req) => {
         
         if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
           throw new Error('Generated BPMN XML is invalid or incomplete');
+        }
+        
+        // Check if XML is still incomplete after sanitization
+        const sanitizedIsIncomplete = isXmlIncomplete(bpmnXml);
+        const sanitizedNoEnding = !bpmnXml.trim().endsWith('</bpmn:definitions>');
+        const stillIncomplete = sanitizedIsIncomplete || sanitizedNoEnding;
+        
+        if (stillIncomplete) {
+          console.error('[Validation] XML is still incomplete after sanitization');
+          console.error('[Validation] Last 500 chars:', bpmnXml.substring(Math.max(0, bpmnXml.length - 500)));
+          
+          // Retry with higher tokens if we haven't exhausted retries
+          if (attempt < maxRetries - 1) {
+            const currentMaxTokens = maxTokens;
+            // Gemini 2.5 Pro supports up to 65,536 output tokens
+            // Gemini 2.5 Flash supports up to 8,192 output tokens
+            const maxAllowedTokens = model === 'google/gemini-2.5-pro' ? 65536 : 8192;
+            
+            if (currentMaxTokens < maxAllowedTokens) {
+              // Increase maxTokens more aggressively
+              let newMaxTokens: number;
+              if (model === 'google/gemini-2.5-pro') {
+                const minTokens = Math.max(32768, Math.floor(currentMaxTokens * 1.5));
+                newMaxTokens = Math.min(minTokens, maxAllowedTokens);
+              } else {
+                // Flash model: use max available
+                newMaxTokens = maxAllowedTokens;
+              }
+              
+              console.warn(`[Retry] XML incomplete after sanitization, retrying with higher maxTokens: ${currentMaxTokens} -> ${newMaxTokens}`);
+              maxTokens = newMaxTokens;
+              continue; // Retry with higher token limit
+            } else {
+              console.error('[Validation] XML incomplete after sanitization but already at max tokens');
+              throw new Error(`Generated BPMN XML was incomplete (maxTokens: ${currentMaxTokens} already at maximum). The diagram is too complex. Please try simplifying your prompt.`);
+            }
+          } else {
+            // All retries exhausted
+            throw new Error(`Generated BPMN XML was incomplete after ${maxRetries} attempts. The diagram may be too complex. Please try simplifying your prompt.`);
+          }
+        }
+        
+        // Final validation: ensure XML ends with proper closing tags
+        const trimmed = bpmnXml.trim();
+        if (!trimmed.endsWith('</bpmn:definitions>')) {
+          console.warn('[Validation] XML does not end with </bpmn:definitions>, checking if it can be fixed...');
+          // Try to add missing closing tag if it's just missing
+          if (trimmed.includes('<bpmn:definitions') && !trimmed.includes('</bpmn:definitions>')) {
+            bpmnXml = trimmed + '\n</bpmn:definitions>';
+            console.log('[Validation] Added missing </bpmn:definitions> tag');
+          }
         }
 
         // Store in cache only after successful validation (async, don't wait) - skip if cache disabled
