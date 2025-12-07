@@ -5,6 +5,8 @@ import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.t
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
 import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
 import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
+import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../_shared/bpmn-di-optimizer.ts';
+import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts } from '../_shared/prompt-analyzer.ts';
 
 interface ValidationResult {
   isValid: boolean;
@@ -101,7 +103,22 @@ async function generateBpmnXmlWithGemini(simplifiedPrompt: string, systemPrompt:
   if (!bpmnXml) throw new Error('No content generated from Gemini 2.5 Pro');
   bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
   bpmnXml = sanitizeBpmnXml(bpmnXml);
-  console.log('[GEMINI RESPONSE] Length:', bpmnXml.length);
+
+  // Optimize BPMN DI to prevent truncation
+  const beforeOptimization = bpmnXml.length;
+  const estimatedTokens = estimateTokenCount(bpmnXml);
+
+  // Use aggressive optimization if we're close to or over the token limit
+  const aggressive = estimatedTokens > maxTokens * 0.8;
+  if (needsDIOptimization(bpmnXml, maxTokens) || aggressive) {
+    console.log(`[BPMN DI Optimization] Before: ${beforeOptimization} chars (~${estimatedTokens} tokens), aggressive: ${aggressive}`);
+    bpmnXml = optimizeBpmnDI(bpmnXml, aggressive);
+    const afterOptimization = bpmnXml.length;
+    const reduction = ((beforeOptimization - afterOptimization) / beforeOptimization * 100).toFixed(1);
+    console.log(`[BPMN DI Optimization] After: ${afterOptimization} chars (~${estimateTokenCount(bpmnXml)} tokens), reduced: ${reduction}%`);
+  }
+
+  console.log('[GEMINI RESPONSE] Final length:', bpmnXml.length);
   return bpmnXml;
 }
 
@@ -144,38 +161,103 @@ Deno.serve(async (req) => {
     const detectedLanguageCode = modelingAgentMode ? 'en' : detectLanguage(prompt);
     const detectedLanguageName = modelingAgentMode ? 'English' : getLanguageName(detectedLanguageCode);
     console.log(`Language: ${detectedLanguageName} (${detectedLanguageCode})`);
+
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) throw new Error('Google API key not configured');
+
+    // INTELLIGENT PROMPT ANALYSIS - Automatically detect and handle complex prompts
+    let finalPromptToGenerate = prompt;
+    let wasSimplified = false;
+    let wasSplit = false;
+    let subPrompts: string[] = [];
+
+    if (!modelingAgentMode && promptLength > 1500) {
+      console.log('[Prompt Analysis] Analyzing complexity...');
+      const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
+
+      if (analysis.recommendation === 'split') {
+        // Very complex - split into multiple sub-prompts
+        console.log(`[Prompt Analysis] Splitting prompt (complexity: ${analysis.complexity.score})`);
+        subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY);
+        wasSplit = true;
+
+        // Return sub-prompts to client for multi-diagram generation
+        return new Response(JSON.stringify({
+          requiresSplit: true,
+          subPrompts,
+          analysis: {
+            complexity: analysis.complexity,
+            reasoning: analysis.reasoning
+          },
+          message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      } else if (analysis.recommendation === 'simplify') {
+        // Moderately complex - simplify
+        console.log(`[Prompt Analysis] Simplifying prompt (complexity: ${analysis.complexity.score})`);
+
+        if (analysis.simplifiedPrompt) {
+          finalPromptToGenerate = analysis.simplifiedPrompt;
+        } else {
+          finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY);
+        }
+
+        wasSimplified = true;
+        promptLength = finalPromptToGenerate.length;
+        console.log(`[Prompt Analysis] Simplified: ${prompt.length} → ${finalPromptToGenerate.length} chars`);
+      } else {
+        console.log(`[Prompt Analysis] Complexity acceptable (score: ${analysis.complexity.score}), generating directly`);
+      }
+    }
+
     let promptHash: string;
-    try { promptHash = await generateHash(`${prompt}:${diagramType}:${detectedLanguageCode}`); } catch { throw new Error('Failed to generate prompt hash'); }
+    try { promptHash = await generateHash(`${finalPromptToGenerate}:${diagramType}:${detectedLanguageCode}`); } catch { throw new Error('Failed to generate prompt hash'); }
     if (!skipCache && !modelingAgentMode) {
       let exactCache; try { exactCache = await checkExactHashCache(promptHash, diagramType); } catch { exactCache = null; }
       if (exactCache) { cacheType = 'exact_hash'; await logPerformanceMetric({ function_name: 'generate-bpmn', cache_type: 'exact_hash', prompt_length: prompt.length, response_time_ms: Date.now() - startTime, cache_hit: true, error_occurred: false }); return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
     }
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-    if (!GOOGLE_API_KEY) throw new Error('Google API key not configured');
-    const systemPrompt = diagramType === 'pid' ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName) : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
-    const criteria = analyzePrompt(prompt, diagramType);
+    const criteria = analyzePrompt(finalPromptToGenerate, diagramType);
     const modelSelection = selectModel(criteria);
-    let { model, temperature } = modelSelection;
+    let { model, temperature, maxTokens } = modelSelection;
     const { complexityScore } = modelSelection;
+
+    // For very complex prompts, generate without DI to prevent truncation
+    // The client will add layout using auto-layout algorithms
+    const useNoDI = promptLength > 3000 || complexityScore >= 9;
+    const useCompactDI = !useNoDI && (promptLength > 2000 || complexityScore >= 7);
+
+    const systemPrompt = diagramType === 'pid'
+      ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
+      : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
+
+    console.log(`[Model Selection] ${model} with ${maxTokens} tokens (complexity: ${complexityScore}, compactDI: ${useCompactDI}, noDI: ${useNoDI})`);
     if (modelingAgentMode) temperature = model === 'google/gemini-2.5-pro' ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
     if (!skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
       try {
-        const embedding = await generateEmbedding(prompt);
+        const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-        if (semanticCache) { cacheType = 'semantic'; similarityScore = semanticCache.similarity; await logPerformanceMetric({ function_name: 'generate-bpmn', cache_type: 'semantic', prompt_length: prompt.length, complexity_score: complexityScore, response_time_ms: Date.now() - startTime, cache_hit: true, similarity_score: semanticCache.similarity, error_occurred: false }); return new Response(JSON.stringify({ bpmnXml: semanticCache.bpmnXml, cached: true, similarity: semanticCache.similarity }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
+        if (semanticCache) { cacheType = 'semantic'; similarityScore = semanticCache.similarity; await logPerformanceMetric({ function_name: 'generate-bpmn', cache_type: 'semantic', prompt_length: promptLength, complexity_score: complexityScore, response_time_ms: Date.now() - startTime, cache_hit: true, similarity_score: semanticCache.similarity, error_occurred: false }); return new Response(JSON.stringify({ bpmnXml: semanticCache.bpmnXml, cached: true, similarity: semanticCache.similarity, wasSimplified }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
       } catch { /* continue */ }
     }
-    let finalPrompt = prompt;
-    let wasSummarized = false;
-    if (!modelingAgentMode) { try { const result = await summarizeInputWithFlash(prompt, GOOGLE_API_KEY); finalPrompt = result.summarizedPrompt; wasSummarized = result.wasSummarized; if (wasSummarized) promptLength = finalPrompt.length; } catch { /* use original */ } }
-    const bpmnXml = await retryBpmnGenerationIfNecessary(finalPrompt, systemPrompt, diagramType, detectedLanguageCode, detectedLanguageName, GOOGLE_API_KEY, 16384, 0.3, 3);
+
+    // Use the analyzed/simplified prompt for generation
+    const bpmnXml = await retryBpmnGenerationIfNecessary(finalPromptToGenerate, systemPrompt, diagramType, detectedLanguageCode, detectedLanguageName, GOOGLE_API_KEY, maxTokens, temperature, 3);
     modelUsed = 'google/gemini-2.5-pro';
     const finalValidation = validateBpmnXml(bpmnXml);
     if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
-    if (!skipCache && !modelingAgentMode) { (async () => { try { let embedding: number[] | undefined; if (isSemanticCacheEnabled()) { try { embedding = await generateEmbedding(prompt); } catch { /* ignore */ } } await storeExactHashCache(promptHash, prompt, diagramType, bpmnXml, embedding); } catch { /* ignore */ } })(); }
+    if (!skipCache && !modelingAgentMode) { (async () => { try { let embedding: number[] | undefined; if (isSemanticCacheEnabled()) { try { embedding = await generateEmbedding(finalPromptToGenerate); } catch { /* ignore */ } } await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, embedding); } catch { /* ignore */ } })(); }
     await logPerformanceMetric({ function_name: 'generate-bpmn', cache_type: cacheType, model_used: modelUsed, prompt_length: promptLength, complexity_score: complexityScore, response_time_ms: Date.now() - startTime, cache_hit: cacheType !== 'none', similarity_score: similarityScore, error_occurred: false });
-    return new Response(JSON.stringify({ bpmnXml, cached: false, wasSummarized }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({
+      bpmnXml,
+      cached: false,
+      wasSimplified,
+      originalPromptLength: wasSimplified ? prompt.length : undefined,
+      simplifiedPromptLength: wasSimplified ? finalPromptToGenerate.length : undefined
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in generate-bpmn:', errorMessage);
