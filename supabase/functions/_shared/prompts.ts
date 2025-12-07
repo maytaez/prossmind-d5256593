@@ -9,13 +9,13 @@
  */
 function addBpmnRole(strictMode: boolean = false): string {
   let role = `Your role: You are an expert in business process modeling, familiar with BPMN 2.0 notation and common process constructs such as exclusive gateways (XOR), parallel gateways (AND), inclusive gateways (OR), loops, subprocesses, and event handling. Your task is to analyze textual descriptions of business processes and transform them into valid BPMN 2.0 XML models. When generating a model, be as precise as possible and capture all details of the process in the model.`;
-  
+
   if (strictMode) {
     role += `\n\nPlease create the process model strictly depending on the provided description, without using any domain knowledge you might have. You are not supposed to correct any information in the process, rather fully rely on the provided textual description.`;
   } else {
     role += `\n\nAlso act as the process owner and use your expertise and familiarity with the process context to fill in any missing knowledge when necessary.`;
   }
-  
+
   return role;
 }
 
@@ -194,8 +194,25 @@ function addProcessDescription(description: string): string {
  * Add code generation instructions
  * Similar to code_generation() in prompt_engineering.py
  */
-function addCodeGenerationInstructions(): string {
-  return `At the end of your response, provide a single BPMN 2.0 XML snippet (starting with '<?xml') that contains the complete, valid BPMN 2.0 XML. Return ONLY the XML, no markdown code fences, no explanations, no additional text.`;
+function addCodeGenerationInstructions(compactDI: boolean = false, noDI: boolean = false): string {
+  if (noDI) {
+    return `At the end of your response, provide a single BPMN 2.0 XML snippet (starting with '<?xml') that contains the complete, valid BPMN 2.0 XML.
+
+CRITICAL - NO DIAGRAM INTERCHANGE:
+- Generate ONLY the process structure (definitions, collaboration, processes, tasks, gateways, events, flows)
+- DO NOT include any bpmndi:BPMNDiagram, bpmndi:BPMNPlane, bpmndi:BPMNShape, or bpmndi:BPMNEdge elements
+- DO NOT include any dc:Bounds or di:waypoint elements
+- The visual layout will be generated automatically by the client
+- Focus on complete and accurate process logic only
+
+Return ONLY the XML, no markdown code fences, no explanations, no additional text.`;
+  }
+
+  const compactInstructions = compactDI
+    ? `\n\nIMPORTANT - COMPACT BPMN DI:\n- Use minimal waypoints (only 2 per edge when possible)\n- Use simple, grid-aligned coordinates (multiples of 50)\n- Minimize label positioning details\n- Keep bounds compact but readable\n- Prioritize completeness over perfect visual layout`
+    : '';
+
+  return `At the end of your response, provide a single BPMN 2.0 XML snippet (starting with '<?xml') that contains the complete, valid BPMN 2.0 XML. Return ONLY the XML, no markdown code fences, no explanations, no additional text.${compactInstructions}`;
 }
 
 /**
@@ -205,14 +222,18 @@ function addCodeGenerationInstructions(): string {
  * @param languageName - Human-readable language name (e.g., 'English', 'Spanish', etc.)
  * @param strictMode - If true, strictly follow description without domain knowledge
  * @param resourceAware - If true, include pool and lane information
+ * @param compactDI - If true, generate compact BPMN DI to reduce token usage
+ * @param noDI - If true, generate BPMN without any diagram interchange (client-side layout)
  */
 export function getBpmnSystemPrompt(
-  languageCode: string = 'en', 
+  languageCode: string = 'en',
   languageName: string = 'English',
   strictMode: boolean = false,
-  resourceAware: boolean = false
+  resourceAware: boolean = false,
+  compactDI: boolean = false,
+  noDI: boolean = false
 ): string {
-  const languageInstruction = languageCode !== 'en' 
+  const languageInstruction = languageCode !== 'en'
     ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
@@ -235,7 +256,7 @@ THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGL
   let prompt = addBpmnRole(strictMode);
   prompt += '\n\n' + addBpmnKnowledge(resourceAware);
   prompt += '\n\n' + addNegativePrompting();
-  prompt += '\n\n' + addCodeGenerationInstructions();
+  prompt += '\n\n' + addCodeGenerationInstructions(compactDI, noDI);
 
   // Add language instruction at the beginning for maximum visibility
   if (languageCode !== 'en') {
@@ -251,7 +272,7 @@ THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGL
  * @param languageName - Human-readable language name (e.g., 'English', 'Spanish', etc.)
  */
 export function getPidSystemPrompt(languageCode: string = 'en', languageName: string = 'English'): string {
-  const languageInstruction = languageCode !== 'en' 
+  const languageInstruction = languageCode !== 'en'
     ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
@@ -279,7 +300,7 @@ CRITICAL RULES:
 7. Return ONLY XML with 2-3 sentence summary before XML`;
 
   // Put language instruction at the beginning for maximum visibility
-  return languageCode !== 'en' 
+  return languageCode !== 'en'
     ? `${languageInstruction}\n\n${basePrompt}`
     : basePrompt;
 }
@@ -526,7 +547,7 @@ export function buildMessagesWithExamples(
       const languageInstruction = `
 
 ⚠️⚠️⚠️ CRITICAL: Generate ALL text in German (Deutsch). Use German labels like in the example above.`;
-      
+
       const messages: Array<{ role: string; content: string }> = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: germanExample.user },
@@ -535,9 +556,9 @@ export function buildMessagesWithExamples(
 
       // Add error explanations if available
       if (germanExample.errors) {
-        messages.push({ 
-          role: 'user', 
-          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}` 
+        messages.push({
+          role: 'user',
+          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}`
         });
       } else {
         messages.push({ role: 'user', content: userPrompt + languageInstruction });
@@ -585,9 +606,9 @@ DO NOT translate to English. DO NOT use English labels. Use ${languageName} for 
 
   // Add error explanations if available
   if ('errors' in example && example.errors) {
-    messages.push({ 
-      role: 'user', 
-      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}` 
+    messages.push({
+      role: 'user',
+      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}`
     });
   } else {
     messages.push({ role: 'user', content: userPrompt });

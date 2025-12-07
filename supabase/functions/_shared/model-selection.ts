@@ -65,21 +65,39 @@ export function selectModel(criteria: ModelSelectionCriteria): ModelSelectionRes
   // 2. Complexity score >= 7
   // 3. Very long prompts (3000+ chars) - likely complex modeling agent prompts
   // 4. Prompts with multiple complexity indicators
-  const useProModel = diagramType === 'pid' || 
-                      complexityScore >= 7 || 
-                      promptLength > 3000 ||
-                      (promptLength > 2000 && complexityScore >= 5);
+  const useProModel = diagramType === 'pid' ||
+    complexityScore >= 7 ||
+    promptLength > 3000 ||
+    (promptLength > 2000 && complexityScore >= 5);
 
   if (useProModel) {
+    // Dynamic token allocation based on complexity and prompt length
+    // Gemini 2.5 Pro supports up to 65,536 output tokens
+    // Scale from 16,384 (simple) to 65,536 (very complex)
+    let maxTokens = 16384; // Base allocation
+
+    // Increase tokens for very long prompts (likely complex diagrams)
+    if (promptLength > 5000) {
+      maxTokens = 65536; // Maximum for extremely complex diagrams
+    } else if (promptLength > 3500) {
+      maxTokens = 49152; // 3x base for very complex diagrams
+    } else if (promptLength > 2500) {
+      maxTokens = 32768; // 2x base for complex diagrams
+    } else if (complexityScore >= 10) {
+      maxTokens = 49152; // High complexity score
+    } else if (complexityScore >= 8) {
+      maxTokens = 32768; // Medium-high complexity
+    }
+
     return {
       model: 'google/gemini-2.5-pro',
-      maxTokens: 16384,
+      maxTokens,
       temperature: 0.3, // Lower temperature for Pro model (more deterministic)
       complexityScore,
-      reasoning: `Using Pro model: ${diagramType === 'pid' ? 'P&ID requires Pro' : 
-                  promptLength > 3000 ? `Very long prompt (${promptLength} chars)` :
-                  promptLength > 2000 && complexityScore >= 5 ? `Long prompt (${promptLength} chars) with complexity score ${complexityScore}` :
-                  `Complexity score ${complexityScore} >= 7`}`,
+      reasoning: `Using Pro model (${maxTokens} tokens): ${diagramType === 'pid' ? 'P&ID requires Pro' :
+        promptLength > 3000 ? `Very long prompt (${promptLength} chars)` :
+          promptLength > 2000 && complexityScore >= 5 ? `Long prompt (${promptLength} chars) with complexity score ${complexityScore}` :
+            `Complexity score ${complexityScore} >= 7`}`,
     };
   } else {
     return {
@@ -97,7 +115,7 @@ export function selectModel(criteria: ModelSelectionCriteria): ModelSelectionRes
  */
 export function analyzePrompt(prompt: string, diagramType: 'bpmn' | 'pid' = 'bpmn'): ModelSelectionCriteria {
   const promptLower = prompt.toLowerCase();
-  
+
   // Enhanced pattern matching for modeling agent mode prompts
   // These prompts are very prescriptive and mention many BPMN concepts
   const hasMultiplePools = /pool|swimlane|lane|participant/gi.test(prompt);
@@ -107,15 +125,15 @@ export function analyzePrompt(prompt: string, diagramType: 'bpmn' | 'pid' = 'bpm
   const hasErrorHandling = /error|exception|compensation|recovery|rollback|retry|boundary event/gi.test(prompt);
   const hasDataObjects = /data object|artifact|document|attachment|dataobject|datastore|annotation/gi.test(prompt);
   const hasMessageFlows = /message flow|message event|messageflow|intermediate.*event/gi.test(prompt);
-  
+
   // Detect modeling agent mode prompts (they contain specific markers)
   const isModelingAgentMode = /variant|modelling agent|modeling agent|complexity tier|intermediate tier|advanced tier|basic tier/gi.test(prompt);
-  
+
   // If it's a modeling agent mode prompt and mentions advanced/intermediate concepts, boost complexity
   const isAdvancedPrompt = isModelingAgentMode && (
     /advanced|intermediate|complex|multiple.*path|parallel.*branch|error.*handling|compliance|recovery/gi.test(prompt)
   );
-  
+
   return {
     promptLength: prompt.length,
     hasMultiplePools,
