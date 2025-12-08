@@ -43,6 +43,41 @@ Deno.serve(async (req) => {
     if (!imageBase64) {
       throw new Error('No image data provided');
     }
+
+    // SECURITY: Input validation - file size and type checks
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const estimatedSize = base64Data.length * 0.75; // Base64 is ~33% larger than binary
+    
+    if (estimatedSize > MAX_FILE_SIZE) {
+      console.error(`File too large: ${Math.round(estimatedSize / 1024 / 1024)}MB exceeds 10MB limit`);
+      return new Response(
+        JSON.stringify({ error: 'File too large. Maximum size is 10MB' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate file type
+    const allowedMimeTypes = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp',
+      'application/pdf', 'text/plain', 'text/csv'
+    ];
+    
+    let mimeType = 'unknown';
+    if (imageBase64.includes(':') && imageBase64.includes(';')) {
+      mimeType = imageBase64.split(';')[0].split(':')[1] || 'unknown';
+    }
+    
+    // Only validate MIME type if we can detect it (data URL format)
+    if (mimeType !== 'unknown' && !allowedMimeTypes.some(allowed => mimeType.startsWith(allowed.split('/')[0]))) {
+      console.error(`Invalid file type: ${mimeType}`);
+      return new Response(
+        JSON.stringify({ error: `Invalid file type: ${mimeType}. Allowed: images, PDFs, and text files` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Input validation passed: ${Math.round(estimatedSize / 1024)}KB, type: ${mimeType}`);
     
     console.log(`Processing ${diagramType.toUpperCase()} diagram`);
 

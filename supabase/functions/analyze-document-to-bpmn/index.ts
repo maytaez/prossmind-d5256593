@@ -157,6 +157,39 @@ serve(async (req) => {
       );
     }
 
+    // SECURITY: Input validation - file size limits
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (fileBase64) {
+      const base64Data = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
+      const estimatedSize = base64Data.length * 0.75;
+      
+      if (estimatedSize > MAX_FILE_SIZE) {
+        console.error(`File too large: ${Math.round(estimatedSize / 1024 / 1024)}MB exceeds 10MB limit`);
+        return new Response(
+          JSON.stringify({ error: 'File too large. Maximum size is 10MB' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log(`File size validation passed: ${Math.round(estimatedSize / 1024)}KB`);
+    }
+
+    // SECURITY: Validate file type
+    const allowedFileTypes = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'text/plain', 'text/csv'
+    ];
+    
+    if (fileType && !allowedFileTypes.some(allowed => fileType.startsWith(allowed.split('/')[0]) || fileType === allowed)) {
+      console.error(`Invalid file type: ${fileType}`);
+      return new Response(
+        JSON.stringify({ error: `Invalid file type: ${fileType}. Allowed: images, PDFs, Word documents, and text files` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) {
       throw new Error('Google API key not configured');
