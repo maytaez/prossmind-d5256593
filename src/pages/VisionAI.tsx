@@ -6,15 +6,19 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AnimatedTabs, AnimatedTabsList, AnimatedTabsTrigger, AnimatedTabsContent } from "@/components/ui/AnimatedTabs";
 import { Progress } from "@/components/ui/progress";
-import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon } from "lucide-react";
+import { Eye, Camera, Scan, Image as ImageIcon, Upload, FileText, ImageIcon as ImageFileIcon, Lock, LogIn } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { fileToBase64, shouldCompressImage } from "@/utils/image-compression";
 import { invokeFunction } from "@/utils/api-client";
 import { navigateWithSubdomain } from "@/utils/subdomain";
+import { User, Session } from "@supabase/supabase-js";
 
 const VisionAI = () => {
   const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -23,6 +27,27 @@ const VisionAI = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Check authentication status
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setIsAuthLoading(false);
+      }
+    );
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const isAuthenticated = !!user;
 
   // Subscribe to job status updates with polling fallback
   useEffect(() => {
@@ -198,7 +223,18 @@ const VisionAI = () => {
   }, [currentJobId, diagramType, selectedFile]);
 
   const handleGetStarted = () => {
+    if (!isAuthenticated) {
+      toast.error("Authentication required", {
+        description: "Please sign in to access Vision AI features"
+      });
+      navigateWithSubdomain(navigate, '/auth');
+      return;
+    }
     setShowUpload(true);
+  };
+
+  const handleSignIn = () => {
+    navigateWithSubdomain(navigate, '/auth');
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,9 +470,22 @@ const VisionAI = () => {
                   </div>
                 </li>
               </ul>
-              <Button size="lg" className="mt-6" onClick={handleGetStarted}>
-                Start Free Trial
-              </Button>
+              {isAuthenticated ? (
+                <Button size="lg" className="mt-6" onClick={handleGetStarted}>
+                  Start Free Trial
+                </Button>
+              ) : (
+                <div className="mt-6 space-y-3">
+                  <Button size="lg" onClick={handleSignIn} className="w-full sm:w-auto">
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Sign In to Access
+                  </Button>
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Vision AI requires authentication
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="bg-gradient-to-br from-primary/10 to-accent/10 rounded-2xl p-12 text-center">
@@ -453,9 +502,22 @@ const VisionAI = () => {
             <p className="text-xl text-hero-foreground/80 mb-8 max-w-2xl mx-auto">
               Join thousands of companies already using ProssMind Vision AI to transform their automation workflows
             </p>
-            <Button size="lg" variant="secondary" className="text-lg px-8" onClick={handleGetStarted}>
-              Get Started Now
-            </Button>
+            {isAuthenticated ? (
+              <Button size="lg" variant="secondary" className="text-lg px-8" onClick={handleGetStarted}>
+                Get Started Now
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <Button size="lg" variant="secondary" className="text-lg px-8" onClick={handleSignIn}>
+                  <LogIn className="h-5 w-5 mr-2" />
+                  Sign In to Get Started
+                </Button>
+                <p className="text-sm text-hero-foreground/60 flex items-center justify-center gap-2">
+                  <Lock className="h-4 w-4" />
+                  Authentication required for Vision AI access
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </main>
