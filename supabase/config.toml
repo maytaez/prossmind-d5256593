@@ -1,25 +1,34 @@
 project_id = "lnxbvkcggoyfmpfthhhk"
 
 [functions.generate-bpmn]
-verify_jwt = false
+verify_jwt = true
 
 [functions.speech-to-text]
-verify_jwt = false
+verify_jwt = true
 
 [functions.vision-to-bpmn]
-verify_jwt = false
+verify_jwt = true
 
 [functions.chatbot]
-verify_jwt = false
+verify_jwt = true
 
 [functions.refine-bpmn]
-verify_jwt = false
+verify_jwt = true
 
 [functions.analyze-document-to-bpmn]
-verify_jwt = false
+verify_jwt = true
 
 [functions.screen-recording-to-bpmn]
-verify_jwt = false
+verify_jwt = true
 
 [functions.refine-dmn]
+verify_jwt = true
+
+[functions.generate-dmn]
+verify_jwt = true
+
+[functions.bottleneck-metrics]
+verify_jwt = true
+
+[functions.track-visitor]
 verify_jwt = false
