@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { generateFingerprint } from '@/utils/browser-fingerprint';
 
 const VisitorTracker = () => {
   const location = useLocation();
@@ -8,6 +9,9 @@ const VisitorTracker = () => {
   useEffect(() => {
     const trackPageVisit = async () => {
       try {
+        // Generate unique browser fingerprint
+        const fingerprint = await generateFingerprint();
+        
         // Get or create session ID
         let sessionId = sessionStorage.getItem('visitor_session_id');
         if (!sessionId) {
@@ -23,6 +27,21 @@ const VisitorTracker = () => {
 
         // Get referrer
         const referrer = document.referrer || null;
+        
+        // Get timezone-based country estimation
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const estimatedCountry = getCountryFromTimezone(timezone);
+
+        // Check if this fingerprint already exists for this country
+        const { data: existingVisitor } = await supabase
+          .from('visitor_tracking')
+          .select('id, fingerprint')
+          .eq('fingerprint', fingerprint)
+          .eq('country', estimatedCountry)
+          .limit(1)
+          .maybeSingle();
+
+        const isUniqueVisitor = !existingVisitor;
 
         // Track the page visit
         const { error } = await supabase.from('visitor_tracking').insert({
@@ -33,11 +52,11 @@ const VisitorTracker = () => {
           device_type: deviceType,
           browser: browser,
           os: os,
-          // IP address and geolocation will be null for now
-          // These would typically be added server-side for accuracy
-          ip_address: null,
-          country: null,
+          fingerprint: fingerprint,
+          is_unique_visitor: isUniqueVisitor,
+          country: estimatedCountry,
           city: null,
+          ip_address: null,
         });
 
         if (error) {
@@ -52,6 +71,18 @@ const VisitorTracker = () => {
   }, [location.pathname]);
 
   return null; // This component doesn't render anything
+};
+
+// Get country from timezone (rough estimation)
+const getCountryFromTimezone = (timezone: string): string => {
+  const tzToCountry: Record<string, string> = {
+    'America/New_York': 'US', 'America/Los_Angeles': 'US', 'America/Chicago': 'US',
+    'Europe/London': 'UK', 'Europe/Paris': 'FR', 'Europe/Berlin': 'DE',
+    'Asia/Tokyo': 'JP', 'Asia/Shanghai': 'CN', 'Asia/Kolkata': 'IN',
+    'Australia/Sydney': 'AU', 'America/Sao_Paulo': 'BR', 'America/Toronto': 'CA',
+    'Asia/Singapore': 'SG', 'Asia/Dubai': 'AE', 'Europe/Moscow': 'RU',
+  };
+  return tzToCountry[timezone] || timezone.split('/')[0] || 'Unknown';
 };
 
 // Helper function to detect device type

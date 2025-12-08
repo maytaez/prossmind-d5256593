@@ -645,8 +645,10 @@ export type Database = {
           country: string | null
           created_at: string
           device_type: string | null
+          fingerprint: string | null
           id: string
           ip_address: string | null
+          is_unique_visitor: boolean | null
           os: string | null
           page_path: string
           referrer: string | null
@@ -659,8 +661,10 @@ export type Database = {
           country?: string | null
           created_at?: string
           device_type?: string | null
+          fingerprint?: string | null
           id?: string
           ip_address?: string | null
+          is_unique_visitor?: boolean | null
           os?: string | null
           page_path: string
           referrer?: string | null
@@ -673,8 +677,10 @@ export type Database = {
           country?: string | null
           created_at?: string
           device_type?: string | null
+          fingerprint?: string | null
           id?: string
           ip_address?: string | null
+          is_unique_visitor?: boolean | null
           os?: string | null
           page_path?: string
           referrer?: string | null
@@ -685,7 +691,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      unique_visitors_by_country: {
+        Row: {
+          country: string | null
+          first_visit: string | null
+          last_visit: string | null
+          total_visits: number | null
+          unique_visitors: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       clean_old_cache_entries: {
