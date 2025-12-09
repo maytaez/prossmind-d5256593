@@ -34,7 +34,7 @@ const featuresDetailed = [
     icon: Shield,
     title: "Enterprise Security",
     description: "Bank-level security with end-to-end encryption, ensuring your data and processes are always protected.",
-    benefits: ["256-bit encryption", "SOC 2 compliant", "GDPR ready"],
+    benefits: ["256-bit encryption", "End-to-end encryption", "Secure data storage"],
   },
   {
     icon: Gauge,

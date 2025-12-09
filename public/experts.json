@@ -1,0 +1,77 @@
+{
+    "title": "Experts Who Contributed",
+    "subtitle": "Professionals who have contributed their expertise to our projects.",
+    "lastUpdated": "2025-12-09",
+    "items": [
+        {
+            "id": "expert-1",
+            "name": "Prof. Dr.René Zeier",
+            "title": "Professor",
+            "description": "Teaching Innovation & Excellence Awards 2019, 14th European Conference on Innovation",
+            "photoUrl": "https://cdn.prossmind.com/experts/prof_zeier.jpeg",
+            "linkedInUrl": "",
+            "priority": 1,
+            "active": true
+        },
+        {
+            "id": "expert-2",
+            "name": "Dr. Jan Kraner",
+            "title": "PhD in Business Competitiveness",
+            "description": "PhD in Business Competitiveness & Economic Development, Leiter B.Sc. Corporate Development",
+            "photoUrl": "https://cdn.prossmind.com/experts/dr_kraner.jpeg",
+            "linkedInUrl": "",
+            "priority": 2,
+            "active": true
+        },
+        {
+            "id": "expert-3",
+            "name": "Prof. Dr. Jens Meissner",
+            "title": "Professor",
+            "description": "Organisation und komplexe Organisationsformen, Risk Management und Resilienz",
+            "photoUrl": "https://cdn.prossmind.com/experts/prof_meissner.jpeg",
+            "linkedInUrl": "",
+            "priority": 3,
+            "active": true
+        },
+        {
+            "id": "expert-4",
+            "name": "Christina Antonie Reh",
+            "title": "Co-Founder",
+            "description": "Co-Founder, baybies GmbH & Alko Pet Foods GmbH, Post-Doc HSLU",
+            "photoUrl": "https://cdn.prossmind.com/experts/christina_reh.jpeg",
+            "linkedInUrl": "",
+            "priority": 4,
+            "active": true
+        },
+        {
+            "id": "expert-5",
+            "name": "Dr. Ann-Kathrin Seemann",
+            "title": "Senior Project Manager",
+            "description": "Senior Projektleiterin Econcept AG, Studiengangleitung IBA HSLU",
+            "photoUrl": "https://cdn.prossmind.com/experts/dr_seemann.jpeg",
+            "linkedInUrl": "",
+            "priority": 5,
+            "active": true
+        },
+        {
+            "id": "expert-6",
+            "name": "Prof. Dr. Oliver Kessler",
+            "title": "Professor",
+            "description": "Führung, Change Management, Beratung, Konfliktmanagement, Moderation, Agile Didaktik",
+            "photoUrl": "https://cdn.prossmind.com/experts/prof_kessler.jpeg",
+            "linkedInUrl": "",
+            "priority": 6,
+            "active": true
+        },
+        {
+            "id": "expert-7",
+            "name": "Prof. Dr. Tim Weingärtner",
+            "title": "Professor",
+            "description": "Co-Head of the Information Systems Research Lab and a Professor at the Lucerne School of Computer Science and Information Technology.",
+            "photoUrl": "https://cdn.prossmind.com/experts/prof_weingartner.jpeg",
+            "linkedInUrl": "",
+            "priority": 7,
+            "active": true
+        }
+    ]
+}

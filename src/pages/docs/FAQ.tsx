@@ -22,7 +22,7 @@ const FAQ = () => {
     },
     {
       question: "Is my data secure?",
-      answer: "Yes, ProssMind is GDPR compliant and all data is encrypted. We never share your data with third parties.",
+      answer: "Yes, all data is encrypted and securely stored. We never share your data with third parties.",
     },
     {
       question: "Can I integrate with SAP Signavio?",

@@ -1,4 +1,4 @@
-import { Shield, Server, Globe } from "lucide-react";
+import { Server } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   Popover,
@@ -20,20 +20,6 @@ const TrustStrip = () => {
       label: "Swiss Hosted",
       title: "Swiss Hosted Infrastructure",
       description: "All data is hosted in Switzerland, ensuring maximum privacy and data sovereignty. Our infrastructure complies with Swiss data protection laws.",
-      link: "#",
-    },
-    {
-      icon: Shield,
-      label: "GDPR Compliant",
-      title: "GDPR Compliance",
-      description: "We are fully compliant with the General Data Protection Regulation (GDPR). Your data is processed with the highest standards of privacy and security.",
-      link: "#",
-    },
-    {
-      icon: Globe,
-      label: "SOC 2 Pending",
-      title: "SOC 2 Certification",
-      description: "We are currently undergoing SOC 2 Type II certification to demonstrate our commitment to security, availability, and confidentiality.",
       link: "#",
     },
   ];

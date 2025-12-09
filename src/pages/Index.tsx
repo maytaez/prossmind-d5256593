@@ -4,8 +4,13 @@ import { User } from "@supabase/supabase-js";
 import Navigation from "@/components/Navigation";
 import Hero from "@/components/Hero";
 import DataStory from "@/components/DataStory";
+import TargetGroups from "@/components/TargetGroups";
+import ProblemsWeSolve from "@/components/ProblemsWeSolve";
+import CostSavings from "@/components/CostSavings";
 import FeatureCards from "@/components/FeatureCards";
 import ProductTiers from "@/components/ProductTiers";
+import PartnersAdvisors from "@/components/PartnersAdvisors";
+import ExpertsSection from "@/components/ExpertsSection";
 import ChatBot from "@/components/ChatBot";
 import Footer from "@/components/Footer";
 import TrustStrip from "@/components/TrustStrip";
@@ -54,8 +59,13 @@ const Index = () => {
       <TrustStrip />
       <Hero />
       <DataStory />
+      <TargetGroups />
+      <ProblemsWeSolve />
+      <CostSavings />
       <FeatureCards />
       <ProductTiers />
+      <PartnersAdvisors />
+      <ExpertsSection />
       <ChatBot />
       <Footer />
       <CookieConsent />

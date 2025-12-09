@@ -1,4 +1,4 @@
-import { Shield, MapPin, CheckCircle2 } from "lucide-react";
+import { MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useScrollReveal, staggerContainerVariants, staggerItemVariants } from "@/hooks/useScrollReveal";
@@ -124,18 +124,8 @@ const Footer = () => {
         {/* Compliance Badges */}
         <div className="flex flex-wrap items-center gap-4 justify-center md:justify-start mb-8 pb-8 border-b border-border">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-            <Shield className="h-4 w-4 text-primary" aria-hidden="true" />
-            <span className="text-sm font-medium text-foreground">GDPR</span>
-          </div>
-          
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
             <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
             <span className="text-sm font-medium text-foreground">Swiss Hosted</span>
-          </div>
-          
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted border border-border">
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <span className="text-sm font-medium text-muted-foreground">SOC 2 pending</span>
           </div>
         </div>
 
