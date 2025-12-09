@@ -1,0 +1,57 @@
+{
+    "title": "Partners & Advisors",
+    "subtitle": "Trusted by leading Swiss institutions and innovation partners.",
+    "lastUpdated": "2025-12-07",
+    "items": [
+        {
+            "id": "itz",
+            "name": "ITZ Innovation Transfer Central Switzerland",
+            "role": "Innovation Partner",
+            "type": "partner",
+            "logoUrl": "https://cdn.prossmind.com/logos/logo-ITZ-600.png",
+            "websiteUrl": "https://itz.ch",
+            "priority": 1,
+            "active": true
+        },
+        {
+            "id": "ibt-uri",
+            "name": "IBT Uri",
+            "role": "Business & Technology Partner",
+            "type": "partner",
+            "logoUrl": "https://cdn.prossmind.com/logos/logo-ibt-uri-150.png",
+            "websiteUrl": "https://ibt-uri.ch",
+            "priority": 2,
+            "active": true
+        },
+        {
+            "id": "hslu",
+            "name": "Hochschule Luzern",
+            "role": "Academic Partner",
+            "type": "partner",
+            "logoUrl": "https://cdn.prossmind.com/logos/hslu%20logo.svg",
+            "websiteUrl": "https://www.hslu.ch/de-ch/",
+            "priority": 3,
+            "active": true
+        },
+        {
+            "id": "smart-up",
+            "name": "Smart-up, Hochschule Luzern",
+            "role": "Startup Support",
+            "type": "advisor",
+            "logoUrl": "https://cdn.prossmind.com/logos/hslu%20logo.svg",
+            "websiteUrl": "https://www.hslu.ch/de-ch/hochschule-luzern/ueber-uns/smart-up/",
+            "priority": 4,
+            "active": true
+        },
+        {
+            "id": "venture",
+            "name": "Venture",
+            "role": "Startup Competition & Network",
+            "type": "advisor",
+            "logoUrl": "https://cdn.prossmind.com/logos/venture_logo_RGB_Homebutton_edited.avif",
+            "websiteUrl": "https://www.venture.ch",
+            "priority": 5,
+            "active": true
+        }
+    ]
+}

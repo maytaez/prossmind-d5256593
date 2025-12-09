@@ -88,7 +88,7 @@ const Hero = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={getReducedMotionTransition(prefersReducedMotion) || { delay: 1.1, duration: 0.6 }}
             >
-              Swiss AI Process Intelligence · GDPR Compliant · Locally Hosted.
+              Transform complex processes into intelligent workflows with AI-powered automation.
             </motion.p>
 
             <motion.div 

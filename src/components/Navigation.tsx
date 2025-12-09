@@ -139,21 +139,23 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
   const isAppSubdomain = subdomainType === 'app';
   
   // App subdomain navigation items
-  const appNavItems = [
+  const appNavItemsAll = [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { name: "Projects", path: "/projects", icon: FolderKanban },
     { name: "Templates", path: "/templates", icon: FileText },
     { name: "Vision AI", path: "/vision-ai", icon: Eye },
   ];
   
-  // Main domain navigation items
+  // Main domain navigation items (Vision AI not included here)
   const mainNavItems = [
     { name: "Features", path: "/features" },
-    { name: "Vision AI", path: "/vision-ai" },
     { name: "Pricing", path: "/pricing" },
     { name: "Documentation", path: getSubdomainUrl('docs'), external: true },
     { name: "Contact", path: "/contact" },
   ];
+  
+  // Filter out Vision AI for non-signed-in users in app subdomain
+  const appNavItems = user ? appNavItemsAll : appNavItemsAll.filter(item => item.name !== "Vision AI");
   
   const navItems = isAppSubdomain ? appNavItems : mainNavItems;
 
