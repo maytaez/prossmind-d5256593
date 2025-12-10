@@ -148,24 +148,26 @@ const CostSavings = () => {
                 </motion.div>
 
                 <CardHeader className="relative z-10">
-                  <motion.div
-                    className={`w-14 h-14 rounded-xl bg-gradient-to-br ${saving.bgGradient} flex items-center justify-center mb-4 tech-glow`}
-                    animate={prefersReducedMotion ? { rotate: 0 } : {
-                      rotate: [-2, 2, -2],
-                    }}
-                    transition={getReducedMotionTransition(prefersReducedMotion) || {
-                      duration: 4,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    whileHover={prefersReducedMotion ? {} : {
-                      scale: 1.15,
-                      rotate: 15,
-                    }}
-                  >
-                    <saving.icon className={`h-7 w-7 ${saving.color}`} />
-                  </motion.div>
-                  <CardTitle className="text-xl mb-2">{saving.title}</CardTitle>
+                  <div className="flex items-center gap-4 mb-4">
+                    <motion.div
+                      className={`w-14 h-14 rounded-xl bg-gradient-to-br ${saving.bgGradient} flex items-center justify-center tech-glow`}
+                      animate={prefersReducedMotion ? { rotate: 0 } : {
+                        rotate: [-2, 2, -2],
+                      }}
+                      transition={getReducedMotionTransition(prefersReducedMotion) || {
+                        duration: 4,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                      whileHover={prefersReducedMotion ? {} : {
+                        scale: 1.15,
+                        rotate: 15,
+                      }}
+                    >
+                      <saving.icon className={`h-7 w-7 ${saving.color}`} />
+                    </motion.div>
+                    <CardTitle className="text-2xl">{saving.title}</CardTitle>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="relative z-10 space-y-4">
@@ -185,22 +187,6 @@ const CostSavings = () => {
               </Card>
             </motion.div>
           ))}
-        </motion.div>
-
-        {/* Call-to-action footer */}
-        <motion.div
-          className="mt-16 text-center"
-          initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.6, delay: 0.4 }}
-        >
-          <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            Join hundreds of organizations transforming their operations with AI-powered process intelligence.
-            <span className="block mt-2 text-primary font-semibold">
-              Start seeing results in weeks, not months.
-            </span>
-          </p>
         </motion.div>
       </div>
     </motion.section>

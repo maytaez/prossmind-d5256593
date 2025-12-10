@@ -7,7 +7,6 @@ import DataStory from "@/components/DataStory";
 import TargetGroups from "@/components/TargetGroups";
 import ProblemsWeSolve from "@/components/ProblemsWeSolve";
 import CostSavings from "@/components/CostSavings";
-import FeatureCards from "@/components/FeatureCards";
 import ProductTiers from "@/components/ProductTiers";
 import PartnersAdvisors from "@/components/PartnersAdvisors";
 import ExpertsSection from "@/components/ExpertsSection";
@@ -62,10 +61,9 @@ const Index = () => {
       <TargetGroups />
       <ProblemsWeSolve />
       <CostSavings />
-      <FeatureCards />
-      <ProductTiers />
       <PartnersAdvisors />
       <ExpertsSection />
+      <ProductTiers />
       <ChatBot />
       <Footer />
       <CookieConsent />

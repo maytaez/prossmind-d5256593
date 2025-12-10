@@ -91,45 +91,47 @@ const FeatureCards = () => {
                 </motion.div>
 
                 <CardHeader className="flex-shrink-0 relative z-10">
-                  <motion.div 
-                    className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-6 tech-glow relative"
-                    animate={prefersReducedMotion ? { rotate: 0 } : {
-                      rotate: [-2, 2, -2],
-                    }}
-                    transition={getReducedMotionTransition(prefersReducedMotion) || {
-                      duration: 4,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    whileHover={prefersReducedMotion ? {} : { 
-                      scale: 1.15,
-                      rotate: 15,
-                      filter: "brightness(1.3)",
-                    }}
-                  >
-                    <motion.div
-                      whileHover={prefersReducedMotion ? {} : { scale: 1.2 }}
-                      transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.2 }}
-                      style={{
-                        filter: "drop-shadow(0 0 20px hsl(var(--primary)))",
+                  <div className="flex items-center gap-4 mb-4">
+                    <motion.div 
+                      className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center tech-glow relative"
+                      animate={prefersReducedMotion ? { rotate: 0 } : {
+                        rotate: [-2, 2, -2],
                       }}
-                    >
-                      <feature.icon className="h-7 w-7 text-primary" />
-                    </motion.div>
-                    <motion.div
-                      className="absolute inset-0 rounded-xl bg-primary/20 blur-xl"
-                      animate={prefersReducedMotion ? { scale: 1, opacity: 0 } : { 
-                        scale: [1, 1.3, 1],
-                        opacity: [0, 0.8, 0],
-                      }}
-                      transition={getReducedMotionTransition(prefersReducedMotion) || { 
-                        duration: 1.5,
+                      transition={getReducedMotionTransition(prefersReducedMotion) || {
+                        duration: 4,
                         repeat: Infinity,
                         ease: "easeInOut",
                       }}
-                    />
-                  </motion.div>
-                  <CardTitle className="text-2xl mb-2">{feature.title}</CardTitle>
+                      whileHover={prefersReducedMotion ? {} : { 
+                        scale: 1.15,
+                        rotate: 15,
+                        filter: "brightness(1.3)",
+                      }}
+                    >
+                      <motion.div
+                        whileHover={prefersReducedMotion ? {} : { scale: 1.2 }}
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.2 }}
+                        style={{
+                          filter: "drop-shadow(0 0 20px hsl(var(--primary)))",
+                        }}
+                      >
+                        <feature.icon className="h-7 w-7 text-primary" />
+                      </motion.div>
+                      <motion.div
+                        className="absolute inset-0 rounded-xl bg-primary/20 blur-xl"
+                        animate={prefersReducedMotion ? { scale: 1, opacity: 0 } : { 
+                          scale: [1, 1.3, 1],
+                          opacity: [0, 0.8, 0],
+                        }}
+                        transition={getReducedMotionTransition(prefersReducedMotion) || { 
+                          duration: 1.5,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                        }}
+                      />
+                    </motion.div>
+                    <CardTitle className="text-2xl">{feature.title}</CardTitle>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex-grow flex flex-col relative z-10">
                   <CardDescription className="text-base leading-relaxed break-words overflow-visible min-h-0">
