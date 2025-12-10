@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { AnimatedButton } from "@/components/ui/AnimatedButton";
-import { ArrowRight, Sparkles, ChevronRight } from "lucide-react";
+import { ArrowRight, Sparkles, ChevronRight, Quote } from "lucide-react";
 import heroMindProcess from "@/assets/hero-mind-process.jpg";
 import { motion, useScroll, useTransform } from "framer-motion";
 import ParticleBackground from "@/components/animations/ParticleBackground";
@@ -11,6 +11,15 @@ import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReduced
 import { useRef, useEffect, useState } from "react";
 import { navigateToApp } from "@/utils/subdomain";
 import { supabase } from "@/integrations/supabase/client";
+
+const testimonials = [
+  {
+    quote: "What used to take days now takes minutes. The AI-powered BPMN generation is remarkably intuitive and incredibly accurate."
+  },
+  {
+    quote: "Finally, a tool that makes process modeling accessible to everyone. The ease of use and speed are unmatched."
+  }
+];
 
 const Hero = () => {
   const prefersReducedMotion = useReducedMotion();
@@ -214,6 +223,74 @@ const Hero = () => {
             </motion.div>
           </motion.div>
         </div>
+      </div>
+
+      {/* Testimonials Section */}
+      <div className="container mx-auto px-8 md:px-12 pb-16 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.2, duration: 0.8 }}
+          className="text-center mb-12"
+        >
+          <h2 className="text-3xl md:text-4xl font-bold mb-3 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            Trusted by Industry Leaders
+          </h2>
+          <p className="text-foreground/70 dark:text-foreground/60 text-lg">
+            See what people are saying
+          </p>
+        </motion.div>
+
+        {/* Testimonials Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          {testimonials.map((testimonial, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.4 + index * 0.15, duration: 0.6 }}
+              whileHover={prefersReducedMotion ? {} : { y: -8, scale: 1.02 }}
+              className="group relative"
+            >
+              <div className="relative h-full p-8 rounded-xl bg-gradient-to-br from-card/80 to-card/40 dark:from-card/60 dark:to-card/30 backdrop-blur-sm border border-border/50 dark:border-border/30 shadow-lg hover:shadow-xl transition-all duration-300">
+                {/* Quote Icon */}
+                <div className="absolute -top-3 -left-3 w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Quote className="h-6 w-6 text-primary-foreground" />
+                </div>
+
+                {/* Decorative gradient orb */}
+                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 dark:bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/20 dark:group-hover:bg-primary/10 transition-all duration-500" />
+
+                {/* Quote Text */}
+                <blockquote className="relative z-10 mt-4">
+                  <p className="text-foreground/80 dark:text-foreground/70 leading-relaxed italic text-lg">
+                    "{testimonial.quote}"
+                  </p>
+                </blockquote>
+
+                {/* Hover effect border */}
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-primary/0 via-primary/0 to-primary/0 group-hover:from-primary/10 group-hover:via-primary/5 group-hover:to-transparent transition-all duration-500 pointer-events-none" />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      {/* Call to Action Section */}
+      <div className="container mx-auto px-8 md:px-12 pb-20 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.8, duration: 0.8 }}
+          className="text-center max-w-3xl mx-auto"
+        >
+          <p className="text-base md:text-lg text-foreground/80 dark:text-foreground/70 leading-relaxed mb-3">
+            Join hundreds of organizations transforming their operations with AI-powered process intelligence.
+          </p>
+          <p className="text-lg md:text-xl font-bold bg-gradient-to-r from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent">
+            Start seeing results in weeks, not months.
+          </p>
+        </motion.div>
       </div>
 
       {/* Bottom gradient fade */}

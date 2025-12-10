@@ -124,24 +124,26 @@ const ProblemsWeSolve = () => {
                 </motion.div>
 
                 <CardHeader className="relative z-10">
-                  <motion.div
-                    className={`w-14 h-14 rounded-xl bg-gradient-to-br ${problem.bgGradient} flex items-center justify-center mb-4 tech-glow`}
-                    animate={prefersReducedMotion ? { rotate: 0 } : {
-                      rotate: [-2, 2, -2],
-                    }}
-                    transition={getReducedMotionTransition(prefersReducedMotion) || {
-                      duration: 4,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    whileHover={prefersReducedMotion ? {} : {
-                      scale: 1.15,
-                      rotate: 15,
-                    }}
-                  >
-                    <problem.icon className={`h-7 w-7 ${problem.color}`} />
-                  </motion.div>
-                  <CardTitle className="text-xl mb-2">{problem.title}</CardTitle>
+                  <div className="flex items-center gap-4 mb-4">
+                    <motion.div
+                      className={`w-14 h-14 rounded-xl bg-gradient-to-br ${problem.bgGradient} flex items-center justify-center tech-glow`}
+                      animate={prefersReducedMotion ? { rotate: 0 } : {
+                        rotate: [-2, 2, -2],
+                      }}
+                      transition={getReducedMotionTransition(prefersReducedMotion) || {
+                        duration: 4,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                      whileHover={prefersReducedMotion ? {} : {
+                        scale: 1.15,
+                        rotate: 15,
+                      }}
+                    >
+                      <problem.icon className={`h-7 w-7 ${problem.color}`} />
+                    </motion.div>
+                    <CardTitle className="text-xl">{problem.title}</CardTitle>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="relative z-10 space-y-4">
