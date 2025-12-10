@@ -2,6 +2,8 @@ project_id = "lnxbvkcggoyfmpfthhhk"
 
 [functions.generate-bpmn]
 verify_jwt = true
+max_body_size = "2mb"
+request_timeout = 150
 
 [functions.speech-to-text]
 verify_jwt = true
