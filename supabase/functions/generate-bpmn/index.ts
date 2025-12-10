@@ -171,46 +171,73 @@ Deno.serve(async (req) => {
     let wasSplit = false;
     let subPrompts: string[] = [];
 
-    if (!modelingAgentMode && promptLength > 1500) {
-      console.log('[Prompt Analysis] Analyzing complexity...');
-      const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
+    // Only analyze if not in modeling agent mode and prompt is reasonably long
+    // Lowered threshold to catch complex prompts earlier
+    if (!modelingAgentMode && promptLength > 1200) {
+      console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt...`);
+      const analysisStartTime = Date.now();
 
-      if (analysis.recommendation === 'split') {
-        // Very complex - split into multiple sub-prompts
-        console.log(`[Prompt Analysis] Splitting prompt (complexity: ${analysis.complexity.score})`);
-        subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY);
-        wasSplit = true;
+      try {
+        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
+        const analysisTime = Date.now() - analysisStartTime;
+        console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation}`);
 
-        // Return sub-prompts to client for multi-diagram generation
-        return new Response(JSON.stringify({
-          requiresSplit: true,
-          subPrompts,
-          analysis: {
-            complexity: analysis.complexity,
-            reasoning: analysis.reasoning
-          },
-          message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        if (analysis.recommendation === 'split') {
+          // Very complex - split into multiple sub-prompts
+          console.log(`[Prompt Analysis] Splitting prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`);
+          const splitStartTime = Date.now();
 
-      } else if (analysis.recommendation === 'simplify') {
-        // Moderately complex - simplify
-        console.log(`[Prompt Analysis] Simplifying prompt (complexity: ${analysis.complexity.score})`);
+          // If analysis already provided sub-prompts, use them
+          if (analysis.subPrompts && analysis.subPrompts.length > 0) {
+            subPrompts = analysis.subPrompts;
+          } else {
+            subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY);
+          }
 
-        if (analysis.simplifiedPrompt) {
-          finalPromptToGenerate = analysis.simplifiedPrompt;
+          const splitTime = Date.now() - splitStartTime;
+          console.log(`[Prompt Analysis] Split into ${subPrompts.length} sub-prompts in ${splitTime}ms`);
+          wasSplit = true;
+
+          // Return sub-prompts to client for multi-diagram generation
+          return new Response(JSON.stringify({
+            requiresSplit: true,
+            subPrompts,
+            analysis: {
+              complexity: analysis.complexity,
+              reasoning: analysis.reasoning
+            },
+            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } else if (analysis.recommendation === 'simplify') {
+          // Moderately complex - simplify
+          console.log(`[Prompt Analysis] Simplifying prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`);
+          const simplifyStartTime = Date.now();
+
+          if (analysis.simplifiedPrompt) {
+            finalPromptToGenerate = analysis.simplifiedPrompt;
+          } else {
+            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY);
+          }
+
+          const simplifyTime = Date.now() - simplifyStartTime;
+          wasSimplified = true;
+          promptLength = finalPromptToGenerate.length;
+          console.log(`[Prompt Analysis] Simplified in ${simplifyTime}ms: ${prompt.length} → ${finalPromptToGenerate.length} chars`);
         } else {
-          finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY);
+          console.log(`[Prompt Analysis] Complexity acceptable (score: ${analysis.complexity.score}), generating directly`);
         }
-
-        wasSimplified = true;
-        promptLength = finalPromptToGenerate.length;
-        console.log(`[Prompt Analysis] Simplified: ${prompt.length} → ${finalPromptToGenerate.length} chars`);
-      } else {
-        console.log(`[Prompt Analysis] Complexity acceptable (score: ${analysis.complexity.score}), generating directly`);
+      } catch (error) {
+        console.error('[Prompt Analysis] Analysis failed, proceeding with original prompt:', error);
+        // Continue with original prompt if analysis fails
       }
+    } else if (modelingAgentMode) {
+      console.log('[Prompt Analysis] Skipping analysis (modeling agent mode)');
+    } else {
+      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars)`);
     }
 
     let promptHash: string;
