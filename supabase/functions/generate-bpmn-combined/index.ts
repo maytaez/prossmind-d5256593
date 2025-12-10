@@ -188,23 +188,49 @@ async function combineSubDiagrams(
 ): Promise<string> {
     console.log(`[Combine] Merging ${subDiagrams.length} sub-diagrams`);
 
-    // Simplified combine prompt for faster processing
-    const combinePrompt = `Combine these ${subDiagrams.length} BPMN diagrams into ONE cohesive diagram.
+    // Enhanced combine prompt that explicitly requests DI (diagram interchange)
+    const combinePrompt = `You are a BPMN 2.0 expert. Combine these ${subDiagrams.length} BPMN sub-diagrams into ONE complete, valid BPMN 2.0 XML diagram.
+
+CRITICAL REQUIREMENTS:
+1. Include COMPLETE diagram interchange (bpmndi:BPMNDiagram) with:
+   - bpmndi:BPMNShape for EVERY element (tasks, events, gateways) with x, y, width, height
+   - bpmndi:BPMNEdge for EVERY sequence flow with waypoints
+2. Arrange elements in a logical left-to-right flow
+3. Use proper spacing (150px between elements horizontally, 100px vertically)
+4. Ensure all element IDs are unique (use _combined_1, _combined_2 suffixes)
+5. Connect the end of one sub-process to the start of the next
+6. Fix any invalid connections (e.g., no flows FROM end events)
 
 ORIGINAL WORKFLOW:
-${originalPrompt.substring(0, 500)}...
+${originalPrompt.substring(0, 400)}
 
-SUB-DIAGRAMS:
-${subDiagrams.map((xml, i) => `\n=== Diagram ${i + 1} ===\n${xml.substring(0, 1000)}...\n`).join('\n')}
+SUB-DIAGRAMS TO COMBINE:
+${subDiagrams.map((xml, i) => `\n--- Sub-Diagram ${i + 1} ---\n${xml.substring(0, 800)}\n`).join('\n')}
 
-INSTRUCTIONS:
-1. Merge all elements into a single <bpmn:process>
-2. Connect sub-processes with sequence flows
-3. Ensure unique IDs (add suffix like _combined_1, _combined_2)
-4. Keep it simple - focus on the main flow
-5. Return ONLY valid BPMN 2.0 XML
+EXAMPLE STRUCTURE (you must include similar DI for ALL elements):
+<bpmn:definitions ...>
+  <bpmn:process id="Process_1">
+    <bpmn:startEvent id="Start_1"/>
+    <bpmn:task id="Task_1"/>
+    ...
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="Shape_Start_1" bpmnElement="Start_1">
+        <dc:Bounds x="100" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_1" bpmnElement="Task_1">
+        <dc:Bounds x="200" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_1" bpmnElement="Flow_1">
+        <di:waypoint x="136" y="118"/>
+        <di:waypoint x="200" y="120"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
 
-Return the complete combined BPMN XML:`;
+Return ONLY the complete, valid BPMN 2.0 XML with full DI information:`;
 
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
@@ -214,8 +240,8 @@ Return the complete combined BPMN XML:`;
             body: JSON.stringify({
                 contents: [{ parts: [{ text: combinePrompt }] }],
                 generationConfig: {
-                    maxOutputTokens: 16384,
-                    temperature: 0.2,
+                    maxOutputTokens: 32768, // Increased for DI information
+                    temperature: 0.1, // Lower for more consistent structure
                 },
             }),
         }
@@ -228,6 +254,12 @@ Return the complete combined BPMN XML:`;
     const data = await response.json();
     let combinedXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     combinedXml = combinedXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+
+    // Validate that DI information is present
+    if (!combinedXml.includes('bpmndi:BPMNShape') || !combinedXml.includes('dc:Bounds')) {
+        console.warn('[Combine] Generated XML missing DI information, will use fallback');
+        throw new Error('Missing diagram interchange information');
+    }
 
     return combinedXml;
 }
