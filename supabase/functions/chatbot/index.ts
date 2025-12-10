@@ -11,7 +11,35 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const body = await req.json();
+    const { messages } = body;
+    
+    // Validate messages array
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Messages array is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (messages.length > 50) {
+      return new Response(
+        JSON.stringify({ error: "Too many messages (max 50)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate and sanitize each message
+    const validatedMessages = messages.map((m: { role?: string; content?: string }) => {
+      if (!m || typeof m.content !== 'string') {
+        throw new Error("Invalid message format");
+      }
+      return {
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content.slice(0, 10000) // Limit content length
+      };
+    });
+
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     
     if (!OPENAI_API_KEY) {
@@ -62,10 +90,10 @@ Always be helpful, concise, and guide users step-by-step. If users face technica
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-5-mini-2025-08-07",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          ...messages,
+          ...validatedMessages,
         ],
         stream: true,
       }),
