@@ -265,37 +265,95 @@ Return ONLY the complete, valid BPMN 2.0 XML with full DI information:`;
 }
 
 function simpleMergeDiagrams(subDiagrams: string[], diagramType: string): string {
-    // Fallback: Create a simple sequential diagram
+    // Fallback: Create a simple sequential diagram WITH complete DI information
     const timestamp = Date.now();
     let tasks = '';
     let flows = '';
+    let shapes = '';
+    let edges = '';
+
+    const startX = 100;
+    const startY = 100;
+    const elementSpacing = 180; // Horizontal spacing between elements
+    const taskWidth = 120;
+    const taskHeight = 80;
+    const eventSize = 36;
 
     subDiagrams.forEach((_, index) => {
         const taskId = `Task_${index}_${timestamp}`;
+        const currentX = startX + (index + 1) * elementSpacing;
+
+        // Add task element
         tasks += `    <bpmn:task id="${taskId}" name="Sub-process ${index + 1}"/>\n`;
 
+        // Add task shape with coordinates
+        shapes += `      <bpmndi:BPMNShape id="Shape_${taskId}" bpmnElement="${taskId}">
+        <dc:Bounds x="${currentX}" y="${startY - taskHeight / 2}" width="${taskWidth}" height="${taskHeight}"/>
+      </bpmndi:BPMNShape>\n`;
+
         if (index === 0) {
-            flows += `    <bpmn:sequenceFlow id="Flow_start_${timestamp}" sourceRef="StartEvent_${timestamp}" targetRef="${taskId}"/>\n`;
+            const flowId = `Flow_start_${timestamp}`;
+            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="StartEvent_${timestamp}" targetRef="${taskId}"/>\n`;
+
+            // Add edge for start -> first task
+            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
+        <di:waypoint x="${startX + eventSize}" y="${startY}"/>
+        <di:waypoint x="${currentX}" y="${startY}"/>
+      </bpmndi:BPMNEdge>\n`;
         } else {
             const prevTaskId = `Task_${index - 1}_${timestamp}`;
-            flows += `    <bpmn:sequenceFlow id="Flow_${index}_${timestamp}" sourceRef="${prevTaskId}" targetRef="${taskId}"/>\n`;
+            const flowId = `Flow_${index}_${timestamp}`;
+            const prevX = startX + index * elementSpacing;
+
+            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="${prevTaskId}" targetRef="${taskId}"/>\n`;
+
+            // Add edge for prev task -> current task
+            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
+        <di:waypoint x="${prevX + taskWidth}" y="${startY}"/>
+        <di:waypoint x="${currentX}" y="${startY}"/>
+      </bpmndi:BPMNEdge>\n`;
         }
 
         if (index === subDiagrams.length - 1) {
-            flows += `    <bpmn:sequenceFlow id="Flow_end_${timestamp}" sourceRef="${taskId}" targetRef="EndEvent_${timestamp}"/>\n`;
+            const flowId = `Flow_end_${timestamp}`;
+            const endX = currentX + taskWidth + elementSpacing;
+
+            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="${taskId}" targetRef="EndEvent_${timestamp}"/>\n`;
+
+            // Add edge for last task -> end
+            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
+        <di:waypoint x="${currentX + taskWidth}" y="${startY}"/>
+        <di:waypoint x="${endX}" y="${startY}"/>
+      </bpmndi:BPMNEdge>\n`;
         }
     });
+
+    const endX = startX + (subDiagrams.length + 1) * elementSpacing;
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
                    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
                    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   id="Definitions_Combined_${timestamp}">
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_Combined_${timestamp}"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Combined_${timestamp}" isExecutable="false">
     <bpmn:startEvent id="StartEvent_${timestamp}" name="Start"/>
 ${tasks}
     <bpmn:endEvent id="EndEvent_${timestamp}" name="End"/>
 ${flows}
   </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_${timestamp}">
+    <bpmndi:BPMNPlane id="BPMNPlane_${timestamp}" bpmnElement="Process_Combined_${timestamp}">
+      <bpmndi:BPMNShape id="Shape_StartEvent_${timestamp}" bpmnElement="StartEvent_${timestamp}">
+        <dc:Bounds x="${startX}" y="${startY - eventSize / 2}" width="${eventSize}" height="${eventSize}"/>
+      </bpmndi:BPMNShape>
+${shapes}
+      <bpmndi:BPMNShape id="Shape_EndEvent_${timestamp}" bpmnElement="EndEvent_${timestamp}">
+        <dc:Bounds x="${endX}" y="${startY - eventSize / 2}" width="${eventSize}" height="${eventSize}"/>
+      </bpmndi:BPMNShape>
+${edges}
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 }
