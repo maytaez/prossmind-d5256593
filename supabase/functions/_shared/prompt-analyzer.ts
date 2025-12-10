@@ -20,12 +20,19 @@ export interface PromptAnalysis {
 }
 
 /**
- * Analyze prompt complexity using Gemini Flash
+ * Analyze prompt complexity using Gemini Flash with timeout protection
  */
 export async function analyzePromptComplexity(
     prompt: string,
     googleApiKey: string
 ): Promise<PromptAnalysis> {
+    // Quick heuristic check first - if clearly simple, skip AI analysis
+    const quickCheck = quickComplexityCheck(prompt);
+    if (quickCheck.recommendation === 'generate') {
+        console.log('[Prompt Analysis] Quick check: simple prompt, skipping AI analysis');
+        return quickCheck;
+    }
+
     const analysisPrompt = `You are a BPMN complexity analyzer. Analyze this BPMN generation prompt and determine if it's too complex for single-diagram generation.
 
 COMPLEXITY CRITERIA:
@@ -61,6 +68,10 @@ PROMPT TO ANALYZE:
 ${prompt}`;
 
     try {
+        // Add timeout protection - if analysis takes > 10 seconds, use fallback
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
             {
@@ -70,12 +81,15 @@ ${prompt}`;
                     contents: [{ parts: [{ text: analysisPrompt }] }],
                     generationConfig: {
                         maxOutputTokens: 4096,
-                        temperature: 0.3,
+                        temperature: 0.1, // Lower temperature for faster, more deterministic results
                         responseMimeType: 'application/json'
                     }
-                })
+                }),
+                signal: controller.signal
             }
         );
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             console.warn('[Prompt Analysis] Failed, using fallback heuristics');
@@ -98,28 +112,64 @@ ${prompt}`;
 
         return analysis;
     } catch (error) {
-        console.error('[Prompt Analysis] Error:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+            console.warn('[Prompt Analysis] Timeout, using fallback heuristics');
+        } else {
+            console.error('[Prompt Analysis] Error:', error);
+        }
         return fallbackAnalysis(prompt);
     }
+}
+
+/**
+ * Quick complexity check without AI - for obviously simple prompts
+ */
+function quickComplexityCheck(prompt: string): PromptAnalysis {
+    const actors = (prompt.match(/actor|participant|role|department|system|service/gi) || []).length;
+    const length = prompt.length;
+
+    // If it's short and has few actors, it's likely simple
+    if (length < 800 && actors <= 3) {
+        return {
+            isComplex: false,
+            complexity: {
+                score: 3,
+                actors,
+                processes: 1,
+                gateways: 1,
+                events: 2,
+                estimatedXmlSize: length * 30
+            },
+            recommendation: 'generate',
+            reasoning: 'Simple workflow detected via quick check'
+        };
+    }
+
+    // Otherwise, we need deeper analysis
+    return fallbackAnalysis(prompt);
 }
 
 /**
  * Fallback analysis using simple heuristics
  */
 function fallbackAnalysis(prompt: string): PromptAnalysis {
-    const actors = (prompt.match(/actor|participant|role|department|system|service/gi) || []).length;
-    const processes = (prompt.match(/process|workflow|flow|procedure/gi) || []).length;
-    const gateways = (prompt.match(/gateway|parallel|exclusive|inclusive|decision|branch|if|else/gi) || []).length;
-    const events = (prompt.match(/event|timer|message|signal|error|boundary/gi) || []).length;
+    const actors = (prompt.match(/actor|participant|role|department|system|service|engine|bureau|portal|customer/gi) || []).length;
+    const processes = (prompt.match(/process|workflow|flow|procedure|task|step|activity/gi) || []).length;
+    const gateways = (prompt.match(/gateway|parallel|exclusive|inclusive|decision|branch|if|else|otherwise/gi) || []).length;
+    const events = (prompt.match(/event|timer|message|signal|error|boundary|start|end|intermediate|wait|trigger/gi) || []).length;
+    const swimlanes = (prompt.match(/swimlane|pool|lane/gi) || []).length;
+    const subprocesses = (prompt.match(/subprocess|loop|iteration|nested/gi) || []).length;
     const length = prompt.length;
 
-    // Estimate complexity score (1-10)
+    // Enhanced complexity score calculation (1-10)
     const score = Math.min(10, Math.floor(
-        (actors * 1.5) +
-        (processes * 0.5) +
-        (gateways * 1.2) +
+        (actors * 1.2) +           // More weight on actors
+        (processes * 0.4) +
+        (gateways * 1.5) +         // Gateways indicate complexity
         (events * 1.0) +
-        (length / 500)
+        (swimlanes * 2.0) +        // Swimlanes add significant complexity
+        (subprocesses * 1.8) +     // Subprocesses add complexity
+        (length / 400)             // Length factor
     ));
 
     // Estimate XML size (rough approximation)
@@ -128,12 +178,13 @@ function fallbackAnalysis(prompt: string): PromptAnalysis {
     let recommendation: 'generate' | 'simplify' | 'split' = 'generate';
     let reasoning = 'Simple workflow, can generate directly';
 
-    if (estimatedXmlSize > 100000 || actors > 6 || score > 8) {
+    // More aggressive splitting for very complex prompts
+    if (estimatedXmlSize > 100000 || actors > 7 || score > 9 || (actors > 5 && gateways > 5)) {
         recommendation = 'split';
-        reasoning = `Very complex workflow (${actors} actors, score ${score}). Splitting into sub-prompts for better results.`;
-    } else if (actors > 4 || score > 6) {
+        reasoning = `Very complex workflow (${actors} actors, ${gateways} gateways, score ${score}). Splitting into sub-prompts for better results.`;
+    } else if (actors > 4 || score > 6 || (gateways > 3 && events > 4)) {
         recommendation = 'simplify';
-        reasoning = `Moderately complex workflow (${actors} actors, score ${score}). Simplifying to core flow.`;
+        reasoning = `Moderately complex workflow (${actors} actors, ${gateways} gateways, score ${score}). Simplifying to core flow.`;
     }
 
     return {
@@ -175,6 +226,10 @@ ORIGINAL PROMPT:
 ${prompt}`;
 
     try {
+        // Add timeout protection - if simplification takes > 10 seconds, use original
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
             {
@@ -184,11 +239,14 @@ ${prompt}`;
                     contents: [{ parts: [{ text: simplificationPrompt }] }],
                     generationConfig: {
                         maxOutputTokens: 2048,
-                        temperature: 0.3
+                        temperature: 0.1
                     }
-                })
+                }),
+                signal: controller.signal
             }
         );
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             console.warn('[Prompt Simplification] Failed, using original');
@@ -205,7 +263,11 @@ ${prompt}`;
 
         return prompt;
     } catch (error) {
-        console.error('[Prompt Simplification] Error:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+            console.warn('[Prompt Simplification] Timeout, using original prompt');
+        } else {
+            console.error('[Prompt Simplification] Error:', error);
+        }
         return prompt;
     }
 }
@@ -241,6 +303,10 @@ ORIGINAL PROMPT:
 ${prompt}`;
 
     try {
+        // Add timeout protection - if splitting takes > 15 seconds, use fallback
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
             {
@@ -250,12 +316,15 @@ ${prompt}`;
                     contents: [{ parts: [{ text: splittingPrompt }] }],
                     generationConfig: {
                         maxOutputTokens: 4096,
-                        temperature: 0.3,
+                        temperature: 0.1,
                         responseMimeType: 'application/json'
                     }
-                })
+                }),
+                signal: controller.signal
             }
         );
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             console.warn('[Prompt Splitting] Failed, using fallback');
@@ -274,7 +343,11 @@ ${prompt}`;
 
         return result.subPrompts;
     } catch (error) {
-        console.error('[Prompt Splitting] Error:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+            console.warn('[Prompt Splitting] Timeout, using fallback split');
+        } else {
+            console.error('[Prompt Splitting] Error:', error);
+        }
         return fallbackSplit(prompt);
     }
 }
