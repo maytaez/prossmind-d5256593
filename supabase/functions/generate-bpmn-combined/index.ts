@@ -200,32 +200,35 @@ function intelligentMergeDiagrams(
     const timestamp = Date.now();
     let subProcesses = '';
     let subProcessShapes = '';
+    let subProcessDI = ''; // DI for elements inside subprocesses
     let flows = '';
     let edges = '';
 
     const startX = 100;
     const startY = 200;
-    const subProcessWidth = 400;
-    const subProcessHeight = 300;
-    const verticalSpacing = 350;
+    const subProcessWidth = 600;
+    const subProcessHeight = 400;
+    const verticalSpacing = 450;
     const eventSize = 36;
 
     subDiagramResults.forEach((result, index) => {
         const subProcessId = `SubProcess_${index}_${timestamp}`;
         const currentY = startY + (index * verticalSpacing);
 
-        // Create an expanded subprocess for each sub-diagram
-        // Extract the actual content from the sub-diagram XML
-        const subProcessContent = extractProcessContent(result.xml, index, timestamp);
+        // Extract both process content and DI information
+        const extracted = extractProcessAndDI(result.xml, index, timestamp, startX + 170, currentY + 20);
 
         subProcesses += `    <bpmn:subProcess id="${subProcessId}" name="${result.prompt.substring(0, 80)}">
-${subProcessContent}
+${extracted.processContent}
     </bpmn:subProcess>\n`;
 
-        // Add subprocess shape
+        // Add subprocess shape (collapsed initially, but can be expanded)
         subProcessShapes += `      <bpmndi:BPMNShape id="Shape_${subProcessId}" bpmnElement="${subProcessId}" isExpanded="true">
         <dc:Bounds x="${startX + 150}" y="${currentY}" width="${subProcessWidth}" height="${subProcessHeight}"/>
       </bpmndi:BPMNShape>\n`;
+
+        // Add DI for elements inside the subprocess
+        subProcessDI += extracted.diContent;
 
         // Add flows between subprocesses
         if (index === 0) {
@@ -283,6 +286,7 @@ ${flows}
         <dc:Bounds x="${startX}" y="${startY + subProcessHeight / 2 - eventSize / 2}" width="${eventSize}" height="${eventSize}"/>
       </bpmndi:BPMNShape>
 ${subProcessShapes}
+${subProcessDI}
       <bpmndi:BPMNShape id="Shape_EndEvent_${timestamp}" bpmnElement="EndEvent_${timestamp}">
         <dc:Bounds x="${startX + 150 + subProcessWidth / 2 - eventSize / 2}" y="${endY}" width="${eventSize}" height="${eventSize}"/>
       </bpmndi:BPMNShape>
@@ -292,24 +296,72 @@ ${edges}
 </bpmn:definitions>`;
 }
 
-function extractProcessContent(xml: string, index: number, timestamp: number): string {
-    // Simple extraction: get content between <bpmn:process> tags
+function extractProcessAndDI(
+    xml: string,
+    index: number,
+    timestamp: number,
+    offsetX: number,
+    offsetY: number
+): { processContent: string; diContent: string } {
+    // Extract process content
     const processMatch = xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+
+    // Extract DI content (shapes and edges)
+    const diPlaneMatch = xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+
+    let processContent = '';
+    let diContent = '';
 
     if (processMatch && processMatch[1]) {
         // Make IDs unique by adding suffix
-        let content = processMatch[1];
-        content = content.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
-        content = content.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1_sub${index}_${timestamp}"`);
-        content = content.replace(/targetRef="([^"]+)"/g, `targetRef="$1_sub${index}_${timestamp}"`);
-        content = content.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1_sub${index}_${timestamp}"`);
-        return content;
-    }
-
-    // Fallback: create simple content
-    return `      <bpmn:startEvent id="Start_sub${index}_${timestamp}" name="Start"/>
+        processContent = processMatch[1];
+        processContent = processContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
+        processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1_sub${index}_${timestamp}"`);
+        processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1_sub${index}_${timestamp}"`);
+    } else {
+        // Fallback: create simple content
+        processContent = `      <bpmn:startEvent id="Start_sub${index}_${timestamp}" name="Start"/>
       <bpmn:task id="Task_sub${index}_${timestamp}" name="Process Step ${index + 1}"/>
       <bpmn:endEvent id="End_sub${index}_${timestamp}" name="End"/>
       <bpmn:sequenceFlow id="Flow1_sub${index}_${timestamp}" sourceRef="Start_sub${index}_${timestamp}" targetRef="Task_sub${index}_${timestamp}"/>
       <bpmn:sequenceFlow id="Flow2_sub${index}_${timestamp}" sourceRef="Task_sub${index}_${timestamp}" targetRef="End_sub${index}_${timestamp}"/>`;
+    }
+
+    if (diPlaneMatch && diPlaneMatch[1]) {
+        // Extract and adjust DI information
+        diContent = diPlaneMatch[1];
+
+        // Make IDs unique
+        diContent = diContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
+        diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1_sub${index}_${timestamp}"`);
+
+        // Adjust coordinates to be relative to subprocess position
+        diContent = diContent.replace(/x="(\d+)"/g, (match, x) => {
+            return `x="${parseInt(x) + offsetX}"`;
+        });
+        diContent = diContent.replace(/y="(\d+)"/g, (match, y) => {
+            return `y="${parseInt(y) + offsetY}"`;
+        });
+    } else {
+        // Fallback: create simple DI
+        diContent = `      <bpmndi:BPMNShape id="Shape_Start_sub${index}_${timestamp}" bpmnElement="Start_sub${index}_${timestamp}">
+        <dc:Bounds x="${offsetX + 20}" y="${offsetY + 40}" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_sub${index}_${timestamp}" bpmnElement="Task_sub${index}_${timestamp}">
+        <dc:Bounds x="${offsetX + 120}" y="${offsetY + 20}" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_sub${index}_${timestamp}" bpmnElement="End_sub${index}_${timestamp}">
+        <dc:Bounds x="${offsetX + 280}" y="${offsetY + 40}" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow1_sub${index}_${timestamp}" bpmnElement="Flow1_sub${index}_${timestamp}">
+        <di:waypoint x="${offsetX + 56}" y="${offsetY + 58}"/>
+        <di:waypoint x="${offsetX + 120}" y="${offsetY + 60}"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow2_sub${index}_${timestamp}" bpmnElement="Flow2_sub${index}_${timestamp}">
+        <di:waypoint x="${offsetX + 220}" y="${offsetY + 60}"/>
+        <di:waypoint x="${offsetX + 280}" y="${offsetY + 58}"/>
+      </bpmndi:BPMNEdge>`;
+    }
+
+    return { processContent, diContent };
 }
