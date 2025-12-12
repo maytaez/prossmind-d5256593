@@ -303,22 +303,35 @@ function extractProcessAndDI(
     offsetX: number,
     offsetY: number
 ): { processContent: string; diContent: string } {
-    // Extract process content
-    const processMatch = xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+    console.log(`[Extract] Processing sub-diagram ${index}, XML length: ${xml.length}`);
 
-    // Extract DI content (shapes and edges)
-    const diPlaneMatch = xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+    // Extract process content - try multiple namespace variations
+    let processMatch = xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+    if (!processMatch) {
+        processMatch = xml.match(/<bpmn2:process[^>]*>([\s\S]*?)<\/bpmn2:process>/);
+    }
+    if (!processMatch) {
+        processMatch = xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
+    }
+
+    // Extract DI content (shapes and edges) - try multiple namespace variations
+    let diPlaneMatch = xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+    if (!diPlaneMatch) {
+        diPlaneMatch = xml.match(/<BPMNPlane[^>]*>([\s\S]*?)<\/BPMNPlane>/);
+    }
 
     let processContent = '';
     let diContent = '';
 
     if (processMatch && processMatch[1]) {
+        console.log(`[Extract] Found process content for sub-diagram ${index}, length: ${processMatch[1].length}`);
         // Make IDs unique by adding suffix
         processContent = processMatch[1];
         processContent = processContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
         processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1_sub${index}_${timestamp}"`);
         processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1_sub${index}_${timestamp}"`);
     } else {
+        console.warn(`[Extract] No process content found for sub-diagram ${index}, using fallback. XML preview: ${xml.substring(0, 200)}`);
         // Fallback: create simple content
         processContent = `      <bpmn:startEvent id="Start_sub${index}_${timestamp}" name="Start"/>
       <bpmn:task id="Task_sub${index}_${timestamp}" name="Process Step ${index + 1}"/>
@@ -335,12 +348,32 @@ function extractProcessAndDI(
         diContent = diContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
         diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1_sub${index}_${timestamp}"`);
 
-        // Adjust coordinates to be relative to subprocess position
-        diContent = diContent.replace(/x="(\d+)"/g, (match, x) => {
-            return `x="${parseInt(x) + offsetX}"`;
+        // Find min x and y coordinates to normalize
+        const xCoords: number[] = [];
+        const yCoords: number[] = [];
+
+        diContent.replace(/x="(\d+)"/g, (match, x) => {
+            xCoords.push(parseInt(x));
+            return match;
         });
+
+        diContent.replace(/y="(\d+)"/g, (match, y) => {
+            yCoords.push(parseInt(y));
+            return match;
+        });
+
+        const minX = Math.min(...xCoords, 0);
+        const minY = Math.min(...yCoords, 0);
+
+        // Normalize coordinates (subtract min) then add offset
+        diContent = diContent.replace(/x="(\d+)"/g, (match, x) => {
+            const normalized = parseInt(x) - minX;
+            return `x="${normalized + offsetX}"`;
+        });
+
         diContent = diContent.replace(/y="(\d+)"/g, (match, y) => {
-            return `y="${parseInt(y) + offsetY}"`;
+            const normalized = parseInt(y) - minY;
+            return `y="${normalized + offsetY}"`;
         });
     } else {
         // Fallback: create simple DI
