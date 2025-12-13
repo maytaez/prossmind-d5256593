@@ -327,6 +327,13 @@ function extractProcessAndDI(
         console.log(`[Extract] Found process content for sub-diagram ${index}, length: ${processMatch[1].length}`);
         // Make IDs unique by adding suffix
         processContent = processMatch[1];
+
+        // Normalize namespace: convert bpmn2: to bpmn: for consistency
+        processContent = processContent.replace(/<bpmn2:/g, '<bpmn:');
+        processContent = processContent.replace(/<\/bpmn2:/g, '</bpmn:');
+        processContent = processContent.replace(/bpmn2:tFormalExpression/g, 'bpmn:tFormalExpression');
+
+        // Make IDs unique
         processContent = processContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
         processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1_sub${index}_${timestamp}"`);
         processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1_sub${index}_${timestamp}"`);
