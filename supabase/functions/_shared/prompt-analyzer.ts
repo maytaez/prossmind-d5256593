@@ -22,7 +22,12 @@ export interface PromptAnalysis {
 /**
  * Analyze prompt complexity using Gemini Flash with timeout protection
  */
-export async function analyzePromptComplexity(prompt: string, googleApiKey: string): Promise<PromptAnalysis> {
+export async function analyzePromptComplexity(
+  prompt: string,
+  googleApiKey: string,
+  languageCode: string = "en",
+  languageName: string = "English",
+): Promise<PromptAnalysis> {
   // Quick heuristic check first - if clearly simple, skip AI analysis
   const quickCheck = quickComplexityCheck(prompt);
   if (quickCheck.recommendation === "generate") {
@@ -30,7 +35,14 @@ export async function analyzePromptComplexity(prompt: string, googleApiKey: stri
     return quickCheck;
   }
 
+  const languageInstruction =
+    languageCode === "en"
+      ? `CRITICAL: The user's prompt is in ENGLISH. When simplifying or splitting, maintain ENGLISH language for all text.`
+      : `CRITICAL: The user's prompt is in ${languageName} (${languageCode}). When simplifying or splitting, maintain ${languageName} language for all text. DO NOT translate to English or French.`;
+
   const analysisPrompt = `You are a BPMN complexity analyzer. Analyze this BPMN generation prompt and determine if it's too complex for single-diagram generation.
+
+${languageInstruction}
 
 COMPLEXITY CRITERIA:
 - Simple: 1-3 actors, 5-10 tasks, 1-2 gateways, basic flow
@@ -235,8 +247,27 @@ function fallbackAnalysis(prompt: string): PromptAnalysis {
 /**
  * Simplify a complex prompt using Gemini Flash
  */
-export async function simplifyPrompt(prompt: string, googleApiKey: string): Promise<string> {
+export async function simplifyPrompt(
+  prompt: string,
+  googleApiKey: string,
+  languageCode: string = "en",
+  languageName: string = "English",
+): Promise<string> {
+  const languageInstruction =
+    languageCode === "en"
+      ? `⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️
+The user's prompt is in ENGLISH. You MUST return the simplified prompt in ENGLISH ONLY.
+DO NOT translate to French, German, Spanish, or any other language.
+Preserve English terminology exactly.`
+      : `⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️
+The user's prompt is in ${languageName} (${languageCode}).
+You MUST return the simplified prompt in ${languageName} ONLY.
+DO NOT translate to English, French, or any other language.
+Preserve ${languageName} terminology exactly.`;
+
   const simplificationPrompt = `You are a BPMN prompt simplifier. Simplify this complex BPMN prompt while preserving the core workflow logic.
+
+${languageInstruction}
 
 SIMPLIFICATION RULES:
 1. Keep all main actors/participants
@@ -246,8 +277,9 @@ SIMPLIFICATION RULES:
 5. Remove optional exception handling (can be added via refinement later)
 6. Focus on the happy path
 7. Keep it under 1500 characters
+8. MAINTAIN THE SAME LANGUAGE AS THE ORIGINAL PROMPT
 
-Return ONLY the simplified prompt, no explanations.
+Return ONLY the simplified prompt in ${languageName}, no explanations.
 
 ORIGINAL PROMPT:
 ${prompt}`;
@@ -302,8 +334,27 @@ ${prompt}`;
 /**
  * Split a complex prompt into sub-prompts using Gemini Flash
  */
-export async function splitPromptIntoSubPrompts(prompt: string, googleApiKey: string): Promise<string[]> {
+export async function splitPromptIntoSubPrompts(
+  prompt: string,
+  googleApiKey: string,
+  languageCode: string = "en",
+  languageName: string = "English",
+): Promise<string[]> {
+  const languageInstruction =
+    languageCode === "en"
+      ? `⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️
+The user's prompt is in ENGLISH. You MUST return ALL sub-prompts in ENGLISH ONLY.
+DO NOT translate to French, German, Spanish, or any other language.
+Each sub-prompt must be in ENGLISH.`
+      : `⚠️ CRITICAL LANGUAGE REQUIREMENT ⚠️
+The user's prompt is in ${languageName} (${languageCode}).
+You MUST return ALL sub-prompts in ${languageName} ONLY.
+DO NOT translate to English, French, or any other language.
+Each sub-prompt must be in ${languageName}.`;
+
   const splittingPrompt = `You are a BPMN prompt splitter. Split this complex BPMN workflow into 2-4 smaller, self-contained sub-prompts.
+
+${languageInstruction}
 
 SPLITTING STRATEGY:
 1. Split by process phase (e.g., Input → Processing → Output)
@@ -312,12 +363,13 @@ SPLITTING STRATEGY:
 4. Each sub-prompt should be complete and generate a valid BPMN diagram
 5. Preserve all actors, events, gateways, and flows from the original
 6. Each sub-prompt should be 500-1500 characters
+7. MAINTAIN THE SAME LANGUAGE (${languageName}) AS THE ORIGINAL PROMPT IN ALL SUB-PROMPTS
 
 Respond in JSON format:
 {
   "subPrompts": [
-    "Sub-prompt 1 description...",
-    "Sub-prompt 2 description...",
+    "Sub-prompt 1 description in ${languageName}...",
+    "Sub-prompt 2 description in ${languageName}...",
     ...
   ],
   "splitStrategy": "brief explanation of how you split it"
