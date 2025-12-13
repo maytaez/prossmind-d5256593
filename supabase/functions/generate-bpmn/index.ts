@@ -6,7 +6,13 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts } from "../_shared/prompt-analyzer.ts";
+import {
+  analyzePromptComplexity,
+  simplifyPrompt,
+  splitPromptIntoSubPrompts,
+  fallbackAnalysis,
+  fallbackSplit,
+} from "../_shared/prompt-analyzer.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -358,8 +364,44 @@ Deno.serve(async (req) => {
           );
         }
       } catch (error) {
-        console.error("[Prompt Analysis] Analysis failed, proceeding with original prompt:", error);
-        // Continue with original prompt if analysis fails
+        console.error("[Prompt Analysis] AI analysis failed, using fallback heuristics:", error);
+        // CRITICAL SAFETY CHECK: Use fallback heuristics to avoid timeout on complex prompts
+        const fallbackResult = fallbackAnalysis(prompt);
+
+        console.log(
+          `[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`,
+        );
+
+        if (fallbackResult.recommendation === "split") {
+          console.log("[Prompt Analysis] Fallback detected complex prompt, splitting...");
+          subPrompts = fallbackSplit(prompt);
+
+          return new Response(
+            JSON.stringify({
+              requiresSplit: true,
+              subPrompts,
+              analysis: {
+                complexity: fallbackResult.complexity,
+                reasoning: fallbackResult.reasoning + " (fallback heuristics used due to AI timeout)",
+              },
+              message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        } else if (fallbackResult.recommendation === "simplify") {
+          console.log("[Prompt Analysis] Fallback recommends simplification");
+          // Use a simple reduction strategy - keep only substantial sentences
+          finalPromptToGenerate = prompt
+            .split(". ")
+            .filter((s) => s.length > 20)
+            .join(". ");
+          wasSimplified = true;
+          promptLength = finalPromptToGenerate.length;
+        }
+        // Otherwise continue with original prompt
       }
     } else if (modelingAgentMode) {
       console.log("[Prompt Analysis] Skipping analysis (modeling agent mode)");
