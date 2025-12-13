@@ -193,7 +193,7 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
 /**
  * Fallback analysis using simple heuristics
  */
-function fallbackAnalysis(prompt: string): PromptAnalysis {
+export function fallbackAnalysis(prompt: string): PromptAnalysis {
   // Enhanced actor detection with business roles
   const actors = (
     prompt.match(
@@ -487,7 +487,7 @@ ${prompt}`;
 /**
  * Fallback prompt splitting (simple split by length)
  */
-function fallbackSplit(prompt: string): string[] {
+export function fallbackSplit(prompt: string): string[] {
   // Simple split: divide into 3 parts
   const sentences = prompt.split(/[.!?]\s+/);
   const third = Math.ceil(sentences.length / 3);
