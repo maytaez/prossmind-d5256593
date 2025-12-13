@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
 
     console.log(`[Combined] All ${subDiagramResults.length} sub-diagrams generated successfully`);
 
-    // Return individual diagrams instead of merging (better UX for complex workflows)
+    // Return individual diagrams for detailed viewing
     const diagrams = subDiagramResults.map((result, index) => ({
       id: `diagram_${index + 1}`,
       title: result.prompt.substring(0, 80) + (result.prompt.length > 80 ? "..." : ""),
@@ -81,14 +81,18 @@ Deno.serve(async (req) => {
       index: index + 1,
     }));
 
-    console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams`);
+    // Also generate a combined overview diagram with expandable subprocesses
+    const combinedXml = intelligentMergeDiagrams(subDiagramResults, originalPrompt);
+
+    console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams + combined overview`);
 
     return new Response(
       JSON.stringify({
         diagrams,
+        combinedXml, // Combined overview with expandable subprocesses
         diagramCount: diagrams.length,
         originalPrompt,
-        message: `Successfully generated ${diagrams.length} diagrams for complex workflow`,
+        message: `Successfully generated ${diagrams.length} diagrams + combined overview`,
         type: "multi-diagram",
       }),
       {
