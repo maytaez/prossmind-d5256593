@@ -280,15 +280,15 @@ Deno.serve(async (req) => {
 
     console.log(`[Time Budget] Starting with ${TIMEOUT_LIMIT_MS}ms limit`);
 
-    // INTELLIGENT PROMPT ANALYSIS - Automatically detect and handle complex prompts
+    // INTELLIGENT PROMPT ANALYSIS - Only for extremely long prompts (trust Gemini 2.5 Pro for normal complexity)
     let finalPromptToGenerate = prompt;
     let wasSimplified = false;
     let wasSplit = false;
     let subPrompts: string[] = [];
 
-    // Only analyze if not in modeling agent mode and prompt is reasonably long
-    // LOWERED threshold to 300 to catch semantically complex but concise prompts (was 500)
-    if (!modelingAgentMode && promptLength > 300) {
+    // DISABLED FOR NORMAL USE - Only analyze extremely long prompts (>5000 chars)
+    // Trust Gemini 2.5 Pro + DI optimization to handle complex prompts (proven by Modelling Agent Mode)
+    if (!modelingAgentMode && promptLength > 5000) {
       console.log(
         `[Prompt Analysis] Starting analysis for ${promptLength} char prompt (elapsed: ${getElapsedTime()}ms)...`,
       );
@@ -444,7 +444,7 @@ Deno.serve(async (req) => {
     } else if (modelingAgentMode) {
       console.log("[Prompt Analysis] Skipping analysis (modeling agent mode)");
     } else {
-      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars, threshold: 300)`);
+      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars, threshold: 5000)`);
     }
 
     // Final time budget check before generation
