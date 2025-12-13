@@ -231,8 +231,8 @@ function createPlaceholderDiagram(prompt: string, index: number, diagramType: st
 }
 
 /**
- * Creates a mega-diagram by merging all sub-diagrams with a unified laneSet
- * All lanes are merged into ONE laneSet, all elements visible, stacked vertically
+ * Creates a mega-diagram by merging all sub-diagrams into a flat view (no lanes)
+ * All tasks, events, and flows are visible - stacked vertically
  */
 function createMegaDiagram(
   subDiagramResults: Array<{ xml: string; prompt: string; index: number }>,
@@ -240,7 +240,6 @@ function createMegaDiagram(
 ): string {
   const timestamp = Date.now();
 
-  let allLanes = "";
   let allFlowNodes = "";
   let allDIContent = "";
   let currentYOffset = 100;
@@ -250,19 +249,6 @@ function createMegaDiagram(
     console.log(`[Mega-Diagram] Processing diagram ${index + 1}/${subDiagramResults.length}`);
 
     const idSuffix = `_d${index}_${timestamp}`;
-
-    // Extract laneSet content (just the lanes, not the wrapper)
-    const laneSetMatch = result.xml.match(/<laneSet[^>]*>([\s\S]*?)<\/laneSet>/);
-    if (laneSetMatch) {
-      let lanes = laneSetMatch[1];
-      // Make lane IDs unique
-      lanes = lanes.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
-      lanes = lanes.replace(
-        /<flowNodeRef>([^<]+)<\/flowNodeRef>/g,
-        (match, ref) => `<flowNodeRef>${ref}${idSuffix}</flowNodeRef>`,
-      );
-      allLanes += lanes + "\n";
-    }
 
     // Extract process content (everything inside <process>) WITHOUT laneSets
     let processMatch = result.xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
@@ -277,7 +263,7 @@ function createMegaDiagram(
 
     let processContent = processMatch[1];
 
-    // Remove laneSet from process content (we'll add unified one later)
+    // Remove laneSet completely (we're creating a flat diagram)
     processContent = processContent.replace(/<laneSet[^>]*>[\s\S]*?<\/laneSet>/g, "");
 
     // Make all IDs unique
@@ -309,6 +295,12 @@ function createMegaDiagram(
 
     let diContent = diPlaneMatch[1];
 
+    // Remove lane shapes from DI (we don't need them)
+    diContent = diContent.replace(
+      /<bpmndi:BPMNShape[^>]*bpmnElement="[^"]*Lane[^"]*"[^>]*>[\s\S]*?<\/bpmndi:BPMNShape>/g,
+      "",
+    );
+
     // Make DI IDs unique
     diContent = diContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
     diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
@@ -335,7 +327,7 @@ function createMegaDiagram(
     currentYOffset += diagramHeight + sectionSpacing;
   });
 
-  // Build complete BPMN XML with unified laneSet
+  // Build complete BPMN XML without lanes
   return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
                    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
@@ -345,9 +337,6 @@ function createMegaDiagram(
                    id="Definitions_Mega_${timestamp}"
                    targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Mega_${timestamp}" isExecutable="false" name="${originalPrompt.substring(0, 100)}">
-    <laneSet id="LaneSet_Mega_${timestamp}">
-${allLanes}
-    </laneSet>
 ${allFlowNodes}
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_Mega_${timestamp}">
