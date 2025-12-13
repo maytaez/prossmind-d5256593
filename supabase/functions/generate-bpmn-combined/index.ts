@@ -206,17 +206,25 @@ function intelligentMergeDiagrams(
 
     const startX = 100;
     const startY = 200;
-    const subProcessWidth = 600;
-    const subProcessHeight = 400;
-    const verticalSpacing = 450;
+    const subProcessWidth = 1200;  // Increased from 600
+    const subProcessHeight = 600;  // Increased from 400
+    const verticalSpacing = 650;   // Increased spacing
     const eventSize = 36;
+    const scaleFactor = 0.7;       // Scale down internal elements to fit
 
     subDiagramResults.forEach((result, index) => {
         const subProcessId = `SubProcess_${index}_${timestamp}`;
         const currentY = startY + (index * verticalSpacing);
 
         // Extract both process content and DI information
-        const extracted = extractProcessAndDI(result.xml, index, timestamp, startX + 170, currentY + 20);
+        const extracted = extractProcessAndDI(
+            result.xml,
+            index,
+            timestamp,
+            startX + 170,  // offsetX - padding from subprocess left edge
+            currentY + 30, // offsetY - padding from subprocess top edge
+            scaleFactor    // Scale factor to fit content
+        );
 
         subProcesses += `    <bpmn:subProcess id="${subProcessId}" name="${result.prompt.substring(0, 80)}">
 ${extracted.processContent}
@@ -301,7 +309,8 @@ function extractProcessAndDI(
     index: number,
     timestamp: number,
     offsetX: number,
-    offsetY: number
+    offsetY: number,
+    scaleFactor: number = 1.0
 ): { processContent: string; diContent: string } {
     console.log(`[Extract] Processing sub-diagram ${index}, XML length: ${xml.length}`);
 
@@ -359,47 +368,60 @@ function extractProcessAndDI(
         const xCoords: number[] = [];
         const yCoords: number[] = [];
 
-        diContent.replace(/x="(\d+)"/g, (match, x) => {
-            xCoords.push(parseInt(x));
+        diContent.replace(/x="(\d+(\.\d+)?)"/g, (match, x) => {
+            xCoords.push(parseFloat(x));
             return match;
         });
 
-        diContent.replace(/y="(\d+)"/g, (match, y) => {
-            yCoords.push(parseInt(y));
+        diContent.replace(/y="(\d+(\.\d+)?)"/g, (match, y) => {
+            yCoords.push(parseFloat(y));
             return match;
         });
 
-        const minX = Math.min(...xCoords, 0);
-        const minY = Math.min(...yCoords, 0);
+        const minX = xCoords.length > 0 ? Math.min(...xCoords) : 0;
+        const minY = yCoords.length > 0 ? Math.min(...yCoords) : 0;
 
-        // Normalize coordinates (subtract min) then add offset
-        diContent = diContent.replace(/x="(\d+)"/g, (match, x) => {
-            const normalized = parseInt(x) - minX;
-            return `x="${normalized + offsetX}"`;
+        // Normalize coordinates (subtract min), scale, then add offset
+        diContent = diContent.replace(/x="(\d+(\.\d+)?)"/g, (match, x) => {
+            const normalized = parseFloat(x) - minX;
+            const scaled = Math.round(normalized * scaleFactor);
+            return `x="${scaled + offsetX}"`;
         });
 
-        diContent = diContent.replace(/y="(\d+)"/g, (match, y) => {
-            const normalized = parseInt(y) - minY;
-            return `y="${normalized + offsetY}"`;
+        diContent = diContent.replace(/y="(\d+(\.\d+)?)"/g, (match, y) => {
+            const normalized = parseFloat(y) - minY;
+            const scaled = Math.round(normalized * scaleFactor);
+            return `y="${scaled + offsetY}"`;
+        });
+
+        // Also scale width and height attributes
+        diContent = diContent.replace(/width="(\d+(\.\d+)?)"/g, (match, w) => {
+            const scaled = Math.round(parseFloat(w) * scaleFactor);
+            return `width="${scaled}"`;
+        });
+
+        diContent = diContent.replace(/height="(\d+(\.\d+)?)"/g, (match, h) => {
+            const scaled = Math.round(parseFloat(h) * scaleFactor);
+            return `height="${scaled}"`;
         });
     } else {
         // Fallback: create simple DI
         diContent = `      <bpmndi:BPMNShape id="Shape_Start_sub${index}_${timestamp}" bpmnElement="Start_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + 20}" y="${offsetY + 40}" width="36" height="36"/>
+        <dc:Bounds x="${offsetX + Math.round(20 * scaleFactor)}" y="${offsetY + Math.round(40 * scaleFactor)}" width="${Math.round(36 * scaleFactor)}" height="${Math.round(36 * scaleFactor)}"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Task_sub${index}_${timestamp}" bpmnElement="Task_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + 120}" y="${offsetY + 20}" width="100" height="80"/>
+        <dc:Bounds x="${offsetX + Math.round(120 * scaleFactor)}" y="${offsetY + Math.round(20 * scaleFactor)}" width="${Math.round(100 * scaleFactor)}" height="${Math.round(80 * scaleFactor)}"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_sub${index}_${timestamp}" bpmnElement="End_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + 280}" y="${offsetY + 40}" width="36" height="36"/>
+        <dc:Bounds x="${offsetX + Math.round(280 * scaleFactor)}" y="${offsetY + Math.round(40 * scaleFactor)}" width="${Math.round(36 * scaleFactor)}" height="${Math.round(36 * scaleFactor)}"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Edge_Flow1_sub${index}_${timestamp}" bpmnElement="Flow1_sub${index}_${timestamp}">
-        <di:waypoint x="${offsetX + 56}" y="${offsetY + 58}"/>
-        <di:waypoint x="${offsetX + 120}" y="${offsetY + 60}"/>
+        <di:waypoint x="${offsetX + Math.round(56 * scaleFactor)}" y="${offsetY + Math.round(58 * scaleFactor)}"/>
+        <di:waypoint x="${offsetX + Math.round(120 * scaleFactor)}" y="${offsetY + Math.round(60 * scaleFactor)}"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow2_sub${index}_${timestamp}" bpmnElement="Flow2_sub${index}_${timestamp}">
-        <di:waypoint x="${offsetX + 220}" y="${offsetY + 60}"/>
-        <di:waypoint x="${offsetX + 280}" y="${offsetY + 58}"/>
+        <di:waypoint x="${offsetX + Math.round(220 * scaleFactor)}" y="${offsetY + Math.round(60 * scaleFactor)}"/>
+        <di:waypoint x="${offsetX + Math.round(280 * scaleFactor)}" y="${offsetY + Math.round(58 * scaleFactor)}"/>
       </bpmndi:BPMNEdge>`;
     }
 
