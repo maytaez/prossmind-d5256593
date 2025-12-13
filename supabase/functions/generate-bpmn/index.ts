@@ -1,18 +1,12 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
-import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
-import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
-import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
-import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
-import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import {
-  analyzePromptComplexity,
-  simplifyPrompt,
-  splitPromptIntoSubPrompts,
-  fallbackAnalysis,
-  fallbackSplit,
-} from "../_shared/prompt-analyzer.ts";
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
+import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.ts';
+import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
+import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
+import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
+import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../_shared/bpmn-di-optimizer.ts';
+import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts, fallbackAnalysis, fallbackSplit } from '../_shared/prompt-analyzer.ts';
 
 interface ValidationResult {
   isValid: boolean;
@@ -211,10 +205,10 @@ async function retryBpmnGenerationIfNecessary(
         temperature,
         lastValidationError
           ? {
-              error: lastValidationError.error || "Validation failed",
-              errorDetails: lastValidationError.errorDetails,
-              attemptNumber: attempt,
-            }
+            error: lastValidationError.error || "Validation failed",
+            errorDetails: lastValidationError.errorDetails,
+            attemptNumber: attempt,
+          }
           : undefined,
       );
       const validation = validateBpmnXml(bpmnXml);
@@ -286,12 +280,7 @@ Deno.serve(async (req) => {
       const analysisStartTime = Date.now();
 
       try {
-        const analysis = await analyzePromptComplexity(
-          prompt,
-          GOOGLE_API_KEY,
-          detectedLanguageCode,
-          detectedLanguageName,
-        );
+        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
         const analysisTime = Date.now() - analysisStartTime;
         console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation}`);
 
@@ -306,12 +295,7 @@ Deno.serve(async (req) => {
           if (analysis.subPrompts && analysis.subPrompts.length > 0) {
             subPrompts = analysis.subPrompts;
           } else {
-            subPrompts = await splitPromptIntoSubPrompts(
-              prompt,
-              GOOGLE_API_KEY,
-              detectedLanguageCode,
-              detectedLanguageName,
-            );
+            subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
           }
 
           const splitTime = Date.now() - splitStartTime;
@@ -344,12 +328,7 @@ Deno.serve(async (req) => {
           if (analysis.simplifiedPrompt) {
             finalPromptToGenerate = analysis.simplifiedPrompt;
           } else {
-            finalPromptToGenerate = await simplifyPrompt(
-              prompt,
-              GOOGLE_API_KEY,
-              detectedLanguageCode,
-              detectedLanguageName,
-            );
+            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
           }
 
           const simplifyTime = Date.now() - simplifyStartTime;
@@ -364,40 +343,32 @@ Deno.serve(async (req) => {
           );
         }
       } catch (error) {
-        console.error("[Prompt Analysis] AI analysis failed, using fallback heuristics:", error);
+        console.error('[Prompt Analysis] AI analysis failed, using fallback heuristics:', error);
         // CRITICAL SAFETY CHECK: Use fallback heuristics to avoid timeout on complex prompts
         const fallbackResult = fallbackAnalysis(prompt);
 
-        console.log(
-          `[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`,
-        );
+        console.log(`[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`);
 
-        if (fallbackResult.recommendation === "split") {
-          console.log("[Prompt Analysis] Fallback detected complex prompt, splitting...");
+        if (fallbackResult.recommendation === 'split') {
+          console.log('[Prompt Analysis] Fallback detected complex prompt, splitting...');
           subPrompts = fallbackSplit(prompt);
 
-          return new Response(
-            JSON.stringify({
-              requiresSplit: true,
-              subPrompts,
-              analysis: {
-                complexity: fallbackResult.complexity,
-                reasoning: fallbackResult.reasoning + " (fallback heuristics used due to AI timeout)",
-              },
-              message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`,
-            }),
-            {
-              status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+          return new Response(JSON.stringify({
+            requiresSplit: true,
+            subPrompts,
+            analysis: {
+              complexity: fallbackResult.complexity,
+              reasoning: fallbackResult.reasoning + ' (fallback heuristics used due to AI timeout)'
             },
-          );
-        } else if (fallbackResult.recommendation === "simplify") {
-          console.log("[Prompt Analysis] Fallback recommends simplification");
+            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } else if (fallbackResult.recommendation === 'simplify') {
+          console.log('[Prompt Analysis] Fallback recommends simplification');
           // Use a simple reduction strategy - keep only substantial sentences
-          finalPromptToGenerate = prompt
-            .split(". ")
-            .filter((s) => s.length > 20)
-            .join(". ");
+          finalPromptToGenerate = prompt.split('. ').filter(s => s.length > 20).join('. ');
           wasSimplified = true;
           promptLength = finalPromptToGenerate.length;
         }
@@ -447,10 +418,9 @@ Deno.serve(async (req) => {
     const useNoDI = promptLength > 3000 || complexityScore >= 9;
     const useCompactDI = !useNoDI && (promptLength > 2000 || complexityScore >= 7);
 
-    const systemPrompt =
-      diagramType === "pid"
-        ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
-        : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName, false, true);
+    const systemPrompt = diagramType === 'pid'
+      ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
+      : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName, false, true);
 
     console.log(
       `[Model Selection] ${model} with ${maxTokens} tokens (complexity: ${complexityScore}, compactDI: ${useCompactDI}, noDI: ${useNoDI})`,
