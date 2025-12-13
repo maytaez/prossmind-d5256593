@@ -274,13 +274,18 @@ Deno.serve(async (req) => {
     let subPrompts: string[] = [];
 
     // Only analyze if not in modeling agent mode and prompt is reasonably long
-    // Lowered threshold to catch complex prompts earlier
-    if (!modelingAgentMode && promptLength > 1200) {
+    // Lowered threshold from 1200 to 800 to catch complex prompts earlier
+    if (!modelingAgentMode && promptLength > 800) {
       console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt...`);
       const analysisStartTime = Date.now();
 
       try {
-        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
+        const analysis = await analyzePromptComplexity(
+          prompt,
+          GOOGLE_API_KEY,
+          detectedLanguageCode,
+          detectedLanguageName,
+        );
         const analysisTime = Date.now() - analysisStartTime;
         console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation}`);
 
@@ -295,7 +300,12 @@ Deno.serve(async (req) => {
           if (analysis.subPrompts && analysis.subPrompts.length > 0) {
             subPrompts = analysis.subPrompts;
           } else {
-            subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY);
+            subPrompts = await splitPromptIntoSubPrompts(
+              prompt,
+              GOOGLE_API_KEY,
+              detectedLanguageCode,
+              detectedLanguageName,
+            );
           }
 
           const splitTime = Date.now() - splitStartTime;
@@ -328,7 +338,12 @@ Deno.serve(async (req) => {
           if (analysis.simplifiedPrompt) {
             finalPromptToGenerate = analysis.simplifiedPrompt;
           } else {
-            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY);
+            finalPromptToGenerate = await simplifyPrompt(
+              prompt,
+              GOOGLE_API_KEY,
+              detectedLanguageCode,
+              detectedLanguageName,
+            );
           }
 
           const simplifyTime = Date.now() - simplifyStartTime;
