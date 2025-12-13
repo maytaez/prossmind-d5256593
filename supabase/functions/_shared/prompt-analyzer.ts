@@ -77,9 +77,9 @@ PROMPT TO ANALYZE:
 ${prompt}`;
 
   try {
-    // Add timeout protection - if analysis takes > 7 seconds, use fallback
+    // Add timeout protection - if analysis takes > 5 seconds, use fallback
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
@@ -122,7 +122,7 @@ ${prompt}`;
     return analysis;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      console.warn("[Prompt Analysis] Timeout, using fallback heuristics");
+      console.warn("[Prompt Analysis] Timeout (5s), using fallback heuristics");
     } else {
       console.error("[Prompt Analysis] Error:", error);
     }
@@ -137,6 +137,14 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
   const actors = (prompt.match(/actor|participant|role|department|system|service/gi) || []).length;
   const length = prompt.length;
 
+  // Enhanced business process actor detection
+  const businessActors = (
+    prompt.match(
+      /customer|client|user|manager|underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer/gi,
+    ) || []
+  ).length;
+  const totalActors = actors + businessActors;
+
   // Check for high-complexity BPMN keywords
   const complexKeywords = (
     prompt.match(
@@ -144,13 +152,29 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
     ) || []
   ).length;
 
+  // Business process complexity indicators
+  const businessKeywords = (
+    prompt.match(/approval|verify|review|validate|countersign|authorize|confirm|check|assess|evaluate/gi) || []
+  ).length;
+
+  // Timer and event keywords
+  const timerKeywords = (
+    prompt.match(/timeout|auto-cancel|auto-reject|escalate|wait|delay|days?|hours?|minutes?|deadline|expire/gi) || []
+  ).length;
+
+  // Loop and iteration keywords
+  const loopKeywords = (prompt.match(/loop|retry|re-upload|resubmit|repeat|until|again|iterate|stay in|cycle/gi) || [])
+    .length;
+
+  const totalComplexityIndicators = complexKeywords + businessKeywords + timerKeywords + loopKeywords;
+
   // If it's short, has few actors, and no complex keywords, it's likely simple
-  if (length < 600 && actors <= 2 && complexKeywords === 0) {
+  if (length < 400 && totalActors <= 2 && totalComplexityIndicators === 0) {
     return {
       isComplex: false,
       complexity: {
         score: 2,
-        actors,
+        actors: totalActors,
         processes: 1,
         gateways: 1,
         events: 2,
@@ -161,7 +185,8 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
     };
   }
 
-  // Otherwise, we need deeper analysis
+  // If we detect strong complexity indicators, use deeper analysis
+  // but signal that it might need splitting
   return fallbackAnalysis(prompt);
 }
 
@@ -169,11 +194,19 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
  * Fallback analysis using simple heuristics
  */
 function fallbackAnalysis(prompt: string): PromptAnalysis {
+  // Enhanced actor detection with business roles
   const actors = (
     prompt.match(
       /actor|participant|role|department|system|service|engine|bureau|portal|customer|manager|team|owner/gi,
     ) || []
   ).length;
+  const businessActors = (
+    prompt.match(
+      /underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer|client|user/gi,
+    ) || []
+  ).length;
+  const totalActors = actors + businessActors;
+
   const processes = (
     prompt.match(
       /process|workflow|flow|procedure|task|step|activity|provisioning|deprovisioning|approval|review|recertification/gi,
@@ -189,51 +222,74 @@ function fallbackAnalysis(prompt: string): PromptAnalysis {
       /event|timer|message|signal|error|boundary|start|end|intermediate|wait|trigger|initiation|termination|escalate|chase|periodic/gi,
     ) || []
   ).length;
+
+  // Enhanced timer/timeout detection
+  const timerEvents = (
+    prompt.match(/timeout|auto-cancel|auto-reject|deadline|expire|wait|delay|days?|hours?|minutes?/gi) || []
+  ).length;
+
+  // Loop and retry detection
+  const loops = (prompt.match(/loop|retry|re-upload|resubmit|repeat|until|again|iterate|stay in|cycle/gi) || []).length;
+
   const swimlanes = (prompt.match(/swimlane|pool|lane|across/gi) || []).length;
-  const subprocesses = (prompt.match(/subprocess|loop|iteration|nested|include/gi) || []).length;
+  const subprocesses = (prompt.match(/subprocess|nested|include/gi) || []).length;
+
+  // Enhanced complex features detection
   const complexFeatures = (
     prompt.match(
-      /timer event|boundary event|message flow|compensation|error handling|escalation|approval|access management|provisioning|deprovisioning|recertification|automated|confirmation/gi,
+      /timer event|boundary event|message flow|compensation|error handling|escalation|approval|access management|provisioning|deprovisioning|recertification|automated|confirmation|verify|validate|countersign|authorize/gi,
     ) || []
   ).length;
+
   const length = prompt.length;
 
   // Enhanced complexity score calculation (1-10)
   const score = Math.min(
     10,
     Math.floor(
-      actors * 1.5 + // More weight on actors (increased from 1.2)
+      totalActors * 1.5 + // More weight on actors
         processes * 0.5 +
-        gateways * 1.8 + // Gateways indicate complexity (increased from 1.5)
-        events * 1.2 + // Events add complexity (increased from 1.0)
-        swimlanes * 2.5 + // Swimlanes add significant complexity (increased from 2.0)
-        subprocesses * 2.0 + // Subprocesses add complexity (increased from 1.8)
-        complexFeatures * 2.0 + // NEW: Complex BPMN features
-        length / 350, // Length factor (more aggressive, was 400)
+        gateways * 1.8 + // Gateways indicate complexity
+        events * 1.2 + // Events add complexity
+        timerEvents * 2.5 + // Timer events are complex
+        loops * 2.5 + // Loops add significant complexity
+        swimlanes * 2.5 + // Swimlanes add significant complexity
+        subprocesses * 2.0 + // Subprocesses add complexity
+        complexFeatures * 1.5 + // Complex BPMN features
+        length / 350, // Length factor
     ),
   );
 
   // Estimate XML size (rough approximation)
-  const estimatedXmlSize = length * 50; // Increased from 45 to be more conservative
+  const estimatedXmlSize = length * 50;
 
   let recommendation: "generate" | "simplify" | "split" = "generate";
   let reasoning = "Simple workflow, can generate directly";
 
   // More aggressive splitting for very complex prompts
-  // Lowered thresholds to catch complex prompts earlier
-  if (estimatedXmlSize > 80000 || actors > 5 || score > 8 || (actors > 4 && gateways > 4) || complexFeatures > 5) {
+  // Enhanced detection for business processes with multiple actors and complex features
+  if (
+    estimatedXmlSize > 80000 ||
+    totalActors > 4 ||
+    score > 7 ||
+    (totalActors >= 3 && (gateways >= 3 || timerEvents >= 1 || loops >= 1)) ||
+    (gateways >= 4 && totalActors >= 2) ||
+    complexFeatures > 4 ||
+    timerEvents >= 2 ||
+    loops >= 2
+  ) {
     recommendation = "split";
-    reasoning = `Very complex workflow (${actors} actors, ${gateways} gateways, ${complexFeatures} complex features, score ${score}). Splitting into sub-prompts for better results.`;
-  } else if (actors > 3 || score > 5 || (gateways > 2 && events > 3) || complexFeatures > 2) {
+    reasoning = `Complex workflow detected (${totalActors} actors, ${gateways} gateways, ${timerEvents} timer events, ${loops} loops, ${complexFeatures} complex features, score ${score}). Splitting for better results.`;
+  } else if (totalActors > 2 || score > 4 || (gateways > 2 && events > 2) || complexFeatures > 2) {
     recommendation = "simplify";
-    reasoning = `Moderately complex workflow (${actors} actors, ${gateways} gateways, ${complexFeatures} complex features, score ${score}). Simplifying to core flow.`;
+    reasoning = `Moderately complex workflow (${totalActors} actors, ${gateways} gateways, ${complexFeatures} complex features, score ${score}). Simplifying to core flow.`;
   }
 
   return {
-    isComplex: score > 5,
+    isComplex: score > 4,
     complexity: {
       score,
-      actors,
+      actors: totalActors,
       processes,
       gateways,
       events,
@@ -285,9 +341,9 @@ ORIGINAL PROMPT:
 ${prompt}`;
 
   try {
-    // Add timeout protection - if simplification takes > 7 seconds, use original
+    // Add timeout protection - if simplification takes > 5 seconds, use original
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7000);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
@@ -379,9 +435,9 @@ ORIGINAL PROMPT:
 ${prompt}`;
 
   try {
-    // Add timeout protection - if splitting takes > 10 seconds, use fallback
+    // Add timeout protection - if splitting takes > 7 seconds, use fallback
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
