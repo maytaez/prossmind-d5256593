@@ -515,7 +515,11 @@ Deno.serve(async (req) => {
       temperature =
         model === "google/gemini-2.5-pro" ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
-    if (!skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
+    // SEMANTIC CACHE DISABLED: Saves 3-5 seconds by skipping expensive embedding generation
+    // Embedding generation via OpenAI API takes 2-4s for complex prompts, causing timeouts
+    // Modelling Agent Mode bypasses this entirely - adopting same approach for all users
+    // Exact hash cache (above) still provides instant responses for perfect matches
+    if (false && !skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
@@ -565,15 +569,10 @@ Deno.serve(async (req) => {
     if (!skipCache && !modelingAgentMode) {
       (async () => {
         try {
-          let embedding: number[] | undefined;
-          if (isSemanticCacheEnabled()) {
-            try {
-              embedding = await generateEmbedding(finalPromptToGenerate);
-            } catch {
-              /* ignore */
-            }
-          }
-          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, embedding);
+          // EMBEDDING GENERATION DISABLED: Skip expensive OpenAI API call (saves 1-2 seconds)
+          // Store only exact hash cache without semantic embedding
+          // Matches Modelling Agent Mode's efficient approach
+          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, undefined);
         } catch {
           /* ignore */
         }
