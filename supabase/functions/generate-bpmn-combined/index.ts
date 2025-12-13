@@ -266,7 +266,11 @@ function createMegaDiagram(
     processContent = processContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
     processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1${idSuffix}"`);
     processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1${idSuffix}"`);
-    processContent = processContent.replace(/flowNodeRef>([^<]+)</g, (match, p1) => `flowNodeRef>${p1}${idSuffix}<`);
+    // Fix flowNodeRef to only add suffix to the element reference, not break tags
+    processContent = processContent.replace(
+      /<flowNodeRef>([^<]+)<\/flowNodeRef>/g,
+      (match, ref) => `<flowNodeRef>${ref}${idSuffix}</flowNodeRef>`,
+    );
     processContent = processContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
 
     allProcessContent += processContent + "\n";
