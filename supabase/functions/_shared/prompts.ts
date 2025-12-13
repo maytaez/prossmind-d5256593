@@ -207,14 +207,13 @@ function addCodeGenerationInstructions(): string {
  * @param resourceAware - If true, include pool and lane information
  */
 export function getBpmnSystemPrompt(
-  languageCode: string = "en",
-  languageName: string = "English",
+  languageCode: string = 'en',
+  languageName: string = 'English',
   strictMode: boolean = false,
   resourceAware: boolean = false,
 ): string {
-  const languageInstruction =
-    languageCode !== "en"
-      ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
+  const languageInstruction = languageCode !== 'en'
+    ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
 
@@ -230,7 +229,7 @@ YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
 Example: If user writes "Erstelle einen Bestellprozess" (German), use German labels like "Bestellung erstellen", "Bestellung genehmigen", "Start", "Ende" - NOT English "Create Order", "Approve Order", "Start", "End".
 
 THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGLISH LABELS WHEN THE USER WRITES IN ${languageName.toUpperCase()}, YOU HAVE FAILED.`
-      : `⚠️ LANGUAGE REQUIREMENT ⚠️
+    : `⚠️ LANGUAGE REQUIREMENT ⚠️
 
 The user's prompt is written in English.
 
@@ -262,10 +261,9 @@ ALL LABELS MUST BE IN ENGLISH.`;
  * @param languageCode - ISO 639-1 language code (e.g., 'en', 'es', 'fr', etc.)
  * @param languageName - Human-readable language name (e.g., 'English', 'Spanish', etc.)
  */
-export function getPidSystemPrompt(languageCode: string = "en", languageName: string = "English"): string {
-  const languageInstruction =
-    languageCode !== "en"
-      ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
+export function getPidSystemPrompt(languageCode: string = 'en', languageName: string = 'English'): string {
+  const languageInstruction = languageCode !== 'en'
+    ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
 
@@ -278,7 +276,7 @@ YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
 - Match the language of the user's input exactly
 
 THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS.`
-      : `⚠️ LANGUAGE REQUIREMENT ⚠️
+    : `⚠️ LANGUAGE REQUIREMENT ⚠️
 
 The user's prompt is written in English.
 
@@ -557,8 +555,8 @@ export function buildMessagesWithExamples(
       // Add error explanations if available
       if (germanExample.errors) {
         messages.push({
-          role: "user",
-          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}`,
+          role: 'user',
+          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}`
         });
       } else {
         messages.push({ role: "user", content: userPrompt + languageInstruction });
@@ -605,10 +603,10 @@ DO NOT translate to English. DO NOT use English labels. Use ${languageName} for 
   ];
 
   // Add error explanations if available
-  if ("errors" in example && example.errors) {
+  if ('errors' in example && example.errors) {
     messages.push({
-      role: "user",
-      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}`,
+      role: 'user',
+      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}`
     });
   } else {
     messages.push({ role: "user", content: userPrompt });
