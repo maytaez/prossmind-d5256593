@@ -70,18 +70,30 @@ Deno.serve(async (req) => {
             throw new Error("Failed to generate sub-diagrams within time limit");
         }
 
-        console.log(`[Combined] All ${subDiagramResults.length} sub-diagrams generated, combining...`);
+        console.log(`[Combined] All ${subDiagramResults.length} sub-diagrams generated successfully`);
 
-        // Use intelligent merge that preserves sub-diagram content
-        const combinedBpmn = intelligentMergeDiagrams(subDiagramResults, originalPrompt);
+        // Return individual diagrams for detailed viewing
+        const diagrams = subDiagramResults.map((result, index) => ({
+            id: `diagram_${index + 1}`,
+            title: result.prompt.substring(0, 80) + (result.prompt.length > 80 ? '...' : ''),
+            xml: result.xml,
+            prompt: result.prompt,
+            index: index + 1,
+        }));
 
-        console.log(`[Combined] Success! Combined diagram: ${combinedBpmn.length} chars`);
+        // Also generate a mega-diagram with all details flattened into one view
+        const combinedXml = createMegaDiagram(subDiagramResults, originalPrompt);
+
+        console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams + mega-diagram`);
 
         return new Response(
             JSON.stringify({
-                bpmnXml: combinedBpmn,
-                subDiagramCount: subDiagramResults.length,
-                message: `Successfully combined ${subDiagramResults.length} sub-diagrams`,
+                diagrams,
+                combinedXml, // Combined overview with expandable subprocesses
+                diagramCount: diagrams.length,
+                originalPrompt,
+                message: `Successfully generated ${diagrams.length} diagrams + combined overview`,
+                type: 'multi-diagram',
             }),
             {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -210,6 +222,115 @@ function createPlaceholderDiagram(prompt: string, index: number, diagramType: st
 </bpmn:definitions>`;
 }
 
+/**
+ * Creates a mega-diagram by merging all sub-diagrams into a flat view (no lanes)
+ * All tasks, events, and flows are visible - stacked vertically
+ */
+function createMegaDiagram(
+    subDiagramResults: Array<{ xml: string; prompt: string; index: number }>,
+    originalPrompt: string,
+): string {
+    const timestamp = Date.now();
+
+    let allFlowNodes = "";
+    let allDIContent = "";
+    let currentYOffset = 100;
+    const sectionSpacing = 100;
+
+    subDiagramResults.forEach((result, index) => {
+        console.log(`[Mega-Diagram] Processing diagram ${index + 1}/${subDiagramResults.length}`);
+
+        const idSuffix = `_d${index}_${timestamp}`;
+
+        // Extract process content (everything inside <process>) WITHOUT laneSets
+        let processMatch = result.xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
+        if (!processMatch) {
+            processMatch = result.xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+        }
+
+        if (!processMatch) {
+            console.warn(`[Mega-Diagram] No process content found in diagram ${index}`);
+            return;
+        }
+
+        let processContent = processMatch[1];
+
+        // Remove laneSet completely (we're creating a flat diagram)
+        processContent = processContent.replace(/<laneSet[^>]*>[\s\S]*?<\/laneSet>/g, '');
+
+        // Make all IDs unique
+        processContent = processContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
+        processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1${idSuffix}"`);
+        processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1${idSuffix}"`);
+        processContent = processContent.replace(/attachedToRef="([^"]+)"/g, `attachedToRef="$1${idSuffix}"`);
+        processContent = processContent.replace(/<incoming>([^<]+)<\/incoming>/g, (match, ref) => `<incoming>${ref}${idSuffix}</incoming>`);
+        processContent = processContent.replace(/<outgoing>([^<]+)<\/outgoing>/g, (match, ref) => `<outgoing>${ref}${idSuffix}</outgoing>`);
+        processContent = processContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
+
+        allFlowNodes += processContent + "\n";
+
+        // Extract DI content
+        let diPlaneMatch = result.xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+        if (!diPlaneMatch) {
+            diPlaneMatch = result.xml.match(/<BPMNPlane[^>]*>([\s\S]*?)<\/BPMNPlane>/);
+        }
+
+        if (!diPlaneMatch) {
+            console.warn(`[Mega-Diagram] No DI content found in diagram ${index}`);
+            return;
+        }
+
+        let diContent = diPlaneMatch[1];
+
+        // Remove lane shapes from DI (we don't need them)
+        diContent = diContent.replace(/<bpmndi:BPMNShape[^>]*bpmnElement="[^"]*Lane[^"]*"[^>]*>[\s\S]*?<\/bpmndi:BPMNShape>/g, '');
+
+        // Make DI IDs unique
+        diContent = diContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
+        diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
+
+        // Find max Y coordinate for height calculation
+        const yCoords: number[] = [];
+        diContent.replace(/y="(\d+)"/g, (match, y) => {
+            yCoords.push(parseInt(y));
+            return match;
+        });
+
+        const maxY = Math.max(...yCoords, 0);
+        const diagramHeight = maxY + 200;
+
+        // Adjust Y coordinates
+        diContent = diContent.replace(/y="(\d+)"/g, (match, y) => {
+            const newY = parseInt(y) + currentYOffset;
+            return `y="${newY}"`;
+        });
+
+        allDIContent += `\n      <!-- Diagram ${index + 1}: ${result.prompt.substring(0, 60)}... -->\n`;
+        allDIContent += diContent + "\n";
+
+        currentYOffset += diagramHeight + sectionSpacing;
+    });
+
+    // Build complete BPMN XML without lanes
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_Mega_${timestamp}"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_Mega_${timestamp}" isExecutable="false" name="${originalPrompt.substring(0, 100)}">
+${allFlowNodes}
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Mega_${timestamp}">
+    <bpmndi:BPMNPlane id="BPMNPlane_Mega_${timestamp}" bpmnElement="Process_Mega_${timestamp}">
+${allDIContent}
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+}
+
 function intelligentMergeDiagrams(
     subDiagramResults: Array<{ xml: string; prompt: string; index: number }>,
     originalPrompt: string,
@@ -303,6 +424,13 @@ ${flows}
         <dc:Bounds x="${startX}" y="${startY + subProcessHeight / 2 - eventSize / 2}" width="${eventSize}" height="${eventSize}"/>
       </bpmndi:BPMNShape>
 ${subProcessShapes}
+
+      <!-- Nested BPMNPlanes for subprocess internals -->
+${subDiagramResults.map((result, idx) => {
+        const spId = `SubProcess_${idx}_${timestamp}`;
+        return `      <!-- BPMNPlane for ${spId} -->`;
+    }).filter(Boolean).join('\n')}
+
 ${subProcessDI}
       <bpmndi:BPMNShape id="Shape_EndEvent_${timestamp}" bpmnElement="EndEvent_${timestamp}">
         <dc:Bounds x="${startX + 150 + subProcessWidth / 2 - eventSize / 2}" y="${endY}" width="${eventSize}" height="${eventSize}"/>

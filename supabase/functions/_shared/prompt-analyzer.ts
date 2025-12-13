@@ -131,13 +131,14 @@ ${prompt}`;
 
 /**
  * Quick complexity check without AI - for obviously simple prompts
+ * Enhanced with aggressive pattern detection for timeout prevention
  */
 function quickComplexityCheck(prompt: string): PromptAnalysis {
     const actors = (prompt.match(/actor|participant|role|department|system|service/gi) || []).length;
     const length = prompt.length;
 
     // Enhanced business process actor detection
-    const businessActors = (prompt.match(/customer|client|user|manager|underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer/gi) || []).length;
+    const businessActors = (prompt.match(/customer|client|user|manager|underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer|lead|team/gi) || []).length;
     const totalActors = actors + businessActors;
 
     // Check for high-complexity BPMN keywords
@@ -146,16 +147,62 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
     // Business process complexity indicators
     const businessKeywords = (prompt.match(/approval|verify|review|validate|countersign|authorize|confirm|check|assess|evaluate/gi) || []).length;
 
-    // Timer and event keywords
-    const timerKeywords = (prompt.match(/timeout|auto-cancel|auto-reject|escalate|wait|delay|days?|hours?|minutes?|deadline|expire/gi) || []).length;
+    // Timer and event keywords (ENHANCED for timeout detection)
+    const timerKeywords = (prompt.match(/timeout|auto-cancel|auto-reject|auto-close|escalate|escalation|wait|delay|days?|hours?|minutes?|deadline|expire|within|after/gi) || []).length;
 
     // Loop and iteration keywords
     const loopKeywords = (prompt.match(/loop|retry|re-upload|resubmit|repeat|until|again|iterate|stay in|cycle/gi) || []).length;
 
-    const totalComplexityIndicators = complexKeywords + businessKeywords + timerKeywords + loopKeywords;
+    // Customer journey & support workflow keywords (NEW - for ticket systems, support workflows)
+    const supportWorkflowKeywords = (prompt.match(/ticket|support|queue|routing|categorize|category|priority|high priority|low priority|medium priority|request|portal|submission|workflow|notification|notify|message|alert|response/gi) || []).length;
+
+    // Gateway and routing keywords (NEW - indicates complex branching)
+    const gatewayKeywords = (prompt.match(/exclusive gateway|gateway|route|based on|if\s|then\s|else\s|otherwise|depending on|categorize|assign to|send to|trigger/gi) || []).length;
+
+    // Multi-department/multi-actor indicators (NEW)
+    const multiActorKeywords = (prompt.match(/different|multiple|various|several|team|teams|department|across|between/gi) || []).length;
+
+    const totalComplexityIndicators = complexKeywords + businessKeywords + timerKeywords + loopKeywords + supportWorkflowKeywords + gatewayKeywords + multiActorKeywords;
+
+    // AGGRESSIVE EARLY DETECTION: Support ticket workflows and customer journeys
+    // These almost always need splitting due to multiple actors + routing + timers
+    if (supportWorkflowKeywords >= 3 && (totalActors >= 2 || timerKeywords >= 1 || gatewayKeywords >= 1)) {
+        console.log(`[Quick Check] Support workflow detected: ${supportWorkflowKeywords} support keywords, ${totalActors} actors, ${timerKeywords} timers`);
+        return {
+            isComplex: true,
+            complexity: {
+                score: 9,
+                actors: totalActors,
+                processes: supportWorkflowKeywords + gatewayKeywords,
+                gateways: gatewayKeywords + 2,
+                events: timerKeywords + 2,
+                estimatedXmlSize: 120000
+            },
+            recommendation: 'split',
+            reasoning: 'Support/ticket workflow detected with multiple actors and routing - high timeout risk'
+        };
+    }
+
+    // AGGRESSIVE: 3+ actors with any complexity = split (was 5+ before)
+    if (totalActors >= 3 && (timerKeywords >= 1 || gatewayKeywords >= 2 || complexKeywords >= 2)) {
+        console.log(`[Quick Check] Multi-actor complex workflow: ${totalActors} actors, ${timerKeywords} timers, ${gatewayKeywords} gateways`);
+        return {
+            isComplex: true,
+            complexity: {
+                score: 8,
+                actors: totalActors,
+                processes: totalActors * 2,
+                gateways: gatewayKeywords + 1,
+                events: timerKeywords + 2,
+                estimatedXmlSize: 100000
+            },
+            recommendation: 'split',
+            reasoning: `Multi-actor workflow (${totalActors} actors) with complex features - high timeout risk`
+        };
+    }
 
     // If it's short, has few actors, and no complex keywords, it's likely simple
-    if (length < 400 && totalActors <= 2 && totalComplexityIndicators === 0) {
+    if (length < 300 && totalActors <= 1 && totalComplexityIndicators === 0) {
         return {
             isComplex: false,
             complexity: {
@@ -171,18 +218,18 @@ function quickComplexityCheck(prompt: string): PromptAnalysis {
         };
     }
 
-    // If we detect strong complexity indicators, use deeper analysis
-    // but signal that it might need splitting
+    // Otherwise use fallback heuristic analysis
     return fallbackAnalysis(prompt);
 }
 
 /**
  * Fallback analysis using simple heuristics
+ * Enhanced with aggressive timeout prevention
  */
 export function fallbackAnalysis(prompt: string): PromptAnalysis {
     // Enhanced actor detection with business roles
     const actors = (prompt.match(/actor|participant|role|department|system|service|engine|bureau|portal|customer|manager|team|owner/gi) || []).length;
-    const businessActors = (prompt.match(/underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer|client|user/gi) || []).length;
+    const businessActors = (prompt.match(/underwriter|reviewer|approver|senior|admin|operator|agent|analyst|specialist|engineer|auditor|officer|client|user|lead/gi) || []).length;
     const totalActors = actors + businessActors;
 
     const processes = (prompt.match(/process|workflow|flow|procedure|task|step|activity|provisioning|deprovisioning|approval|review|recertification/gi) || []).length;
@@ -190,7 +237,7 @@ export function fallbackAnalysis(prompt: string): PromptAnalysis {
     const events = (prompt.match(/event|timer|message|signal|error|boundary|start|end|intermediate|wait|trigger|initiation|termination|escalate|chase|periodic/gi) || []).length;
 
     // Enhanced timer/timeout detection
-    const timerEvents = (prompt.match(/timeout|auto-cancel|auto-reject|deadline|expire|wait|delay|days?|hours?|minutes?/gi) || []).length;
+    const timerEvents = (prompt.match(/timeout|auto-cancel|auto-reject|auto-close|deadline|expire|wait|delay|days?|hours?|minutes?|within|after|escalation/gi) || []).length;
 
     // Loop and retry detection
     const loops = (prompt.match(/loop|retry|re-upload|resubmit|repeat|until|again|iterate|stay in|cycle/gi) || []).length;
@@ -198,23 +245,23 @@ export function fallbackAnalysis(prompt: string): PromptAnalysis {
     const swimlanes = (prompt.match(/swimlane|pool|lane|across/gi) || []).length;
     const subprocesses = (prompt.match(/subprocess|nested|include/gi) || []).length;
 
-    // Enhanced complex features detection
-    const complexFeatures = (prompt.match(/timer event|boundary event|message flow|compensation|error handling|escalation|approval|access management|provisioning|deprovisioning|recertification|automated|confirmation|verify|validate|countersign|authorize/gi) || []).length;
+    // Enhanced complex features detection (NEW - support workflow patterns)
+    const complexFeatures = (prompt.match(/timer event|boundary event|message flow|compensation|error handling|escalation|approval|access management|provisioning|deprovisioning|recertification|automated|confirmation|verify|validate|countersign|authorize|ticket|support|queue|routing|categorize|priority|notification|notify/gi) || []).length;
 
     const length = prompt.length;
 
-    // Enhanced complexity score calculation (1-10)
+    // Enhanced complexity score calculation (1-10) - MORE AGGRESSIVE
     const score = Math.min(10, Math.floor(
-        (totalActors * 1.5) +      // More weight on actors
+        (totalActors * 2.0) +         // Increased weight on actors (was 1.5)
         (processes * 0.5) +
-        (gateways * 1.8) +         // Gateways indicate complexity
-        (events * 1.2) +           // Events add complexity
-        (timerEvents * 2.5) +      // Timer events are complex
-        (loops * 2.5) +            // Loops add significant complexity
-        (swimlanes * 2.5) +        // Swimlanes add significant complexity
-        (subprocesses * 2.0) +     // Subprocesses add complexity
-        (complexFeatures * 1.5) +  // Complex BPMN features
-        (length / 350)             // Length factor
+        (gateways * 2.0) +            // Increased weight on gateways (was 1.8)
+        (events * 1.2) +
+        (timerEvents * 3.0) +         // Increased weight on timer events (was 2.5)
+        (loops * 2.5) +
+        (swimlanes * 2.5) +
+        (subprocesses * 2.0) +
+        (complexFeatures * 1.8) +     // Increased weight (was 1.5)
+        (length / 300)                // More sensitive to length (was /350)
     ));
 
     // Estimate XML size (rough approximation)
@@ -223,18 +270,18 @@ export function fallbackAnalysis(prompt: string): PromptAnalysis {
     let recommendation: "generate" | "simplify" | "split" = "generate";
     let reasoning = "Simple workflow, can generate directly";
 
-    // More aggressive splitting for very complex prompts
+    // MORE AGGRESSIVE SPLITTING - Lower thresholds
     // Enhanced detection for business processes with multiple actors and complex features
-    if (estimatedXmlSize > 80000 ||
-        totalActors > 4 ||
-        score > 7 ||
-        (totalActors >= 3 && (gateways >= 3 || timerEvents >= 1 || loops >= 1)) ||
-        (gateways >= 4 && totalActors >= 2) ||
-        complexFeatures > 4 ||
+    if (estimatedXmlSize > 70000 ||                                   // Lowered from 80000
+        totalActors > 3 ||                                            // Lowered from 4
+        score > 6 ||                                                  // Lowered from 7
+        (totalActors >= 3 && (gateways >= 2 || timerEvents >= 1 || loops >= 1)) ||  // More aggressive
+        (gateways >= 3 && totalActors >= 2) ||                       // Lowered from 4/2
+        complexFeatures > 3 ||                                        // Lowered from 4
         timerEvents >= 2 ||
         loops >= 2) {
         recommendation = 'split';
-        reasoning = `Complex workflow detected (${totalActors} actors, ${gateways} gateways, ${timerEvents} timer events, ${loops} loops, ${complexFeatures} complex features, score ${score}). Splitting for better results.`;
+        reasoning = `Complex workflow detected (${totalActors} actors, ${gateways} gateways, ${timerEvents} timer events, ${loops} loops, ${complexFeatures} complex features, score ${score}). Splitting for better results and timeout prevention.`;
     } else if (totalActors > 2 || score > 4 || (gateways > 2 && events > 2) || complexFeatures > 2) {
         recommendation = 'simplify';
         reasoning = `Moderately complex workflow (${totalActors} actors, ${gateways} gateways, ${complexFeatures} complex features, score ${score}). Simplifying to core flow.`;
