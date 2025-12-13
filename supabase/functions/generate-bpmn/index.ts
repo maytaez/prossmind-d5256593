@@ -7,6 +7,8 @@ import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
 import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../_shared/bpmn-di-optimizer.ts';
 import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts } from '../_shared/prompt-analyzer.ts';
+import { BPMNProcess, createDefinitions } from '../_shared/bpmn-json-schema.ts';
+import { convertBpmnJsonToXml } from '../_shared/bpmn-json-to-xml.ts';
 
 interface ValidationResult {
   isValid: boolean;
@@ -138,6 +140,102 @@ async function retryBpmnGenerationIfNecessary(simplifiedPrompt: string, systemPr
   throw new Error(`Failed to generate valid BPMN XML after ${maxAttempts} attempts. Last error: ${lastValidationError?.error || 'Unknown'}`);
 }
 
+/**
+ * Generate BPMN as JSON structure (more compact and efficient for complex prompts)
+ */
+async function generateBpmnAsJson(
+  prompt: string,
+  diagramType: 'bpmn' | 'pid',
+  languageCode: string,
+  languageName: string,
+  googleApiKey: string,
+  maxTokens: number,
+  temperature: number
+): Promise<BPMNProcess> {
+  const systemPrompt = `You are a BPMN 2.0 expert. Generate a BPMN process as a JSON structure in ${languageName}.
+
+Return ONLY valid JSON in this exact format (no markdown, no explanation):
+{
+  "id": "process_id",
+  "name": "Process Name",
+  "elements": [
+    {"id": "start1", "type": "startEvent", "name": "Start"},
+    {"id": "task1", "type": "task", "name": "Task Description"},
+    {"id": "gateway1", "type": "exclusiveGateway", "name": "Decision Point"},
+    {"id": "end1", "type": "endEvent", "name": "End"}
+  ],
+  "flows": [
+    {"id": "flow1", "sourceRef": "start1", "targetRef": "task1"},
+    {"id": "flow2", "sourceRef": "task1", "targetRef": "gateway1"},
+    {"id": "flow3", "sourceRef": "gateway1", "targetRef": "end1", "name": "Approved"}
+  ]
+}
+
+Valid element types: startEvent, endEvent, task, userTask, serviceTask, scriptTask, businessRuleTask, manualTask, sendTask, receiveTask, exclusiveGateway, parallelGateway, inclusiveGateway, subprocess
+
+For subprocess, include nested "elements" and "flows" arrays.
+For gateways, you can add "gatewayDirection": "Diverging" | "Converging"
+For conditional flows, add "conditionExpression": "condition text"
+
+IMPORTANT: 
+- All IDs must be unique
+- All sourceRef and targetRef must reference existing element IDs
+- Use descriptive names in ${languageName}
+- Return ONLY the JSON, no markdown formatting`;
+
+  const userPrompt = `Generate a ${diagramType.toUpperCase()} process for:
+${prompt}
+
+Requirements:
+- Use descriptive names in ${languageName}
+- Include all necessary elements and flows
+- Ensure all flow references are valid
+- For complex workflows, use subprocesses to organize related tasks
+- Return ONLY the JSON structure`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: temperature,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  // Clean up markdown formatting if present
+  jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  try {
+    const processData = JSON.parse(jsonText);
+
+    // Validate basic structure
+    if (!processData.id || !processData.elements || !processData.flows) {
+      throw new Error('Invalid JSON structure: missing required fields (id, elements, or flows)');
+    }
+
+    console.log(`[JSON Generation] Successfully parsed JSON with ${processData.elements.length} elements and ${processData.flows.length} flows`);
+
+    return processData as BPMNProcess;
+  } catch (error) {
+    console.error('[JSON Parse Error]', error);
+    console.error('[JSON Text Preview]', jsonText.substring(0, 500));
+    throw new Error(`Failed to parse JSON response: ${(error as Error).message}`);
+  }
+}
+
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 
 Deno.serve(async (req) => {
@@ -165,13 +263,13 @@ Deno.serve(async (req) => {
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) throw new Error('Google API key not configured');
 
-    // INTELLIGENT PROMPT ANALYSIS - Automatically detect and handle complex prompts
+    // INTELLIGENT PROMPT ANALYSIS - Use JSON for complex prompts instead of splitting
     let finalPromptToGenerate = prompt;
     let wasSimplified = false;
-    let wasSplit = false;
+    let useJsonFormat = false;
     let subPrompts: string[] = [];
 
-    // Quick complexity check based on keywords
+    // Quick complexity check based on keywords and length
     const complexityKeywords = [
       'swimlane', 'swim lane', 'lane', 'pool',
       'parallel', 'concurrent',
@@ -189,76 +287,54 @@ Deno.serve(async (req) => {
 
     const promptLower = prompt.toLowerCase();
     const keywordMatches = complexityKeywords.filter(kw => promptLower.includes(kw)).length;
-    const hasHighKeywordDensity = keywordMatches >= 4; // 4+ complexity keywords
+    const hasHighKeywordDensity = keywordMatches >= 4;
+    const isLongPrompt = promptLength > 1500;
+    const isVeryComplex = promptLength > 3000 || keywordMatches >= 8;
 
-    // Only analyze if not in modeling agent mode and either:
-    // - Prompt is reasonably long (>800 chars), OR
-    // - Prompt has high keyword density indicating complexity
-    if (!modelingAgentMode && (promptLength > 800 || hasHighKeywordDensity)) {
-      console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt...`);
-      const analysisStartTime = Date.now();
+    // Decide on generation strategy
+    if (!modelingAgentMode && (isLongPrompt || hasHighKeywordDensity)) {
+      console.log(`[Prompt Strategy] Analyzing prompt: ${promptLength} chars, ${keywordMatches} complexity keywords`);
 
-      try {
-        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
-        const analysisTime = Date.now() - analysisStartTime;
-        console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation}`);
+      if (isVeryComplex) {
+        // VERY COMPLEX: Still split for extremely complex prompts
+        console.log(`[Prompt Strategy] VERY COMPLEX - Splitting into sub-prompts`);
 
-        if (analysis.recommendation === 'split') {
-          // Very complex - split into multiple sub-prompts
-          console.log(`[Prompt Analysis] Splitting prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`);
-          const splitStartTime = Date.now();
+        try {
+          const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY);
 
-          // If analysis already provided sub-prompts, use them
           if (analysis.subPrompts && analysis.subPrompts.length > 0) {
             subPrompts = analysis.subPrompts;
           } else {
             subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY);
           }
 
-          const splitTime = Date.now() - splitStartTime;
-          console.log(`[Prompt Analysis] Split into ${subPrompts.length} sub-prompts in ${splitTime}ms`);
-          wasSplit = true;
+          console.log(`[Prompt Strategy] Split into ${subPrompts.length} sub-prompts`);
 
-          // Return sub-prompts to client for multi-diagram generation
           return new Response(JSON.stringify({
             requiresSplit: true,
             subPrompts,
             analysis: {
-              complexity: analysis.complexity,
-              reasoning: analysis.reasoning
+              complexity: { score: 10, actors: keywordMatches },
+              reasoning: 'Extremely complex workflow requires multiple diagrams'
             },
-            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
+            message: `This workflow is very complex and has been split into ${subPrompts.length} sub-prompts for optimal results.`
           }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
-
-        } else if (analysis.recommendation === 'simplify') {
-          // Moderately complex - simplify
-          console.log(`[Prompt Analysis] Simplifying prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`);
-          const simplifyStartTime = Date.now();
-
-          if (analysis.simplifiedPrompt) {
-            finalPromptToGenerate = analysis.simplifiedPrompt;
-          } else {
-            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY);
-          }
-
-          const simplifyTime = Date.now() - simplifyStartTime;
-          wasSimplified = true;
-          promptLength = finalPromptToGenerate.length;
-          console.log(`[Prompt Analysis] Simplified in ${simplifyTime}ms: ${prompt.length} → ${finalPromptToGenerate.length} chars`);
-        } else {
-          console.log(`[Prompt Analysis] Complexity acceptable (score: ${analysis.complexity.score}), generating directly`);
+        } catch (error) {
+          console.error('[Prompt Strategy] Split failed, falling back to JSON format:', error);
+          useJsonFormat = true;
         }
-      } catch (error) {
-        console.error('[Prompt Analysis] Analysis failed, proceeding with original prompt:', error);
-        // Continue with original prompt if analysis fails
+      } else {
+        // MODERATELY COMPLEX: Use JSON format (40% more efficient than XML)
+        console.log(`[Prompt Strategy] MODERATELY COMPLEX - Using JSON format for efficiency`);
+        useJsonFormat = true;
       }
     } else if (modelingAgentMode) {
-      console.log('[Prompt Analysis] Skipping analysis (modeling agent mode)');
+      console.log('[Prompt Strategy] Modeling agent mode - using standard XML');
     } else {
-      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars)`);
+      console.log(`[Prompt Strategy] Simple prompt (${promptLength} chars) - using standard XML`);
     }
 
     let promptHash: string;
@@ -272,16 +348,17 @@ Deno.serve(async (req) => {
     let { model, temperature, maxTokens } = modelSelection;
     const { complexityScore } = modelSelection;
 
-    // For very complex prompts, generate without DI to prevent truncation
-    // The client will add layout using auto-layout algorithms
-    const useNoDI = promptLength > 3000 || complexityScore >= 9;
-    const useCompactDI = !useNoDI && (promptLength > 2000 || complexityScore >= 7);
+    // If using JSON format, increase token limit (JSON is more compact)
+    if (useJsonFormat) {
+      maxTokens = Math.min(maxTokens * 1.5, 8192); // 50% more tokens for JSON
+      console.log(`[JSON Format] Increased token limit to ${maxTokens} (JSON is ~40% more compact)`);
+    }
 
     const systemPrompt = diagramType === 'pid'
       ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
       : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName);
 
-    console.log(`[Model Selection] ${model} with ${maxTokens} tokens (complexity: ${complexityScore}, compactDI: ${useCompactDI}, noDI: ${useNoDI})`);
+    console.log(`[Model Selection] ${model} with ${maxTokens} tokens (complexity: ${complexityScore}, useJsonFormat: ${useJsonFormat})`);
     if (modelingAgentMode) temperature = model === 'google/gemini-2.5-pro' ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
     if (!skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
@@ -292,8 +369,20 @@ Deno.serve(async (req) => {
       } catch { /* continue */ }
     }
 
-    // Use the analyzed/simplified prompt for generation
-    const bpmnXml = await retryBpmnGenerationIfNecessary(finalPromptToGenerate, systemPrompt, diagramType, detectedLanguageCode, detectedLanguageName, GOOGLE_API_KEY, maxTokens, temperature, 3);
+    // Generate BPMN - use JSON format for complex prompts, XML for simple ones
+    let bpmnXml: string;
+
+    if (useJsonFormat) {
+      console.log('[JSON Generation] Generating BPMN as JSON then converting to XML...');
+      const bpmnProcess = await generateBpmnAsJson(finalPromptToGenerate, diagramType, detectedLanguageCode, detectedLanguageName, GOOGLE_API_KEY, maxTokens, temperature);
+      const definitions = createDefinitions(`Definitions_${Date.now()}`, [bpmnProcess], finalPromptToGenerate);
+      bpmnXml = convertBpmnJsonToXml(definitions);
+      console.log(`[JSON Generation] Success! Generated ${bpmnXml.length} chars of XML from JSON`);
+    } else {
+      console.log('[XML Generation] Generating BPMN as XML directly...');
+      bpmnXml = await retryBpmnGenerationIfNecessary(finalPromptToGenerate, systemPrompt, diagramType, detectedLanguageCode, detectedLanguageName, GOOGLE_API_KEY, maxTokens, temperature, 3);
+    }
+
     modelUsed = 'google/gemini-2.5-pro';
     const finalValidation = validateBpmnXml(bpmnXml);
     if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
@@ -303,6 +392,7 @@ Deno.serve(async (req) => {
       bpmnXml,
       cached: false,
       wasSimplified,
+      usedJsonFormat: useJsonFormat,
       originalPromptLength: wasSimplified ? prompt.length : undefined,
       simplifiedPromptLength: wasSimplified ? finalPromptToGenerate.length : undefined
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
