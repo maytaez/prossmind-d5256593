@@ -422,13 +422,16 @@ Deno.serve(async (req) => {
     const keywordScore = Math.min((keywordMatches / 15) * 60, 60); // Max at 15 keywords
     const promptComplexityScore = lengthScore + keywordScore;
 
+    // TEMPORARY: Disable JSON for parallel flows (layout algorithm needs improvement)
+    const hasParallelFlows = promptLower.includes("parallel") || promptLower.includes("concurrent");
+
     // Strategy thresholds based on complexity score
     const SIMPLE_THRESHOLD = 20; // < 20: Simple, use direct XML
     const COMPLEX_THRESHOLD = 80; // >= 80: Very complex, split into sub-prompts
-    // 20-80: Moderate, use JSON format
+    // 20-80: Moderate, use JSON format (unless parallel flows)
 
     console.log(
-      `[Prompt Strategy] Length: ${promptLength} chars, Keywords: ${keywordMatches}, Complexity Score: ${promptComplexityScore.toFixed(1)}`,
+      `[Prompt Strategy] Length: ${promptLength} chars, Keywords: ${keywordMatches}, Complexity Score: ${promptComplexityScore.toFixed(1)}, Parallel: ${hasParallelFlows}`,
     );
 
     // Decide on generation strategy
@@ -471,10 +474,18 @@ Deno.serve(async (req) => {
         }
       } else {
         // MODERATELY COMPLEX: Use JSON format (40% more efficient than XML)
-        console.log(
-          `[Prompt Strategy] MODERATELY COMPLEX (score: ${promptComplexityScore.toFixed(1)}) - Using JSON format for efficiency`,
-        );
-        useJsonFormat = true;
+        // UNLESS it has parallel flows (layout algorithm doesn't handle them well yet)
+        if (hasParallelFlows) {
+          console.log(
+            `[Prompt Strategy] MODERATELY COMPLEX (score: ${promptComplexityScore.toFixed(1)}) - Using XML (has parallel flows)`,
+          );
+          useJsonFormat = false;
+        } else {
+          console.log(
+            `[Prompt Strategy] MODERATELY COMPLEX (score: ${promptComplexityScore.toFixed(1)}) - Using JSON format for efficiency`,
+          );
+          useJsonFormat = true;
+        }
       }
     } else if (modelingAgentMode) {
       console.log("[Prompt Strategy] Modeling agent mode - using standard XML");
