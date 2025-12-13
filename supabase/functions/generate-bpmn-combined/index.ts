@@ -1,4 +1,16 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import {
+    BPMNProcess,
+    BPMNElement,
+    BPMNSequenceFlow,
+    createSubprocess,
+    createStartEvent,
+    createEndEvent,
+    createSequenceFlow,
+    createProcess,
+    createDefinitions
+} from '../_shared/bpmn-json-schema.ts';
+import { convertBpmnJsonToXml } from '../_shared/bpmn-json-to-xml.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -10,6 +22,13 @@ interface CombinedGenerationRequest {
     diagramType: 'bpmn' | 'pid';
     userId: string;
     originalPrompt: string;
+}
+
+interface SubDiagramResult {
+    process: BPMNProcess | null;
+    prompt: string;
+    index: number;
+    error?: string;
 }
 
 Deno.serve(async (req) => {
@@ -33,25 +52,30 @@ Deno.serve(async (req) => {
             throw new Error('Google API key not configured');
         }
 
-        console.log(`[Combined Generation] Starting for ${subPrompts.length} sub-prompts`);
+        console.log(`[Combined Generation - JSON Hybrid] Starting for ${subPrompts.length} sub-prompts`);
 
-        // Generate all sub-diagrams in parallel
+        // Generate all sub-diagrams in parallel using JSON format
         const subDiagramPromises = subPrompts.map(async (subPrompt, index) => {
-            console.log(`[Combined] Generating sub-diagram ${index + 1}/${subPrompts.length}`);
+            console.log(`[Combined] Generating JSON for sub-diagram ${index + 1}/${subPrompts.length}`);
 
             try {
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     setTimeout(() => reject(new Error('Sub-diagram generation timeout')), 45000);
                 });
 
-                const generationPromise = generateSingleDiagram(subPrompt, diagramType, GOOGLE_API_KEY);
+                const generationPromise = generateSingleDiagramAsJSON(subPrompt, diagramType, GOOGLE_API_KEY);
                 const result = await Promise.race([generationPromise, timeoutPromise]);
 
-                console.log(`[Combined] Sub-diagram ${index + 1} completed (${result.length} chars)`);
-                return { xml: result, prompt: subPrompt, index };
+                console.log(`[Combined] Sub-diagram ${index + 1} JSON completed`);
+                return { process: result, prompt: subPrompt, index };
             } catch (error) {
                 console.error(`[Combined] Sub-diagram ${index + 1} failed:`, error);
-                return { xml: createPlaceholderDiagram(subPrompt, index + 1, diagramType), prompt: subPrompt, index };
+                return {
+                    process: createFallbackProcess(subPrompt, index),
+                    prompt: subPrompt,
+                    index,
+                    error: (error as Error).message
+                };
             }
         });
 
@@ -60,7 +84,7 @@ Deno.serve(async (req) => {
             setTimeout(() => reject(new Error('Overall generation timeout')), 120000);
         });
 
-        let subDiagramResults: Array<{ xml: string; prompt: string; index: number }>;
+        let subDiagramResults: SubDiagramResult[];
         try {
             subDiagramResults = await Promise.race([
                 Promise.all(subDiagramPromises),
@@ -73,8 +97,18 @@ Deno.serve(async (req) => {
 
         console.log(`[Combined] All ${subDiagramResults.length} sub-diagrams generated, combining...`);
 
-        // Use intelligent merge that preserves sub-diagram content
-        const combinedBpmn = intelligentMergeDiagrams(subDiagramResults, originalPrompt);
+        // Combine JSON structures (much easier than XML!)
+        const combinedProcess = combineProcesses(subDiagramResults, originalPrompt);
+
+        // Convert to XML once at the end with automatic layout
+        console.log('[Combined] Converting combined JSON to XML with auto-layout...');
+        const definitions = createDefinitions(
+            `Definitions_Combined_${Date.now()}`,
+            [combinedProcess],
+            originalPrompt
+        );
+
+        const combinedBpmn = convertBpmnJsonToXml(definitions);
 
         console.log(`[Combined] Success! Combined diagram: ${combinedBpmn.length} chars`);
 
@@ -82,7 +116,8 @@ Deno.serve(async (req) => {
             JSON.stringify({
                 bpmnXml: combinedBpmn,
                 subDiagramCount: subDiagramResults.length,
-                message: `Successfully combined ${subDiagramResults.length} sub-diagrams`
+                message: `Successfully combined ${subDiagramResults.length} sub-diagrams using JSON hybrid approach`,
+                approach: 'json-hybrid'
             }),
             {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -100,27 +135,42 @@ Deno.serve(async (req) => {
     }
 });
 
-async function generateSingleDiagram(
+/**
+ * Generate a single diagram as JSON structure (more compact, easier for AI)
+ */
+async function generateSingleDiagramAsJSON(
     prompt: string,
     diagramType: 'bpmn' | 'pid',
     googleApiKey: string
-): Promise<string> {
-    const systemPrompt = diagramType === 'bpmn'
-        ? 'You are a BPMN 2.0 expert. Generate valid, complete BPMN XML with diagram interchange (DI).'
-        : 'You are a P&ID expert. Generate valid BPMN XML representing a P&ID.';
+): Promise<BPMNProcess> {
+    const systemPrompt = `You are a BPMN 2.0 expert. Generate a BPMN process as a JSON structure.
 
-    const userPrompt = `${systemPrompt}
+Return ONLY valid JSON in this exact format (no markdown, no explanation):
+{
+  "id": "process_id",
+  "name": "Process Name",
+  "elements": [
+    {"id": "start1", "type": "startEvent", "name": "Start"},
+    {"id": "task1", "type": "task", "name": "Task Description"},
+    {"id": "end1", "type": "endEvent", "name": "End"}
+  ],
+  "flows": [
+    {"id": "flow1", "sourceRef": "start1", "targetRef": "task1"},
+    {"id": "flow2", "sourceRef": "task1", "targetRef": "end1"}
+  ]
+}
 
-Generate a ${diagramType.toUpperCase()} diagram for:
+Valid element types: startEvent, endEvent, task, userTask, serviceTask, exclusiveGateway, parallelGateway, subprocess
+For subprocess, include nested "elements" and "flows" arrays.`;
+
+    const userPrompt = `Generate a ${diagramType.toUpperCase()} process for:
 ${prompt}
 
-REQUIREMENTS:
-1. Include complete BPMN 2.0 XML structure
-2. Include diagram interchange (bpmndi:BPMNDiagram) with coordinates
-3. Use descriptive task names based on the prompt
-4. Return ONLY the XML, no markdown formatting
-
-Generate the diagram:`;
+Requirements:
+- Use descriptive names
+- Include all necessary elements and flows
+- Ensure all flow references are valid
+- Return ONLY the JSON structure`;
 
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`,
@@ -128,9 +178,9 @@ Generate the diagram:`;
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: userPrompt }] }],
+                contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
                 generationConfig: {
-                    maxOutputTokens: 8192,
+                    maxOutputTokens: 4096, // JSON is more compact than XML
                     temperature: 0.3,
                 },
             }),
@@ -142,288 +192,134 @@ Generate the diagram:`;
     }
 
     const data = await response.json();
-    let xml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    xml = xml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
+    let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    if (!xml.includes('<?xml')) {
-        throw new Error('Invalid BPMN XML generated');
+    // Clean up markdown formatting if present
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    try {
+        const processData = JSON.parse(jsonText);
+
+        // Validate basic structure
+        if (!processData.id || !processData.elements || !processData.flows) {
+            throw new Error('Invalid JSON structure: missing required fields');
+        }
+
+        return processData as BPMNProcess;
+    } catch (error) {
+        console.error('[JSON Parse Error]', error);
+        console.error('[JSON Text]', jsonText.substring(0, 500));
+        throw new Error(`Failed to parse JSON response: ${(error as Error).message}`);
     }
-
-    return xml;
 }
 
-function createPlaceholderDiagram(prompt: string, index: number, diagramType: string): string {
-    const processId = `Process_${index}_${Date.now()}`;
-    const taskId = `Task_${index}_${Date.now()}`;
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
-                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
-                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-                   id="Definitions_${index}">
-  <bpmn:process id="${processId}" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_${index}" name="Start"/>
-    <bpmn:task id="${taskId}" name="${prompt.substring(0, 60)}"/>
-    <bpmn:endEvent id="EndEvent_${index}" name="End"/>
-    <bpmn:sequenceFlow id="Flow_${index}_1" sourceRef="StartEvent_${index}" targetRef="${taskId}"/>
-    <bpmn:sequenceFlow id="Flow_${index}_2" sourceRef="${taskId}" targetRef="EndEvent_${index}"/>
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="Diagram_${index}">
-    <bpmndi:BPMNPlane id="Plane_${index}" bpmnElement="${processId}">
-      <bpmndi:BPMNShape id="Shape_Start_${index}" bpmnElement="StartEvent_${index}">
-        <dc:Bounds x="100" y="100" width="36" height="36"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_Task_${index}" bpmnElement="${taskId}">
-        <dc:Bounds x="200" y="80" width="100" height="80"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_End_${index}" bpmnElement="EndEvent_${index}">
-        <dc:Bounds x="360" y="100" width="36" height="36"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow_${index}_1" bpmnElement="Flow_${index}_1">
-        <di:waypoint x="136" y="118"/>
-        <di:waypoint x="200" y="120"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_${index}_2" bpmnElement="Flow_${index}_2">
-        <di:waypoint x="300" y="120"/>
-        <di:waypoint x="360" y="118"/>
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-}
-
-function intelligentMergeDiagrams(
-    subDiagramResults: Array<{ xml: string; prompt: string; index: number }>,
-    originalPrompt: string
-): string {
+/**
+ * Create a fallback process when generation fails
+ */
+function createFallbackProcess(prompt: string, index: number): BPMNProcess {
     const timestamp = Date.now();
-    let subProcesses = '';
-    let subProcessShapes = '';
-    let subProcessDI = ''; // DI for elements inside subprocesses
-    let flows = '';
-    let edges = '';
+    const processId = `Process_Fallback_${index}_${timestamp}`;
 
-    const startX = 100;
-    const startY = 200;
-    const subProcessWidth = 1200;  // Increased from 600
-    const subProcessHeight = 600;  // Increased from 400
-    const verticalSpacing = 650;   // Increased spacing
-    const eventSize = 36;
-    const scaleFactor = 0.7;       // Scale down internal elements to fit
+    const elements: BPMNElement[] = [
+        createStartEvent(`Start_${index}_${timestamp}`, 'Start'),
+        {
+            id: `Task_${index}_${timestamp}`,
+            type: 'task',
+            name: prompt.substring(0, 60) || `Process Step ${index + 1}`
+        },
+        createEndEvent(`End_${index}_${timestamp}`, 'End'),
+    ];
+
+    const flows: BPMNSequenceFlow[] = [
+        createSequenceFlow(`Flow1_${index}_${timestamp}`, `Start_${index}_${timestamp}`, `Task_${index}_${timestamp}`),
+        createSequenceFlow(`Flow2_${index}_${timestamp}`, `Task_${index}_${timestamp}`, `End_${index}_${timestamp}`),
+    ];
+
+    return createProcess(processId, `Fallback Process ${index + 1}`, elements, flows);
+}
+
+/**
+ * Combine multiple processes into a single process with subprocesses
+ * This is MUCH easier with JSON than with XML string manipulation!
+ */
+function combineProcesses(
+    subDiagramResults: SubDiagramResult[],
+    originalPrompt: string
+): BPMNProcess {
+    const timestamp = Date.now();
+    const combinedProcessId = `Process_Combined_${timestamp}`;
+
+    const elements: BPMNElement[] = [];
+    const flows: BPMNSequenceFlow[] = [];
+
+    // Add start event
+    const startEventId = `StartEvent_${timestamp}`;
+    elements.push(createStartEvent(startEventId, `Start: ${originalPrompt.substring(0, 40)}...`));
+
+    // Convert each sub-process into a subprocess element
+    const subprocessIds: string[] = [];
 
     subDiagramResults.forEach((result, index) => {
-        const subProcessId = `SubProcess_${index}_${timestamp}`;
-        const currentY = startY + (index * verticalSpacing);
+        if (!result.process) {
+            console.warn(`[Combine] Skipping null process at index ${index}`);
+            return;
+        }
 
-        // Extract both process content and DI information
-        const extracted = extractProcessAndDI(
-            result.xml,
-            index,
-            timestamp,
-            startX + 170,  // offsetX - padding from subprocess left edge
-            currentY + 30, // offsetY - padding from subprocess top edge
-            scaleFactor    // Scale factor to fit content
+        const subprocessId = `SubProcess_${index}_${timestamp}`;
+        subprocessIds.push(subprocessId);
+
+        // Create subprocess element containing the sub-process elements and flows
+        const subprocess = createSubprocess(
+            subprocessId,
+            result.prompt.substring(0, 80),
+            result.process.elements,
+            result.process.flows
         );
 
-        subProcesses += `    <bpmn:subProcess id="${subProcessId}" name="${result.prompt.substring(0, 80)}">
-${extracted.processContent}
-    </bpmn:subProcess>\n`;
-
-        // Add subprocess shape (collapsed initially, but can be expanded)
-        subProcessShapes += `      <bpmndi:BPMNShape id="Shape_${subProcessId}" bpmnElement="${subProcessId}" isExpanded="true">
-        <dc:Bounds x="${startX + 150}" y="${currentY}" width="${subProcessWidth}" height="${subProcessHeight}"/>
-      </bpmndi:BPMNShape>\n`;
-
-        // Add DI for elements inside the subprocess
-        subProcessDI += extracted.diContent;
-
-        // Add flows between subprocesses
-        if (index === 0) {
-            const flowId = `Flow_start_${timestamp}`;
-            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="StartEvent_${timestamp}" targetRef="${subProcessId}"/>\n`;
-
-            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
-        <di:waypoint x="${startX + eventSize}" y="${startY + subProcessHeight / 2}"/>
-        <di:waypoint x="${startX + 150}" y="${currentY + subProcessHeight / 2}"/>
-      </bpmndi:BPMNEdge>\n`;
-        } else {
-            const prevSubProcessId = `SubProcess_${index - 1}_${timestamp}`;
-            const flowId = `Flow_${index}_${timestamp}`;
-            const prevY = startY + ((index - 1) * verticalSpacing);
-
-            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="${prevSubProcessId}" targetRef="${subProcessId}"/>\n`;
-
-            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
-        <di:waypoint x="${startX + 150 + subProcessWidth / 2}" y="${prevY + subProcessHeight}"/>
-        <di:waypoint x="${startX + 150 + subProcessWidth / 2}" y="${currentY}"/>
-      </bpmndi:BPMNEdge>\n`;
-        }
-
-        if (index === subDiagramResults.length - 1) {
-            const flowId = `Flow_end_${timestamp}`;
-            const endY = currentY + subProcessHeight + 100;
-
-            flows += `    <bpmn:sequenceFlow id="${flowId}" sourceRef="${subProcessId}" targetRef="EndEvent_${timestamp}"/>\n`;
-
-            edges += `      <bpmndi:BPMNEdge id="Edge_${flowId}" bpmnElement="${flowId}">
-        <di:waypoint x="${startX + 150 + subProcessWidth / 2}" y="${currentY + subProcessHeight}"/>
-        <di:waypoint x="${startX + 150 + subProcessWidth / 2}" y="${endY}"/>
-      </bpmndi:BPMNEdge>\n`;
-        }
+        elements.push(subprocess);
     });
 
-    const endY = startY + (subDiagramResults.length * verticalSpacing);
+    // Add end event
+    const endEventId = `EndEvent_${timestamp}`;
+    elements.push(createEndEvent(endEventId, 'End'));
 
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
-                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
-                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-                   id="Definitions_Combined_${timestamp}"
-                   targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="Process_Combined_${timestamp}" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_${timestamp}" name="Start: ${originalPrompt.substring(0, 40)}..."/>
-${subProcesses}
-    <bpmn:endEvent id="EndEvent_${timestamp}" name="End"/>
-${flows}
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_${timestamp}">
-    <bpmndi:BPMNPlane id="BPMNPlane_${timestamp}" bpmnElement="Process_Combined_${timestamp}">
-      <bpmndi:BPMNShape id="Shape_StartEvent_${timestamp}" bpmnElement="StartEvent_${timestamp}">
-        <dc:Bounds x="${startX}" y="${startY + subProcessHeight / 2 - eventSize / 2}" width="${eventSize}" height="${eventSize}"/>
-      </bpmndi:BPMNShape>
-${subProcessShapes}
-${subProcessDI}
-      <bpmndi:BPMNShape id="Shape_EndEvent_${timestamp}" bpmnElement="EndEvent_${timestamp}">
-        <dc:Bounds x="${startX + 150 + subProcessWidth / 2 - eventSize / 2}" y="${endY}" width="${eventSize}" height="${eventSize}"/>
-      </bpmndi:BPMNShape>
-${edges}
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-}
+    // Create flows connecting start -> subprocesses -> end
+    if (subprocessIds.length > 0) {
+        // Start to first subprocess
+        flows.push(createSequenceFlow(
+            `Flow_start_${timestamp}`,
+            startEventId,
+            subprocessIds[0]
+        ));
 
-function extractProcessAndDI(
-    xml: string,
-    index: number,
-    timestamp: number,
-    offsetX: number,
-    offsetY: number,
-    scaleFactor: number = 1.0
-): { processContent: string; diContent: string } {
-    console.log(`[Extract] Processing sub-diagram ${index}, XML length: ${xml.length}`);
+        // Connect subprocesses sequentially
+        for (let i = 0; i < subprocessIds.length - 1; i++) {
+            flows.push(createSequenceFlow(
+                `Flow_${i}_${timestamp}`,
+                subprocessIds[i],
+                subprocessIds[i + 1]
+            ));
+        }
 
-    // Extract process content - try multiple namespace variations
-    let processMatch = xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
-    if (!processMatch) {
-        processMatch = xml.match(/<bpmn2:process[^>]*>([\s\S]*?)<\/bpmn2:process>/);
-    }
-    if (!processMatch) {
-        processMatch = xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
-    }
-
-    // Extract DI content (shapes and edges) - try multiple namespace variations
-    let diPlaneMatch = xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
-    if (!diPlaneMatch) {
-        diPlaneMatch = xml.match(/<BPMNPlane[^>]*>([\s\S]*?)<\/BPMNPlane>/);
-    }
-
-    let processContent = '';
-    let diContent = '';
-
-    if (processMatch && processMatch[1]) {
-        console.log(`[Extract] Found process content for sub-diagram ${index}, length: ${processMatch[1].length}`);
-        // Make IDs unique by adding suffix
-        processContent = processMatch[1];
-
-        // Normalize namespace: convert bpmn2: to bpmn: for consistency
-        processContent = processContent.replace(/<bpmn2:/g, '<bpmn:');
-        processContent = processContent.replace(/<\/bpmn2:/g, '</bpmn:');
-        processContent = processContent.replace(/bpmn2:tFormalExpression/g, 'bpmn:tFormalExpression');
-
-        // Make IDs unique
-        processContent = processContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
-        processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1_sub${index}_${timestamp}"`);
-        processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1_sub${index}_${timestamp}"`);
+        // Last subprocess to end
+        flows.push(createSequenceFlow(
+            `Flow_end_${timestamp}`,
+            subprocessIds[subprocessIds.length - 1],
+            endEventId
+        ));
     } else {
-        console.warn(`[Extract] No process content found for sub-diagram ${index}, using fallback. XML preview: ${xml.substring(0, 200)}`);
-        // Fallback: create simple content
-        processContent = `      <bpmn:startEvent id="Start_sub${index}_${timestamp}" name="Start"/>
-      <bpmn:task id="Task_sub${index}_${timestamp}" name="Process Step ${index + 1}"/>
-      <bpmn:endEvent id="End_sub${index}_${timestamp}" name="End"/>
-      <bpmn:sequenceFlow id="Flow1_sub${index}_${timestamp}" sourceRef="Start_sub${index}_${timestamp}" targetRef="Task_sub${index}_${timestamp}"/>
-      <bpmn:sequenceFlow id="Flow2_sub${index}_${timestamp}" sourceRef="Task_sub${index}_${timestamp}" targetRef="End_sub${index}_${timestamp}"/>`;
+        // No subprocesses, just connect start to end
+        flows.push(createSequenceFlow(
+            `Flow_direct_${timestamp}`,
+            startEventId,
+            endEventId
+        ));
     }
 
-    if (diPlaneMatch && diPlaneMatch[1]) {
-        // Extract and adjust DI information
-        diContent = diPlaneMatch[1];
-
-        // Make IDs unique
-        diContent = diContent.replace(/id="([^"]+)"/g, `id="$1_sub${index}_${timestamp}"`);
-        diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1_sub${index}_${timestamp}"`);
-
-        // Find min x and y coordinates to normalize
-        const xCoords: number[] = [];
-        const yCoords: number[] = [];
-
-        diContent.replace(/x="(\d+(\.\d+)?)"/g, (match, x) => {
-            xCoords.push(parseFloat(x));
-            return match;
-        });
-
-        diContent.replace(/y="(\d+(\.\d+)?)"/g, (match, y) => {
-            yCoords.push(parseFloat(y));
-            return match;
-        });
-
-        const minX = xCoords.length > 0 ? Math.min(...xCoords) : 0;
-        const minY = yCoords.length > 0 ? Math.min(...yCoords) : 0;
-
-        // Normalize coordinates (subtract min), scale, then add offset
-        diContent = diContent.replace(/x="(\d+(\.\d+)?)"/g, (match, x) => {
-            const normalized = parseFloat(x) - minX;
-            const scaled = Math.round(normalized * scaleFactor);
-            return `x="${scaled + offsetX}"`;
-        });
-
-        diContent = diContent.replace(/y="(\d+(\.\d+)?)"/g, (match, y) => {
-            const normalized = parseFloat(y) - minY;
-            const scaled = Math.round(normalized * scaleFactor);
-            return `y="${scaled + offsetY}"`;
-        });
-
-        // Also scale width and height attributes
-        diContent = diContent.replace(/width="(\d+(\.\d+)?)"/g, (match, w) => {
-            const scaled = Math.round(parseFloat(w) * scaleFactor);
-            return `width="${scaled}"`;
-        });
-
-        diContent = diContent.replace(/height="(\d+(\.\d+)?)"/g, (match, h) => {
-            const scaled = Math.round(parseFloat(h) * scaleFactor);
-            return `height="${scaled}"`;
-        });
-    } else {
-        // Fallback: create simple DI
-        diContent = `      <bpmndi:BPMNShape id="Shape_Start_sub${index}_${timestamp}" bpmnElement="Start_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + Math.round(20 * scaleFactor)}" y="${offsetY + Math.round(40 * scaleFactor)}" width="${Math.round(36 * scaleFactor)}" height="${Math.round(36 * scaleFactor)}"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_Task_sub${index}_${timestamp}" bpmnElement="Task_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + Math.round(120 * scaleFactor)}" y="${offsetY + Math.round(20 * scaleFactor)}" width="${Math.round(100 * scaleFactor)}" height="${Math.round(80 * scaleFactor)}"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_End_sub${index}_${timestamp}" bpmnElement="End_sub${index}_${timestamp}">
-        <dc:Bounds x="${offsetX + Math.round(280 * scaleFactor)}" y="${offsetY + Math.round(40 * scaleFactor)}" width="${Math.round(36 * scaleFactor)}" height="${Math.round(36 * scaleFactor)}"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow1_sub${index}_${timestamp}" bpmnElement="Flow1_sub${index}_${timestamp}">
-        <di:waypoint x="${offsetX + Math.round(56 * scaleFactor)}" y="${offsetY + Math.round(58 * scaleFactor)}"/>
-        <di:waypoint x="${offsetX + Math.round(120 * scaleFactor)}" y="${offsetY + Math.round(60 * scaleFactor)}"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow2_sub${index}_${timestamp}" bpmnElement="Flow2_sub${index}_${timestamp}">
-        <di:waypoint x="${offsetX + Math.round(220 * scaleFactor)}" y="${offsetY + Math.round(60 * scaleFactor)}"/>
-        <di:waypoint x="${offsetX + Math.round(280 * scaleFactor)}" y="${offsetY + Math.round(58 * scaleFactor)}"/>
-      </bpmndi:BPMNEdge>`;
-    }
-
-    return { processContent, diContent };
+    return createProcess(
+        combinedProcessId,
+        originalPrompt.substring(0, 100) || 'Combined Process',
+        elements,
+        flows
+    );
 }
