@@ -274,8 +274,8 @@ Deno.serve(async (req) => {
     let subPrompts: string[] = [];
 
     // Only analyze if not in modeling agent mode and prompt is reasonably long
-    // Lowered threshold from 1200 to 800 to catch complex prompts earlier
-    if (!modelingAgentMode && promptLength > 800) {
+    // Lowered threshold to 500 to catch semantically complex but concise prompts
+    if (!modelingAgentMode && promptLength > 500) {
       console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt...`);
       const analysisStartTime = Date.now();
 
