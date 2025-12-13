@@ -248,8 +248,12 @@ function createMegaDiagram(
   subDiagramResults.forEach((result, index) => {
     console.log(`[Mega-Diagram] Processing diagram ${index + 1}/${subDiagramResults.length}`);
 
-    // Extract process content (everything inside <bpmn:process>)
-    const processMatch = result.xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+    // Extract process content (everything inside <process> or <bpmn:process>)
+    let processMatch = result.xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
+    if (!processMatch) {
+      processMatch = result.xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
+    }
+
     if (!processMatch) {
       console.warn(`[Mega-Diagram] No process content found in diagram ${index}`);
       return;
@@ -263,11 +267,16 @@ function createMegaDiagram(
     processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1${idSuffix}"`);
     processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1${idSuffix}"`);
     processContent = processContent.replace(/flowNodeRef>([^<]+)</g, (match, p1) => `flowNodeRef>${p1}${idSuffix}<`);
+    processContent = processContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
 
     allProcessContent += processContent + "\n";
 
-    // Extract DI content (everything inside <bpmndi:BPMNPlane>)
-    const diPlaneMatch = result.xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+    // Extract DI content (everything inside <bpmndi:BPMNPlane> or <BPMNPlane>)
+    let diPlaneMatch = result.xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
+    if (!diPlaneMatch) {
+      diPlaneMatch = result.xml.match(/<BPMNPlane[^>]*>([\s\S]*?)<\/BPMNPlane>/);
+    }
+
     if (!diPlaneMatch) {
       console.warn(`[Mega-Diagram] No DI content found in diagram ${index}`);
       return;
