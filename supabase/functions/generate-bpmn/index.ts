@@ -423,9 +423,9 @@ Deno.serve(async (req) => {
     const promptComplexityScore = lengthScore + keywordScore;
 
     // Strategy thresholds based on complexity score
-    const SIMPLE_THRESHOLD = 25; // < 25: Simple, use direct XML
-    const MODERATE_THRESHOLD = 65; // 25-65: Moderate, use JSON
-    const COMPLEX_THRESHOLD = 65; // > 65: Very complex, split
+    const SIMPLE_THRESHOLD = 20; // < 20: Simple, use direct XML
+    const COMPLEX_THRESHOLD = 80; // >= 80: Very complex, split into sub-prompts
+    // 20-80: Moderate, use JSON format
 
     console.log(
       `[Prompt Strategy] Length: ${promptLength} chars, Keywords: ${keywordMatches}, Complexity Score: ${promptComplexityScore.toFixed(1)}`,
