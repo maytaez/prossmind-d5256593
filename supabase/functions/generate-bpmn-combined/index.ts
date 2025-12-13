@@ -231,8 +231,8 @@ function createPlaceholderDiagram(prompt: string, index: number, diagramType: st
 }
 
 /**
- * Creates a mega-diagram by flattening all sub-diagrams into one complete view
- * All lanes, tasks, events, and flows are visible - stacked vertically
+ * Creates a mega-diagram by merging all sub-diagrams with a unified laneSet
+ * All lanes are merged into ONE laneSet, all elements visible, stacked vertically
  */
 function createMegaDiagram(
   subDiagramResults: Array<{ xml: string; prompt: string; index: number }>,
@@ -240,15 +240,31 @@ function createMegaDiagram(
 ): string {
   const timestamp = Date.now();
 
-  let allProcessContent = "";
+  let allLanes = "";
+  let allFlowNodes = "";
   let allDIContent = "";
-  let currentYOffset = 100; // Starting Y position
-  const sectionSpacing = 100; // Spacing between diagram sections
+  let currentYOffset = 100;
+  const sectionSpacing = 100;
 
   subDiagramResults.forEach((result, index) => {
     console.log(`[Mega-Diagram] Processing diagram ${index + 1}/${subDiagramResults.length}`);
 
-    // Extract process content (everything inside <process> or <bpmn:process>)
+    const idSuffix = `_d${index}_${timestamp}`;
+
+    // Extract laneSet content (just the lanes, not the wrapper)
+    const laneSetMatch = result.xml.match(/<laneSet[^>]*>([\s\S]*?)<\/laneSet>/);
+    if (laneSetMatch) {
+      let lanes = laneSetMatch[1];
+      // Make lane IDs unique
+      lanes = lanes.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
+      lanes = lanes.replace(
+        /<flowNodeRef>([^<]+)<\/flowNodeRef>/g,
+        (match, ref) => `<flowNodeRef>${ref}${idSuffix}</flowNodeRef>`,
+      );
+      allLanes += lanes + "\n";
+    }
+
+    // Extract process content (everything inside <process>) WITHOUT laneSets
     let processMatch = result.xml.match(/<process[^>]*>([\s\S]*?)<\/process>/);
     if (!processMatch) {
       processMatch = result.xml.match(/<bpmn:process[^>]*>([\s\S]*?)<\/bpmn:process>/);
@@ -261,21 +277,26 @@ function createMegaDiagram(
 
     let processContent = processMatch[1];
 
-    // Make all IDs unique by adding suffix
-    const idSuffix = `_d${index}_${timestamp}`;
+    // Remove laneSet from process content (we'll add unified one later)
+    processContent = processContent.replace(/<laneSet[^>]*>[\s\S]*?<\/laneSet>/g, "");
+
+    // Make all IDs unique
     processContent = processContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
     processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1${idSuffix}"`);
     processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1${idSuffix}"`);
-    // Fix flowNodeRef to only add suffix to the element reference, not break tags
     processContent = processContent.replace(
-      /<flowNodeRef>([^<]+)<\/flowNodeRef>/g,
-      (match, ref) => `<flowNodeRef>${ref}${idSuffix}</flowNodeRef>`,
+      /<incoming>([^<]+)<\/incoming>/g,
+      (match, ref) => `<incoming>${ref}${idSuffix}</incoming>`,
+    );
+    processContent = processContent.replace(
+      /<outgoing>([^<]+)<\/outgoing>/g,
+      (match, ref) => `<outgoing>${ref}${idSuffix}</outgoing>`,
     );
     processContent = processContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
 
-    allProcessContent += processContent + "\n";
+    allFlowNodes += processContent + "\n";
 
-    // Extract DI content (everything inside <bpmndi:BPMNPlane> or <BPMNPlane>)
+    // Extract DI content
     let diPlaneMatch = result.xml.match(/<bpmndi:BPMNPlane[^>]*>([\s\S]*?)<\/bpmndi:BPMNPlane>/);
     if (!diPlaneMatch) {
       diPlaneMatch = result.xml.match(/<BPMNPlane[^>]*>([\s\S]*?)<\/BPMNPlane>/);
@@ -292,7 +313,7 @@ function createMegaDiagram(
     diContent = diContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
     diContent = diContent.replace(/bpmnElement="([^"]+)"/g, `bpmnElement="$1${idSuffix}"`);
 
-    // Find the maximum Y coordinate in this diagram to calculate height
+    // Find max Y coordinate for height calculation
     const yCoords: number[] = [];
     diContent.replace(/y="(\d+)"/g, (match, y) => {
       yCoords.push(parseInt(y));
@@ -300,9 +321,9 @@ function createMegaDiagram(
     });
 
     const maxY = Math.max(...yCoords, 0);
-    const diagramHeight = maxY + 200; // Add padding
+    const diagramHeight = maxY + 200;
 
-    // Adjust Y coordinates by adding current offset
+    // Adjust Y coordinates
     diContent = diContent.replace(/y="(\d+)"/g, (match, y) => {
       const newY = parseInt(y) + currentYOffset;
       return `y="${newY}"`;
@@ -311,11 +332,10 @@ function createMegaDiagram(
     allDIContent += `\n      <!-- Diagram ${index + 1}: ${result.prompt.substring(0, 60)}... -->\n`;
     allDIContent += diContent + "\n";
 
-    // Update offset for next diagram
     currentYOffset += diagramHeight + sectionSpacing;
   });
 
-  // Build complete BPMN XML
+  // Build complete BPMN XML with unified laneSet
   return `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
                    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
@@ -325,7 +345,10 @@ function createMegaDiagram(
                    id="Definitions_Mega_${timestamp}"
                    targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="Process_Mega_${timestamp}" isExecutable="false" name="${originalPrompt.substring(0, 100)}">
-${allProcessContent}
+    <laneSet id="LaneSet_Mega_${timestamp}">
+${allLanes}
+    </laneSet>
+${allFlowNodes}
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_Mega_${timestamp}">
     <bpmndi:BPMNPlane id="BPMNPlane_Mega_${timestamp}" bpmnElement="Process_Mega_${timestamp}">
