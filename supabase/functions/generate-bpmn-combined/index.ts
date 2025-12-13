@@ -270,6 +270,7 @@ function createMegaDiagram(
     processContent = processContent.replace(/id="([^"]+)"/g, `id="$1${idSuffix}"`);
     processContent = processContent.replace(/sourceRef="([^"]+)"/g, `sourceRef="$1${idSuffix}"`);
     processContent = processContent.replace(/targetRef="([^"]+)"/g, `targetRef="$1${idSuffix}"`);
+    processContent = processContent.replace(/attachedToRef="([^"]+)"/g, `attachedToRef="$1${idSuffix}"`);
     processContent = processContent.replace(
       /<incoming>([^<]+)<\/incoming>/g,
       (match, ref) => `<incoming>${ref}${idSuffix}</incoming>`,
