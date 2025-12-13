@@ -171,9 +171,30 @@ Deno.serve(async (req) => {
     let wasSplit = false;
     let subPrompts: string[] = [];
 
-    // Only analyze if not in modeling agent mode and prompt is reasonably long
-    // Lowered threshold to catch complex prompts earlier
-    if (!modelingAgentMode && promptLength > 1200) {
+    // Quick complexity check based on keywords
+    const complexityKeywords = [
+      'swimlane', 'swim lane', 'lane', 'pool',
+      'parallel', 'concurrent',
+      'timer', 'escalat', 'chase',
+      'subprocess', 'sub-process', 'sub process',
+      'multiple', 'several',
+      'approval', 'review', 'recertification',
+      'deprovisioning', 'provisioning',
+      'automated', 'trigger',
+      'event', 'message', 'signal', 'boundary',
+      'gateway', 'exclusive', 'inclusive',
+      'intermediate', 'compensation',
+      'remediation', 'detection', 'monitoring'
+    ];
+
+    const promptLower = prompt.toLowerCase();
+    const keywordMatches = complexityKeywords.filter(kw => promptLower.includes(kw)).length;
+    const hasHighKeywordDensity = keywordMatches >= 4; // 4+ complexity keywords
+
+    // Only analyze if not in modeling agent mode and either:
+    // - Prompt is reasonably long (>800 chars), OR
+    // - Prompt has high keyword density indicating complexity
+    if (!modelingAgentMode && (promptLength > 800 || hasHighKeywordDensity)) {
       console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt...`);
       const analysisStartTime = Date.now();
 
