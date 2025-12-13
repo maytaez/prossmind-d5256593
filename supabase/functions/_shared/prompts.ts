@@ -9,13 +9,13 @@
  */
 function addBpmnRole(strictMode: boolean = false): string {
   let role = `Your role: You are an expert in business process modeling, familiar with BPMN 2.0 notation and common process constructs such as exclusive gateways (XOR), parallel gateways (AND), inclusive gateways (OR), loops, subprocesses, and event handling. Your task is to analyze textual descriptions of business processes and transform them into valid BPMN 2.0 XML models. When generating a model, be as precise as possible and capture all details of the process in the model.`;
-  
+
   if (strictMode) {
     role += `\n\nPlease create the process model strictly depending on the provided description, without using any domain knowledge you might have. You are not supposed to correct any information in the process, rather fully rely on the provided textual description.`;
   } else {
     role += `\n\nAlso act as the process owner and use your expertise and familiarity with the process context to fill in any missing knowledge when necessary.`;
   }
-  
+
   return role;
 }
 
@@ -207,13 +207,14 @@ function addCodeGenerationInstructions(): string {
  * @param resourceAware - If true, include pool and lane information
  */
 export function getBpmnSystemPrompt(
-  languageCode: string = 'en', 
-  languageName: string = 'English',
+  languageCode: string = "en",
+  languageName: string = "English",
   strictMode: boolean = false,
-  resourceAware: boolean = false
+  resourceAware: boolean = false,
 ): string {
-  const languageInstruction = languageCode !== 'en' 
-    ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
+  const languageInstruction =
+    languageCode !== "en"
+      ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
 
@@ -229,18 +230,29 @@ YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
 Example: If user writes "Erstelle einen Bestellprozess" (German), use German labels like "Bestellung erstellen", "Bestellung genehmigen", "Start", "Ende" - NOT English "Create Order", "Approve Order", "Start", "End".
 
 THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGLISH LABELS WHEN THE USER WRITES IN ${languageName.toUpperCase()}, YOU HAVE FAILED.`
-    : '';
+      : `⚠️ LANGUAGE REQUIREMENT ⚠️
+
+The user's prompt is written in English.
+
+YOU MUST:
+- Generate ALL text content in the BPMN diagram using ENGLISH ONLY
+- Use English for: task names, event names, gateway labels, sequence flow labels, pool names, swimlane names, subprocess names, and ALL other text elements
+- DO NOT translate to French, German, Spanish, or any other language
+- DO NOT use non-English labels
+- Match the English language of the user's input exactly
+
+Example: If user writes "Create an order process", use English labels like "Create Order", "Approve Order", "Start", "End" - NOT French "Créer Commande", "Approuver Commande", "Début", "Fin".
+
+ALL LABELS MUST BE IN ENGLISH.`;
 
   // Build prompt using structured approach from prompt_engineering.py
   let prompt = addBpmnRole(strictMode);
-  prompt += '\n\n' + addBpmnKnowledge(resourceAware);
-  prompt += '\n\n' + addNegativePrompting();
-  prompt += '\n\n' + addCodeGenerationInstructions();
+  prompt += "\n\n" + addBpmnKnowledge(resourceAware);
+  prompt += "\n\n" + addNegativePrompting();
+  prompt += "\n\n" + addCodeGenerationInstructions();
 
   // Add language instruction at the beginning for maximum visibility
-  if (languageCode !== 'en') {
-    prompt = `${languageInstruction}\n\n${prompt}`;
-  }
+  prompt = `${languageInstruction}\n\n${prompt}`;
 
   return prompt;
 }
@@ -250,9 +262,10 @@ THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS. IF YOU GENERATE ENGL
  * @param languageCode - ISO 639-1 language code (e.g., 'en', 'es', 'fr', etc.)
  * @param languageName - Human-readable language name (e.g., 'English', 'Spanish', etc.)
  */
-export function getPidSystemPrompt(languageCode: string = 'en', languageName: string = 'English'): string {
-  const languageInstruction = languageCode !== 'en' 
-    ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
+export function getPidSystemPrompt(languageCode: string = "en", languageName: string = "English"): string {
+  const languageInstruction =
+    languageCode !== "en"
+      ? `⚠️⚠️⚠️ CRITICAL LANGUAGE REQUIREMENT - ABSOLUTE HIGHEST PRIORITY ⚠️⚠️⚠️
 
 The user's prompt is written in ${languageName} (${languageCode}).
 
@@ -265,7 +278,17 @@ YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
 - Match the language of the user's input exactly
 
 THIS LANGUAGE REQUIREMENT OVERRIDES ALL OTHER INSTRUCTIONS.`
-    : '';
+      : `⚠️ LANGUAGE REQUIREMENT ⚠️
+
+The user's prompt is written in English.
+
+YOU MUST:
+- Generate ALL text content in the P&ID diagram using ENGLISH ONLY
+- Use English for: equipment names, instrument tags, line labels, and ALL other text elements
+- DO NOT translate to French, German, Spanish, or any other language
+- DO NOT use non-English labels
+
+ALL LABELS MUST BE IN ENGLISH.`;
 
   const basePrompt = `You are a P&ID expert. Generate BPMN 2.0 XML with P&ID attributes for process diagrams.
 
@@ -279,9 +302,7 @@ CRITICAL RULES:
 7. Return ONLY XML with 2-3 sentence summary before XML`;
 
   // Put language instruction at the beginning for maximum visibility
-  return languageCode !== 'en' 
-    ? `${languageInstruction}\n\n${basePrompt}`
-    : basePrompt;
+  return `${languageInstruction}\n\n${basePrompt}`;
 }
 
 /**
@@ -290,7 +311,7 @@ CRITICAL RULES:
  */
 export function getBpmnExample(): { user: string; assistant: string; errors?: string } {
   return {
-    user: 'Create a simple order process: start, create order, approve order, end',
+    user: "Create a simple order process: start, create order, approve order, end",
     assistant: `<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <process id="Process_1" isExecutable="false">
@@ -336,7 +357,7 @@ export function getBpmnExample(): { user: string; assistant: string; errors?: st
 - Do NOT forget to include bpmndi:BPMNDiagram section for visual layout
 - Do NOT use invalid namespaces like "bpmns:" (use "bpmn:")
 - Do NOT create flows without valid sourceRef and targetRef
-- Ensure all bounds have positive x, y, width, height values`
+- Ensure all bounds have positive x, y, width, height values`,
   };
 }
 
@@ -345,7 +366,7 @@ export function getBpmnExample(): { user: string; assistant: string; errors?: st
  */
 export function getGermanBpmnExample(): { user: string; assistant: string; errors?: string } {
   return {
-    user: 'Erstelle einen einfachen Bestellprozess: Start, Bestellung erstellen, Bestellung genehmigen, Ende',
+    user: "Erstelle einen einfachen Bestellprozess: Start, Bestellung erstellen, Bestellung genehmigen, Ende",
     assistant: `<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <process id="Process_1" isExecutable="false">
@@ -390,7 +411,7 @@ export function getGermanBpmnExample(): { user: string; assistant: string; error
 - CRITICAL: Do NOT translate German labels to English - use "Bestellung erstellen" NOT "Create Order"
 - Do NOT use English event names - use "Start" and "Ende" NOT "Start" and "End"
 - Preserve the exact German terminology from the user's description
-- All other XML structure errors apply (waypoints, namespaces, etc.)`
+- All other XML structure errors apply (waypoints, namespaces, etc.)`,
   };
 }
 
@@ -399,7 +420,7 @@ export function getGermanBpmnExample(): { user: string; assistant: string; error
  */
 export function getPidExample(): { user: string; assistant: string } {
   return {
-    user: 'Design a P&ID for a water treatment process with a tank, pump, and control valve',
+    user: "Design a P&ID for a water treatment process with a tank, pump, and control valve",
     assistant: `This P&ID describes a water treatment system with a storage tank, feed pump, and control valve.
 
 <?xml version="1.0" encoding="UTF-8"?>
@@ -418,7 +439,7 @@ export function getPidExample(): { user: string; assistant: string } {
     <bpmn:sequenceFlow id="Flow_1" sourceRef="Tank_1" targetRef="Pump_1" pid:type="line" pid:category="process" />
     <bpmn:sequenceFlow id="Flow_2" sourceRef="Pump_1" targetRef="CV_101" pid:type="line" pid:category="process" />
   </bpmn:process>
-</bpmn:definitions>`
+</bpmn:definitions>`,
   };
 }
 
@@ -442,7 +463,7 @@ CRITICAL RULES:
  */
 export function getDmnExample(): { user: string; assistant: string } {
   return {
-    user: 'Create a simple credit approval decision table: check income and credit score',
+    user: "Create a simple credit approval decision table: check income and credit score",
     assistant: `<?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" 
   xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/" 
@@ -499,7 +520,7 @@ export function getDmnExample(): { user: string; assistant: string } {
       </rule>
     </decisionTable>
   </decision>
-</definitions>`
+</definitions>`,
   };
 }
 
@@ -514,33 +535,33 @@ export function getDmnExample(): { user: string; assistant: string } {
 export function buildMessagesWithExamples(
   systemPrompt: string,
   userPrompt: string,
-  diagramType: 'bpmn' | 'pid' | 'dmn',
-  languageCode: string = 'en',
-  languageName: string = 'English'
+  diagramType: "bpmn" | "pid" | "dmn",
+  languageCode: string = "en",
+  languageName: string = "English",
 ): Array<{ role: string; content: string }> {
   // For non-English languages, use a language-specific example if available, otherwise skip example
-  if (languageCode !== 'en') {
+  if (languageCode !== "en") {
     // Use German example if German is detected
-    if (languageCode === 'de' && diagramType === 'bpmn') {
+    if (languageCode === "de" && diagramType === "bpmn") {
       const germanExample = getGermanBpmnExample();
       const languageInstruction = `
 
 ⚠️⚠️⚠️ CRITICAL: Generate ALL text in German (Deutsch). Use German labels like in the example above.`;
-      
+
       const messages: Array<{ role: string; content: string }> = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: germanExample.user },
-        { role: 'assistant', content: germanExample.assistant }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: germanExample.user },
+        { role: "assistant", content: germanExample.assistant },
       ];
 
       // Add error explanations if available
       if (germanExample.errors) {
-        messages.push({ 
-          role: 'user', 
-          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}` 
+        messages.push({
+          role: "user",
+          content: `Common errors to avoid for this example:\n${germanExample.errors}\n\nNow generate the BPMN for: ${userPrompt}${languageInstruction}`,
         });
       } else {
-        messages.push({ role: 'user', content: userPrompt + languageInstruction });
+        messages.push({ role: "user", content: userPrompt + languageInstruction });
       }
 
       return messages;
@@ -561,16 +582,16 @@ YOU MUST generate the BPMN diagram with ALL text elements in ${languageName}:
 
 DO NOT translate to English. DO NOT use English labels. Use ${languageName} for everything.`;
     return [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt + languageInstruction }
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt + languageInstruction },
     ];
   }
 
   // For English, use the standard few-shot example
   let example;
-  if (diagramType === 'pid') {
+  if (diagramType === "pid") {
     example = getPidExample();
-  } else if (diagramType === 'dmn') {
+  } else if (diagramType === "dmn") {
     example = getDmnExample();
   } else {
     example = getBpmnExample();
@@ -578,19 +599,19 @@ DO NOT translate to English. DO NOT use English labels. Use ${languageName} for 
 
   // Include error explanations if available (similar to prompt_engineering.py)
   const messages: Array<{ role: string; content: string }> = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: example.user },
-    { role: 'assistant', content: example.assistant }
+    { role: "system", content: systemPrompt },
+    { role: "user", content: example.user },
+    { role: "assistant", content: example.assistant },
   ];
 
   // Add error explanations if available
-  if ('errors' in example && example.errors) {
-    messages.push({ 
-      role: 'user', 
-      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}` 
+  if ("errors" in example && example.errors) {
+    messages.push({
+      role: "user",
+      content: `Common errors to avoid for this example:\n${example.errors}\n\nNow generate the BPMN for: ${userPrompt}`,
     });
   } else {
-    messages.push({ role: 'user', content: userPrompt });
+    messages.push({ role: "user", content: userPrompt });
   }
 
   return messages;
@@ -607,16 +628,14 @@ DO NOT translate to English. DO NOT use English labels. Use ${languageName} for 
  */
 export function createBpmnConversation(
   processDescription: string,
-  languageCode: string = 'en',
-  languageName: string = 'English',
+  languageCode: string = "en",
+  languageName: string = "English",
   strictMode: boolean = false,
-  resourceAware: boolean = false
+  resourceAware: boolean = false,
 ): Array<{ role: string; content: string }> {
   const systemPrompt = getBpmnSystemPrompt(languageCode, languageName, strictMode, resourceAware);
   const userPrompt = addProcessDescription(processDescription);
-  const conversation = [
-    { role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }
-  ];
+  const conversation = [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }];
   return conversation;
 }
 
@@ -628,10 +647,10 @@ export function createBpmnConversation(
  */
 export function updateBpmnConversation(
   conversation: Array<{ role: string; content: string }>,
-  feedback: string
+  feedback: string,
 ): Array<{ role: string; content: string }> {
   const updatePrompt = `Please update the BPMN model to fix it based on the provided feedback. Please make sure the returned model matches the initial process description, all previously provided feedback, and the new feedback comment as well. Make sure to return valid BPMN 2.0 XML. This is the new feedback comment: ${feedback}`;
-  conversation.push({ role: 'user', content: updatePrompt });
+  conversation.push({ role: "user", content: updatePrompt });
   return conversation;
 }
 
