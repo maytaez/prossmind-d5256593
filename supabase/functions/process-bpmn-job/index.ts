@@ -5,6 +5,7 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
 import { selectModel } from "../_shared/model-selection.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
+import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -425,6 +426,52 @@ Deno.serve(async (req) => {
 
     console.log(`[Job ${jobId}] Language: ${languageName} (${languageCode})`);
 
+    // Check cache before generation
+    try {
+      console.log(`[Job ${jobId}] Checking cache for similar prompts...`);
+      const cachedResult = await checkCache({
+        prompt: typedJob.prompt,
+        diagramType: typedJob.diagram_type,
+        supabase,
+        googleApiKey: GOOGLE_API_KEY,
+      });
+
+      if (cachedResult) {
+        const generationTime = 0; // Cache hit, no generation needed
+        console.log(
+          `[Job ${jobId}] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, returning cached result`,
+        );
+
+        // Update job with cached result
+        await supabase
+          .from("vision_bpmn_jobs")
+          .update({
+            status: "completed",
+            bpmn_xml: cachedResult.bpmn_xml,
+            model_used: "cache-hit",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", jobId);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            jobId,
+            generationTimeMs: generationTime,
+            cacheHit: true,
+            similarity: cachedResult.similarity,
+          }),
+          { status: 200, headers: corsHeaders },
+        );
+      }
+
+      console.log(`[Job ${jobId}] Cache miss, proceeding with generation`);
+    } catch (cacheError) {
+      // Cache errors should not block generation
+      console.warn(`[Job ${jobId}] Cache check failed, proceeding with generation:`, cacheError);
+    }
+
     // Get system prompt
     const systemPrompt =
       typedJob.diagram_type === "pid"
@@ -461,6 +508,15 @@ Deno.serve(async (req) => {
 
       const generationTime = Date.now() - startTime;
       console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
+
+      // Store in cache asynchronously (fire-and-forget, doesn't block response)
+      storeCacheAsync({
+        prompt: typedJob.prompt,
+        bpmnXml: bpmnXml,
+        diagramType: typedJob.diagram_type,
+        supabase,
+        googleApiKey: GOOGLE_API_KEY,
+      });
 
       // Store result
       await supabase
