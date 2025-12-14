@@ -6,6 +6,7 @@ import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_sha
 import { selectModel } from "../_shared/model-selection.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
+import { preprocessBpmnPrompt, structuredPromptToEnhancedPrompt } from "../_shared/bpmn-prompt-preprocessor.ts";
 import {
   logGenerationRequest,
   logGenerationSuccess,
@@ -544,10 +545,26 @@ Deno.serve(async (req) => {
     );
 
     try {
-      // Generate BPMN (no timeout limit for background processing)
+      // PART 1: Preprocess prompt using Flash to structure it
+      console.log(`[Job ${jobId}] Preprocessing prompt with Flash...`);
+      let finalPrompt = typedJob.prompt;
+
+      try {
+        const structured = await preprocessBpmnPrompt(typedJob.prompt, GOOGLE_API_KEY);
+        finalPrompt = structuredPromptToEnhancedPrompt(structured);
+        console.log(
+          `[Job ${jobId}] ✅ Prompt enhanced: ${structured.lanes.length} lanes, ${structured.processSteps.length} steps`,
+        );
+      } catch (preprocessError) {
+        console.warn(`[Job ${jobId}] Preprocessing failed, using original prompt:`, preprocessError);
+        // Fall back to original prompt if preprocessing fails
+        finalPrompt = typedJob.prompt;
+      }
+
+      // PART 2: Generate BPMN (no timeout limit for background processing)
       const startTime = Date.now();
       const bpmnXml = await retryBpmnGeneration(
-        typedJob.prompt,
+        finalPrompt, // Use enhanced prompt
         systemPrompt,
         typedJob.diagram_type,
         languageCode,
