@@ -4,14 +4,17 @@
 
 export interface ModelSelectionCriteria {
   promptLength: number;
-  hasMultiplePools: boolean;
-  hasComplexGateways: boolean;
-  hasSubprocesses: boolean;
-  hasMultipleParticipants: boolean;
-  hasErrorHandling: boolean;
-  hasDataObjects: boolean;
-  hasMessageFlows: boolean;
   diagramType: 'bpmn' | 'pid';
+  hasMultiplePools?: boolean;
+  hasComplexGateways?: boolean;
+  hasSubprocesses?: boolean;
+  hasMultipleParticipants?: boolean;
+  hasMultipleActors?: boolean;
+  hasMultiplePaths?: boolean;
+  hasComplexFeatures?: boolean;
+  hasErrorHandling?: boolean;
+  hasDataObjects?: boolean;
+  hasMessageFlows?: boolean;
 }
 
 export interface ModelSelectionResult {
@@ -28,13 +31,16 @@ export interface ModelSelectionResult {
 export function calculateComplexityScore(criteria: ModelSelectionCriteria): number {
   const {
     promptLength,
-    hasMultiplePools,
-    hasComplexGateways,
-    hasSubprocesses,
-    hasMultipleParticipants,
-    hasErrorHandling,
-    hasDataObjects,
-    hasMessageFlows,
+    hasMultiplePools = false,
+    hasComplexGateways = false,
+    hasSubprocesses = false,
+    hasMultipleParticipants = false,
+    hasMultipleActors = false,
+    hasMultiplePaths = false,
+    hasComplexFeatures = false,
+    hasErrorHandling = false,
+    hasDataObjects = false,
+    hasMessageFlows = false,
   } = criteria;
 
   // Enhanced scoring: Very long prompts (3000+) are likely complex modeling agent prompts
@@ -47,6 +53,9 @@ export function calculateComplexityScore(criteria: ModelSelectionCriteria): numb
     (hasComplexGateways ? 2 : 0) +
     (hasSubprocesses ? 1 : 0) +
     (hasMultipleParticipants ? 2 : 0) +
+    (hasMultipleActors ? 2 : 0) +
+    (hasMultiplePaths ? 1 : 0) +
+    (hasComplexFeatures ? 2 : 0) +
     (hasErrorHandling ? 1 : 0) +
     (hasDataObjects ? 1 : 0) +
     (hasMessageFlows ? 1 : 0)
@@ -115,13 +124,20 @@ export function analyzePrompt(prompt: string, diagramType: 'bpmn' | 'pid' = 'bpm
   const isAdvancedPrompt = isModelingAgentMode && (
     /advanced|intermediate|complex|multiple.*path|parallel.*branch|error.*handling|compliance|recovery/gi.test(prompt)
   );
-
+  
+  const hasMultipleActors = (prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2;
+  const hasComplexFeatures = (prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2;
+  const hasMultiplePaths = (prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1;
+  
   return {
     promptLength: prompt.length,
     hasMultiplePools,
     hasComplexGateways: hasComplexGateways || isAdvancedPrompt,
     hasSubprocesses: hasSubprocesses || isAdvancedPrompt,
     hasMultipleParticipants: hasMultipleParticipants || isAdvancedPrompt,
+    hasMultipleActors,
+    hasMultiplePaths,
+    hasComplexFeatures,
     hasErrorHandling: hasErrorHandling || isAdvancedPrompt,
     hasDataObjects: hasDataObjects || isAdvancedPrompt,
     hasMessageFlows: hasMessageFlows || isAdvancedPrompt,

@@ -38,3 +38,6 @@ verify_jwt = true
 
 [functions.track-visitor]
 verify_jwt = false
+
+[functions.process-bpmn-job]
+verify_jwt = true
