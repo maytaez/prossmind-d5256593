@@ -167,21 +167,27 @@ export function generateDiagramXml(layout: any, processId: string, lanes: Parsed
     xml += `      </bpmndi:BPMNShape>\n`;
   });
 
-  // Generate element shapes
-  layout.nodes.forEach((node: any) => {
-    xml += `      <bpmndi:BPMNShape id="Shape_${node.id}" bpmnElement="${node.id}">\n`;
-    xml += `        <dc:Bounds x="${Math.round(node.bounds.x)}" y="${Math.round(node.bounds.y)}" width="${Math.round(node.bounds.width)}" height="${Math.round(node.bounds.height)}"/>\n`;
-    xml += `      </bpmndi:BPMNShape>\n`;
-  });
+  // Generate element shapes - handle both Map and direct bounds
+  if (layout.nodes instanceof Map) {
+    // layout.nodes is Map<string, LayoutNode> or Map<string, Bounds>
+    layout.nodes.forEach((node: any, id: string) => {
+      const bounds = node.bounds || node; // Handle both LayoutNode and Bounds
+      xml += `      <bpmndi:BPMNShape id="Shape_${id}" bpmnElement="${id}">\n`;
+      xml += `        <dc:Bounds x="${Math.round(bounds.x)}" y="${Math.round(bounds.y)}" width="${Math.round(bounds.width)}" height="${Math.round(bounds.height)}"/>\n`;
+      xml += `      </bpmndi:BPMNShape>\n`;
+    });
+  }
 
   // Generate edges
-  layout.edges.forEach((edge: any) => {
-    xml += `      <bpmndi:BPMNEdge id="Edge_${edge.id}" bpmnElement="${edge.id}">\n`;
-    edge.waypoints.forEach((point: any) => {
-      xml += `        <di:waypoint x="${Math.round(point.x)}" y="${Math.round(point.y)}"/>\n`;
+  if (layout.edges instanceof Map) {
+    layout.edges.forEach((edge: any, id: string) => {
+      xml += `      <bpmndi:BPMNEdge id="Edge_${id}" bpmnElement="${id}">\n`;
+      edge.waypoints.forEach((point: any) => {
+        xml += `        <di:waypoint x="${Math.round(point.x)}" y="${Math.round(point.y)}"/>\n`;
+      });
+      xml += `      </bpmndi:BPMNEdge>\n`;
     });
-    xml += `      </bpmndi:BPMNEdge>\n`;
-  });
+  }
 
   xml += "    </bpmndi:BPMNPlane>\n";
   xml += "  </bpmndi:BPMNDiagram>\n";
