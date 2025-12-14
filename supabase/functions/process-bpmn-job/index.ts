@@ -283,11 +283,38 @@ async function retryBpmnGeneration(
 
   // Detect if prompt is complex - be aggressive to prevent truncation
   const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
+
+  // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
+  const explicitSwimLanes = (
+    prompt.match(
+      /(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi,
+    ) || []
+  ).length;
+
+  // Detect complex BPMN features
+  const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
+  const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
+  const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
+  const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
+  const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(
+    Boolean,
+  ).length;
+
+  // Count multiple actors/participants (look for comma-separated names or "and")
+  const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
+  const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
+
+  // Determine if structure-only mode is needed
   const isComplex = prompt.length > 1500 || laneCount >= 3;
-  const useStructureOnly = prompt.length > 1500 || laneCount >= 3; // Very aggressive threshold
+  const useStructureOnly =
+    prompt.length > 1500 || // Long prompts
+    laneCount >= 3 || // Multiple lane keywords
+    explicitSwimLanes > 0 || // Explicit swimlanes listed
+    complexFeatureCount >= 2 || // Multiple complex features
+    hasMultipleActors; // Multiple actors/participants
 
   console.log(
-    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount})`,
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`,
   );
 
   // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
@@ -481,14 +508,10 @@ Deno.serve(async (req) => {
     // Get appropriate model and token limits based on prompt complexity
     const modelSelection = selectModel({
       promptLength: typedJob.prompt.length,
-      diagramType: typedJob.diagram_type as "bpmn" | "pid",
-      hasMultiplePools: (typedJob.prompt.match(/pool|swimlane|lane/gi) || []).length > 1,
-      hasComplexGateways: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
-      hasSubprocesses: /subprocess|sub-process/gi.test(typedJob.prompt),
-      hasMultipleParticipants: (typedJob.prompt.match(/actor|participant|role|department/gi) || []).length > 2,
-      hasErrorHandling: /error|exception|compensation|boundary/gi.test(typedJob.prompt),
-      hasDataObjects: /data object|artifact|document/gi.test(typedJob.prompt),
-      hasMessageFlows: /message flow|message event/gi.test(typedJob.prompt),
+      diagramType: typedJob.diagram_type,
+      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
+      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
+      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
     });
 
     console.log(
