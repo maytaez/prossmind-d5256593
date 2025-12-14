@@ -19,6 +19,7 @@ export interface ParsedProcess {
 }
 
 export interface ParsedCollaboration {
+  id: string;
   participants: Array<{
     id: string;
     name: string;
@@ -131,9 +132,12 @@ export function parseStructureXml(xml: string): {
   }
 
   // Extract collaboration (if present)
-  const collaborationMatch = xml.match(/<bpmn:collaboration[^>]*>/);
+  const collaborationMatch = xml.match(/<bpmn:collaboration[^>]*id="([^"]*)"[^>]*>/);
   if (collaborationMatch) {
-    result.collaboration = { participants: [] };
+    result.collaboration = {
+      id: collaborationMatch[1] || "Collaboration_1",
+      participants: [],
+    };
 
     const participantMatches = xml.matchAll(
       /<bpmn:participant[^>]*id="([^"]*)"[^>]*name="([^"]*)"[^>]*processRef="([^"]*)"[^>]*>/g,
