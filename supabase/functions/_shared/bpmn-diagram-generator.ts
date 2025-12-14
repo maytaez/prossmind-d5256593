@@ -21,7 +21,7 @@ export async function addBpmnDiagram(structureXml: string): Promise<string> {
   console.log("[addBpmnDiagram] Parsing structure XML...");
 
   // Parse the structure XML
-  const { process, collaboration } = parseStructureXml(structureXml);
+  const { process, collaboration } = await parseStructureXml(structureXml);
 
   console.log(
     `[addBpmnDiagram] Found ${process.elements.length} elements, ${process.flows.length} flows, ${process.lanes.length} lanes`,
