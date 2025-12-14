@@ -481,10 +481,14 @@ Deno.serve(async (req) => {
     // Get appropriate model and token limits based on prompt complexity
     const modelSelection = selectModel({
       promptLength: typedJob.prompt.length,
-      diagramType: typedJob.diagram_type,
-      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
-      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
-      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+      diagramType: typedJob.diagram_type as "bpmn" | "pid",
+      hasMultiplePools: (typedJob.prompt.match(/pool|swimlane|lane/gi) || []).length > 1,
+      hasComplexGateways: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+      hasSubprocesses: /subprocess|sub-process/gi.test(typedJob.prompt),
+      hasMultipleParticipants: (typedJob.prompt.match(/actor|participant|role|department/gi) || []).length > 2,
+      hasErrorHandling: /error|exception|compensation|boundary/gi.test(typedJob.prompt),
+      hasDataObjects: /data object|artifact|document/gi.test(typedJob.prompt),
+      hasMessageFlows: /message flow|message event/gi.test(typedJob.prompt),
     });
 
     console.log(
