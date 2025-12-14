@@ -4,7 +4,6 @@ import { detectLanguage, getLanguageName } from "../_shared/language-detection.t
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
 import { selectModel } from "../_shared/model-selection.ts";
-import { sanitizeBpmnXml } from "../_shared/xml-sanitizer.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 
 const corsHeaders = {
