@@ -29,10 +29,10 @@ export interface ParsedCollaboration {
 /**
  * Parse structure-only BPMN XML to extract process definition
  */
-export function parseStructureXml(xml: string): {
+export async function parseStructureXml(xml: string): Promise<{
   process: ParsedProcess;
   collaboration?: ParsedCollaboration;
-} {
+}> {
   // Simple XML parsing using regex (lightweight, no external deps)
   // For production, consider using a proper XML parser
 
@@ -145,6 +145,14 @@ export function parseStructureXml(xml: string): {
         processRef: match[3],
       });
     }
+  }
+
+  // Infer lane assignments if flowNodeRefs are empty
+  const hasFlowNodeRefs = result.process.lanes.some((lane) => lane.flowNodeRefs.length > 0);
+  if (!hasFlowNodeRefs && result.process.lanes.length > 0) {
+    console.log("[XML Parser] flowNodeRefs empty, inferring lane assignments...");
+    const { inferLaneAssignments } = await import("./bpmn-lane-inference.ts");
+    result.process.lanes = inferLaneAssignments(result.process.lanes, result.process.elements);
   }
 
   return result;
