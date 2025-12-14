@@ -602,10 +602,13 @@ export type Database = {
           completed_at: string | null
           complexity_score: number | null
           created_at: string
+          diagram_type: string | null
           error_message: string | null
           id: string
-          image_data: string
+          image_data: string | null
           model_used: string | null
+          prompt: string | null
+          source_type: string | null
           status: string
           updated_at: string
           user_id: string
@@ -615,10 +618,13 @@ export type Database = {
           completed_at?: string | null
           complexity_score?: number | null
           created_at?: string
+          diagram_type?: string | null
           error_message?: string | null
           id?: string
-          image_data: string
+          image_data?: string | null
           model_used?: string | null
+          prompt?: string | null
+          source_type?: string | null
           status?: string
           updated_at?: string
           user_id: string
@@ -628,10 +634,13 @@ export type Database = {
           completed_at?: string | null
           complexity_score?: number | null
           created_at?: string
+          diagram_type?: string | null
           error_message?: string | null
           id?: string
-          image_data?: string
+          image_data?: string | null
           model_used?: string | null
+          prompt?: string | null
+          source_type?: string | null
           status?: string
           updated_at?: string
           user_id?: string
