@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
+import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
 import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
@@ -792,17 +793,23 @@ Deno.serve(async (req) => {
       temperature =
         model === "google/gemini-2.5-pro" ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
-    // SEMANTIC CACHE DISABLED: Saves 3-5 seconds by skipping expensive embedding generation
-    // Embedding generation via OpenAI API takes 2-4s for complex prompts, causing timeouts
-    // Modelling Agent Mode bypasses this entirely - adopting same approach for all users
-    // Exact hash cache (above) still provides instant responses for perfect matches
-    if (false && !skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
+
+    // SEMANTIC CACHE: Check cache using the unified semantic-cache module
+    if (!skipCache && !modelingAgentMode && supabaseClient) {
       try {
-        const embedding = await generateEmbedding(finalPromptToGenerate);
-        const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-        if (semanticCache) {
+        console.log("[Cache] Checking semantic cache before generation...");
+        const cachedResult = await checkCache({
+          prompt: finalPromptToGenerate,
+          diagramType: diagramType,
+          supabase: supabaseClient,
+          googleApiKey: GOOGLE_API_KEY,
+        });
+
+        if (cachedResult) {
           cacheType = "semantic";
-          similarityScore = semanticCache!.similarity;
+          similarityScore = cachedResult.similarity;
+          console.log(`[Cache] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%`);
+
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -810,21 +817,38 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache!.similarity,
+            similarity_score: cachedResult.similarity,
             error_occurred: false,
           });
+
+          // Log cache hit to dashboard
+          if (dashboardLogId) {
+            logAsync(async () => {
+              await logGenerationSuccess({
+                supabase: supabaseClient,
+                logId: dashboardLogId!,
+                resultXml: cachedResult.bpmn_xml,
+                durationMs: Date.now() - startTime,
+                cacheHit: true,
+                cacheSimilarity: cachedResult.similarity,
+              });
+            });
+          }
+
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache!.bpmnXml,
+              bpmnXml: cachedResult.bpmn_xml,
               cached: true,
-              similarity: semanticCache!.similarity,
+              similarity: cachedResult.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-      } catch {
-        /* continue */
+        console.log("[Cache] Cache miss, proceeding with generation");
+      } catch (error) {
+        console.warn("[Cache] Cache check failed, proceeding with generation:", error);
+        // Continue with generation if cache fails
       }
     }
 
@@ -843,17 +867,15 @@ Deno.serve(async (req) => {
     modelUsed = "google/gemini-2.5-pro";
     const finalValidation = validateBpmnXml(bpmnXml);
     if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
-    if (!skipCache && !modelingAgentMode) {
-      (async () => {
-        try {
-          // EMBEDDING GENERATION DISABLED: Skip expensive OpenAI API call (saves 1-2 seconds)
-          // Store only exact hash cache without semantic embedding
-          // Matches Modelling Agent Mode's efficient approach
-          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, undefined);
-        } catch {
-          /* ignore */
-        }
-      })();
+    // Store result in semantic cache (async, non-blocking)
+    if (!skipCache && !modelingAgentMode && supabaseClient) {
+      storeCacheAsync({
+        prompt: finalPromptToGenerate,
+        bpmnXml: bpmnXml,
+        diagramType: diagramType,
+        supabase: supabaseClient,
+        googleApiKey: GOOGLE_API_KEY,
+      });
     }
     await logPerformanceMetric({
       function_name: "generate-bpmn",
