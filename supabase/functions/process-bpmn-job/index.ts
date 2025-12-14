@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
+import { selectModel } from "../_shared/model-selection.ts";
+import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,6 +71,76 @@ function validateBpmnXml(xml: string): { isValid: boolean; error?: string } {
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
   return { isValid: true };
+}
+
+// Generate BPMN XML using Gemini - STRUCTURE ONLY (adapted from generate-bpmn)
+async function generateBpmnStructure(
+  prompt: string,
+  systemPrompt: string,
+  diagramType: "bpmn" | "pid",
+  languageCode: string,
+  languageName: string,
+  googleApiKey: string,
+  maxTokens: number,
+  temperature: number,
+  retryContext?: { error: string; attemptNumber: number },
+): Promise<string> {
+  let generationPrompt = prompt;
+
+  // Add structure-only instruction to reduce output size
+  const structureOnlyInstruction = `\n\nCRITICAL OUTPUT FORMAT:
+Generate ONLY the BPMN process structure without diagram interchange.
+Do NOT include <bpmndi:BPMNDiagram> section - layout will be calculated automatically.
+Include: process, lanes, tasks, events, gateways, flows with all attributes.
+Exclude: Any <bpmndi:*> elements, coordinates, or visual positioning.`;
+
+  if (retryContext) {
+    generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}\n\nFix: ensure all tags closed, proper namespaces, valid structure.`;
+  } else {
+    generationPrompt += structureOnlyInstruction;
+  }
+
+  const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType, languageCode, languageName);
+  const systemMessage = messages.find((m: any) => m.role === "system");
+  const userMessages = messages.filter((m: any) => m.role === "user");
+
+  console.log(`[GEMINI] Calling Gemini 2.5 Pro for STRUCTURE ONLY (attempt ${retryContext?.attemptNumber || 1})`);
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: userMessages.map((m: any) => ({ role: "user", parts: [{ text: m.content }] })),
+        systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
+        generationConfig: { maxOutputTokens: maxTokens, temperature: temperature },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  let bpmnStructure = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  if (!bpmnStructure) throw new Error("No content generated from Gemini 2.5 Pro");
+
+  // Clean markdown formatting
+  bpmnStructure = bpmnStructure
+    .replace(/```xml\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
+
+  // Sanitize
+  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
+
+  console.log(`[STRUCTURE] Generated ${bpmnStructure.length} chars (structure only)`);
+
+  return bpmnStructure;
 }
 
 // Generate BPMN XML using Gemini (extracted and adapted from generate-bpmn)
@@ -141,7 +213,7 @@ async function generateBpmnXml(
   return bpmnXml;
 }
 
-// Retry logic for BPMN generation
+// Retry logic for BPMN generation - TWO STEP APPROACH
 async function retryBpmnGeneration(
   prompt: string,
   systemPrompt: string,
@@ -158,7 +230,8 @@ async function retryBpmnGeneration(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
     try {
-      const bpmnXml = await generateBpmnXml(
+      // STEP 1: Generate structure only (no DI, no truncation!)
+      const bpmnStructure = await generateBpmnStructure(
         prompt,
         systemPrompt,
         diagramType,
@@ -172,15 +245,24 @@ async function retryBpmnGeneration(
           : undefined,
       );
 
-      const validation = validateBpmnXml(bpmnXml);
-      if (validation.isValid) {
-        console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
-        return bpmnXml;
+      // Validate structure
+      const validation = validateBpmnXml(bpmnStructure);
+      if (!validation.isValid) {
+        lastValidationError = validation;
+        console.warn(`[BPMN Generation] Structure validation failed attempt ${attempt}:`, validation.error);
+        if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
       }
 
-      lastValidationError = validation;
-      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
-      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
+      console.log(`[BPMN Generation] Valid structure on attempt ${attempt}`);
+
+      // STEP 2: Add diagram automatically
+      console.log(`[BPMN Generation] Adding diagram layout...`);
+      const completeXml = addBpmnDiagram(bpmnStructure);
+
+      console.log(`[BPMN Generation] Complete XML: ${completeXml.length} chars`);
+
+      return completeXml;
     } catch (error) {
       console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
       if (attempt === maxAttempts) throw error;
@@ -264,6 +346,19 @@ Deno.serve(async (req) => {
         ? getPidSystemPrompt(languageCode, languageName)
         : getBpmnSystemPrompt(languageCode, languageName, false, true);
 
+    // Get appropriate model and token limits based on prompt complexity
+    const modelSelection = selectModel({
+      promptLength: typedJob.prompt.length,
+      diagramType: typedJob.diagram_type,
+      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
+      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
+      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+    });
+
+    console.log(
+      `[Job ${jobId}] Model selection: ${modelSelection.model}, maxTokens: ${modelSelection.maxTokens}, reasoning: ${modelSelection.reasoning}`,
+    );
+
     try {
       // Generate BPMN (no timeout limit for background processing)
       const startTime = Date.now();
@@ -274,8 +369,8 @@ Deno.serve(async (req) => {
         languageCode,
         languageName,
         GOOGLE_API_KEY,
-        8192, // maxTokens
-        0.3, // temperature
+        modelSelection.maxTokens, // Use dynamic token limit from model selection
+        modelSelection.temperature, // Use dynamic temperature
         3, // max attempts
       );
 
