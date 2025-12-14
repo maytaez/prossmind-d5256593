@@ -1,8 +1,7 @@
 /**
- * BPMN JSON Schema Type Definitions
- * 
+ * BPMN TypeScript Type Definitions
+ *
  * Type definitions for BPMN elements, flows, and processes
- * used by the layout calculator and other BPMN utilities.
  */
 
 export type BPMNElementType =
@@ -29,11 +28,9 @@ export interface BPMNElement {
   id: string;
   type: BPMNElementType;
   name?: string;
-  // For subprocesses
-  elements?: BPMNElement[];
-  flows?: BPMNSequenceFlow[];
-  // Additional properties
-  [key: string]: unknown;
+  attachedToRef?: string; // For boundary events
+  elements?: BPMNElement[]; // For subprocesses
+  flows?: BPMNSequenceFlow[]; // For subprocesses
 }
 
 export interface BPMNSequenceFlow {
@@ -41,19 +38,12 @@ export interface BPMNSequenceFlow {
   sourceRef: string;
   targetRef: string;
   name?: string;
-  conditionExpression?: string;
 }
 
 export interface BPMNLane {
   id: string;
   name: string;
   flowNodeRefs: string[];
-}
-
-export interface BPMNParticipant {
-  id: string;
-  name: string;
-  processRef?: string;
 }
 
 export interface BPMNProcess {
@@ -64,23 +54,12 @@ export interface BPMNProcess {
   lanes?: BPMNLane[];
 }
 
+export interface BPMNParticipant {
+  id: string;
+  name: string;
+  processRef: string;
+}
+
 export interface BPMNCollaboration {
-  id: string;
   participants: BPMNParticipant[];
-  messageFlows?: BPMNMessageFlow[];
-}
-
-export interface BPMNMessageFlow {
-  id: string;
-  sourceRef: string;
-  targetRef: string;
-  name?: string;
-}
-
-export interface BPMNDefinitions {
-  id: string;
-  name?: string;
-  targetNamespace?: string;
-  collaboration?: BPMNCollaboration;
-  processes: BPMNProcess[];
 }
