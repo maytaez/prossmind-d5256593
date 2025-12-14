@@ -74,6 +74,18 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [pendingXml, setPendingXml] = useState<string | null>(null);
+  
+  // Multi-diagram support for complex workflows
+  const [multipleDiagrams, setMultipleDiagrams] = useState<Array<{
+    id: string;
+    title: string;
+    xml: string;
+    prompt: string;
+    index: number;
+  }> | null>(null);
+  const [currentDiagramIndex, setCurrentDiagramIndex] = useState(0);
+  const [combinedOverviewXml, setCombinedOverviewXml] = useState<string | null>(null);
+  const [showCombinedView, setShowCombinedView] = useState(false);
 
   // Load generated BPMN or P&ID from localStorage on mount
   useEffect(() => {
@@ -315,6 +327,84 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         return;
       }
 
+      // Handle async polling for complex prompts
+      if (data?.requiresPolling && data?.jobId) {
+        console.log(`[Async Mode] Complex prompt detected, job created: ${data.jobId}`);
+        console.log(`[Async Mode] Estimated time: ${data.estimatedTime || '60-90 seconds'}`);
+        
+        // Set job ID to trigger polling (existing useEffect on lines 122-274)
+        setCurrentJobId(data.jobId);
+        setGenerationStep("generating");
+        
+        toast.info(data.message || 'Complex prompt - generation started in background', {
+          description: `Estimated time: ${data.estimatedTime || '60-90 seconds'}. We'll notify you when ready.`
+        });
+        
+        // Note: isGenerating stays true, polling will set it to false when complete
+        return;
+      }
+
+      // Check if prompt requires splitting into sub-diagrams
+      if (data?.requiresSplit && data?.subPrompts) {
+        console.log(`[Complex Prompt] Detected complex prompt with ${data.subPrompts.length} sub-prompts, generating diagrams...`);
+        toast.info(`Complex workflow detected! Generating ${data.subPrompts.length} detailed diagrams...`, {
+          description: 'You\'ll be able to navigate between them'
+        });
+
+        // Call generate-bpmn-combined to create individual diagrams
+        const { data: multiData, error: multiError } = await invokeFunction('generate-bpmn-combined', {
+          subPrompts: data.subPrompts,
+          diagramType,
+          userId: user?.id,
+          originalPrompt: prompt
+        });
+
+        if (multiError) {
+          console.error('Multi-diagram generation error:', multiError);
+          setGenerationStep("idle");
+          toast.error(`Failed to generate diagrams`, {
+            description: multiError.message || 'Please try with a simpler prompt'
+          });
+          return;
+        }
+
+        if (multiData?.diagrams && multiData.diagrams.length > 0) {
+          // Step 3: Drawing diagrams
+          setGenerationStep("drawing");
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Store all diagrams for navigation
+          setMultipleDiagrams(multiData.diagrams);
+          setCurrentDiagramIndex(0);
+          setShowCombinedView(false); // Start with individual diagrams
+          
+          // Store combined overview XML if available
+          if (multiData.combinedXml) {
+            setCombinedOverviewXml(multiData.combinedXml);
+          }
+          
+          // Set the first diagram as active
+          const firstDiagram = multiData.diagrams[0];
+          setBpmnXml(firstDiagram.xml);
+          
+          setGenerationStep("idle");
+          toast.success(`Generated ${multiData.diagrams.length} diagrams for complex workflow!`, {
+            description: `Use the tabs to navigate. Click "📊 Combined Overview" to see the full structure.`
+          });
+          
+          // Show save project dialog if user is authenticated
+          if (user) {
+            setPendingXml(firstDiagram.xml);
+            setShowSaveProjectDialog(true);
+          }
+        } else {
+          setGenerationStep("idle");
+          toast.error("No diagrams generated");
+        }
+        return;
+      }
+
+      // Normal flow - single diagram generated
       // Step 3: Drawing diagram
       setGenerationStep("drawing");
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -1173,6 +1263,56 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           {/* BPMN Editor with Refinement */}
           {bpmnXml ? (
             <div id="bpmn-viewer" className="space-y-6 relative">
+              {/* Multi-Diagram Navigation Tabs */}
+              {multipleDiagrams && multipleDiagrams.length > 1 && (
+                <div className="bg-card border border-border rounded-2xl p-4 shadow-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-semibold text-muted-foreground">
+                      Complex Workflow - {multipleDiagrams.length} Diagrams
+                    </h4>
+                    <span className="text-xs text-muted-foreground">
+                      {showCombinedView 
+                        ? 'Combined Overview' 
+                        : `Diagram ${currentDiagramIndex + 1} of ${multipleDiagrams.length}`}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {multipleDiagrams.map((diagram, index) => (
+                      <Button
+                        key={diagram.id}
+                        variant={!showCombinedView && currentDiagramIndex === index ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setShowCombinedView(false);
+                          setCurrentDiagramIndex(index);
+                          setBpmnXml(diagram.xml);
+                          toast.info(`Switched to: ${diagram.title}`);
+                        }}
+                        className="text-xs"
+                      >
+                        <span className="mr-1">{index + 1}.</span>
+                        {diagram.title.length > 50 ? diagram.title.substring(0, 50) + '...' : diagram.title}
+                      </Button>
+                    ))}
+                    {/* Combined Overview Tab */}
+                    {combinedOverviewXml && (
+                      <Button
+                        variant={showCombinedView ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setShowCombinedView(true);
+                          setBpmnXml(combinedOverviewXml);
+                          toast.info('Switched to Combined Overview - expand subprocesses to see details');
+                        }}
+                        className="text-xs font-semibold"
+                      >
+                        Combined Overview
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
                 <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
                 <BpmnViewerComponent 
