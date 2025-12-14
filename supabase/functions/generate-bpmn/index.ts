@@ -304,21 +304,37 @@ Deno.serve(async (req) => {
     // Initialize Supabase client for dashboard logging
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    console.log("[Dashboard] Checking logging prerequisites:", {
+      hasSupabaseUrl: !!supabaseUrl,
+      hasSupabaseKey: !!supabaseKey,
+      hasUserId: !!userId,
+      userId: userId,
+    });
+
     if (supabaseUrl && supabaseKey && userId) {
       supabaseClient = createClient(supabaseUrl, supabaseKey);
+      console.log("[Dashboard] Supabase client created, attempting to log request");
 
       // Log generation request (async, non-blocking)
       logAsync(async () => {
-        dashboardLogId = await logGenerationRequest({
-          supabase: supabaseClient,
-          userId: userId,
-          prompt: prompt!,
-          diagramType: diagramType,
-          detectedLanguage: detectedLanguageCode,
-          sourceFunction: "generate-bpmn",
-          isMultiDiagram: false,
-        });
+        try {
+          console.log("[Dashboard] Inside logAsync, calling logGenerationRequest");
+          dashboardLogId = await logGenerationRequest({
+            supabase: supabaseClient,
+            userId: userId,
+            prompt: prompt!,
+            diagramType: diagramType,
+            detectedLanguage: detectedLanguageCode,
+            sourceFunction: "generate-bpmn",
+            isMultiDiagram: false,
+          });
+          console.log("[Dashboard] Log entry created with ID:", dashboardLogId);
+        } catch (error) {
+          console.error("[Dashboard] Error in logGenerationRequest:", error);
+        }
       });
+    } else {
+      console.log("[Dashboard] Skipping logging - missing prerequisites");
     }
 
     // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
