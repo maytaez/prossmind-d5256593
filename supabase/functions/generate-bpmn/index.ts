@@ -2,13 +2,11 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
-import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
 import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import {
   analyzePromptComplexity,
   simplifyPrompt,
@@ -16,12 +14,6 @@ import {
   fallbackAnalysis,
   fallbackSplit,
 } from "../_shared/prompt-analyzer.ts";
-import {
-  logGenerationRequest,
-  logGenerationSuccess,
-  logGenerationError,
-  logAsync,
-} from "../_shared/dashboard-logger.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -212,90 +204,6 @@ async function generateBpmnXmlWithGemini(
   return bpmnXml;
 }
 
-// Generate BPMN structure only (no DI) for very complex diagrams
-async function generateBpmnStructureOnly(
-  prompt: string,
-  systemPrompt: string,
-  diagramType: "bpmn" | "pid",
-  languageCode: string,
-  languageName: string,
-  googleApiKey: string,
-  maxTokens: number,
-  temperature: number,
-): Promise<string> {
-  const structureOnlyPrompt =
-    prompt +
-    `\n\n🚨 CRITICAL - STRUCTURE ONLY MODE:
-Generate ONLY the BPMN 2.0 process structure. Do NOT generate any visual layout information.
-EXCLUDE completely: All <bpmndi:BPMNDiagram>, <bpmndi:BPMNPlane>, <bpmndi:BPMNShape>, <bpmndi:BPMNEdge>, <dc:Bounds>, <di:waypoint> tags.
-INCLUDE: <bpmn:process>, <bpmn:lane>, <bpmn:laneSet>, all tasks, events, gateways, <bpmn:sequenceFlow> with complete attributes and IDs.
-The diagram coordinates will be calculated programmatically after generation.
-End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
-
-  const messages = buildMessagesWithExamples(
-    systemPrompt,
-    structureOnlyPrompt,
-    diagramType,
-    languageCode,
-    languageName,
-  );
-  const systemMessage = messages.find((m: any) => m.role === "system");
-  const userMessages = messages.filter((m: any) => m.role === "user");
-
-  console.log(`[GEMINI] Structure-only mode: requesting process without DI`);
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: userMessages.map((m: any) => ({ role: "user", parts: [{ text: m.content }] })),
-        systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
-        generationConfig: { maxOutputTokens: maxTokens, temperature: temperature },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${errorText}`);
-  }
-
-  const data = await response.json();
-  let bpmnStructure = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-  if (!bpmnStructure) throw new Error("No content generated from Gemini 2.5 Pro");
-
-  // Clean markdown formatting
-  bpmnStructure = bpmnStructure
-    .replace(/```xml\n?/g, "")
-    .replace(/```\n?/g, "")
-    .trim();
-
-  // CRITICAL: Strip any leaked DI (Gemini often ignores the structure-only instruction)
-  // Remove complete or truncated <bpmndi:BPMNDiagram> sections
-  if (bpmnStructure.includes("<bpmndi:")) {
-    console.warn(`[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction, stripping them`);
-
-    // Strip from first <bpmndi: tag to end (handles truncation)
-    bpmnStructure = bpmnStructure.replace(/<bpmndi:[\s\S]*$/g, "");
-
-    // Ensure proper closing tag
-    if (!bpmnStructure.includes("</bpmn:definitions>")) {
-      bpmnStructure += "\n</bpmn:definitions>";
-    }
-
-    console.log(`[STRUCTURE ONLY] Cleaned structure: ${bpmnStructure.length} chars`);
-  }
-
-  // Sanitize XML
-  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
-
-  console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
-  return bpmnStructure;
-}
-
 async function retryBpmnGenerationIfNecessary(
   simplifiedPrompt: string,
   systemPrompt: string,
@@ -308,58 +216,6 @@ async function retryBpmnGenerationIfNecessary(
   maxAttempts: number = 3,
 ): Promise<string> {
   let lastValidationError: ValidationResult | null = null;
-
-  // Detect if prompt is complex - be aggressive to prevent truncation
-  const laneCount = (simplifiedPrompt.match(/lane|swimlane|pool/gi) || []).length;
-  const participantCount = (
-    simplifiedPrompt.match(
-      /participant|actor|department|system|service|pharmacy|physician|nurse|doctor|patient|customer|supplier/gi,
-    ) || []
-  ).length;
-  const complexityIndicators = (
-    simplifiedPrompt.match(
-      /subprocess|parallel|timer|boundary|escalate|event.*gateway|decision|exclusive|inclusive/gi,
-    ) || []
-  ).length;
-
-  // Use structure-only mode if:
-  // - Prompt is very long (> 1000 chars)
-  // - Has 2+ lane/pool keywords (e.g., "swimlanes for X, Y, Z")
-  // - Has 4+ participant/role mentions (indicates multiple swimlanes)
-  // - Has high complexity (3+ subprocesses, gateways, etc.)
-  const useStructureOnly =
-    simplifiedPrompt.length > 1000 || laneCount >= 2 || participantCount >= 4 || complexityIndicators >= 3;
-
-  console.log(
-    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${simplifiedPrompt.length}, lanes: ${laneCount}, participants: ${participantCount}, complexity: ${complexityIndicators})`,
-  );
-
-  // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
-  if (useStructureOnly) {
-    console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
-    try {
-      const structure = await generateBpmnStructureOnly(
-        simplifiedPrompt,
-        systemPrompt,
-        diagramType,
-        languageCode,
-        languageName,
-        googleApiKey,
-        maxTokens,
-        temperature,
-      );
-
-      // Add diagram layout automatically
-      const completeXml = addBpmnDiagram(structure);
-      console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
-      return completeXml;
-    } catch (error) {
-      console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
-      // Fall through to compact DI mode
-    }
-  }
-
-  // For normal/moderately complex diagrams, use standard generation with retries
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
     try {
@@ -412,8 +268,6 @@ Deno.serve(async (req) => {
   let modelUsed: string | undefined;
   let prompt: string | undefined;
   let promptLength = 0;
-  let dashboardLogId: string | null = null; // Track dashboard log ID
-  let supabaseClient: any = null; // For dashboard logging
   try {
     let requestData;
     try {
@@ -428,7 +282,6 @@ Deno.serve(async (req) => {
     const diagramType = requestData.diagramType || "bpmn";
     const skipCache = requestData.skipCache === true;
     const modelingAgentMode = requestData.modelingAgentMode === true;
-    const userId = requestData.userId; // Get user ID from request
     if (!prompt) throw new Error("Prompt is required");
     promptLength = prompt.length;
     console.log("Generating BPMN for prompt:", prompt);
@@ -438,42 +291,6 @@ Deno.serve(async (req) => {
 
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
-
-    // Initialize Supabase client for dashboard logging
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    console.log("[Dashboard] Checking logging prerequisites:", {
-      hasSupabaseUrl: !!supabaseUrl,
-      hasSupabaseKey: !!supabaseKey,
-      hasUserId: !!userId,
-      userId: userId,
-    });
-
-    if (supabaseUrl && supabaseKey && userId) {
-      supabaseClient = createClient(supabaseUrl, supabaseKey);
-      console.log("[Dashboard] Supabase client created, attempting to log request");
-
-      // Log generation request (async, non-blocking)
-      logAsync(async () => {
-        try {
-          console.log("[Dashboard] Inside logAsync, calling logGenerationRequest");
-          dashboardLogId = await logGenerationRequest({
-            supabase: supabaseClient,
-            userId: userId,
-            prompt: prompt!,
-            diagramType: diagramType,
-            detectedLanguage: detectedLanguageCode,
-            sourceFunction: "generate-bpmn",
-            isMultiDiagram: false,
-          });
-          console.log("[Dashboard] Log entry created with ID:", dashboardLogId);
-        } catch (error) {
-          console.error("[Dashboard] Error in logGenerationRequest:", error);
-        }
-      });
-    } else {
-      console.log("[Dashboard] Skipping logging - missing prerequisites");
-    }
 
     // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
     const TIMEOUT_LIMIT_MS = 50000; // 50 seconds, leaving 10s buffer before edge function timeout
@@ -768,20 +585,6 @@ Deno.serve(async (req) => {
           cache_hit: true,
           error_occurred: false,
         });
-
-        // Log cache hit to dashboard
-        if (supabaseClient && dashboardLogId) {
-          logAsync(async () => {
-            await logGenerationSuccess({
-              supabase: supabaseClient,
-              logId: dashboardLogId!,
-              resultXml: exactCache.bpmnXml,
-              durationMs: Date.now() - startTime,
-              cacheHit: true,
-            });
-          });
-        }
-
         return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -809,23 +612,17 @@ Deno.serve(async (req) => {
       temperature =
         model === "google/gemini-2.5-pro" ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
-
-    // SEMANTIC CACHE: Check cache using the unified semantic-cache module
-    if (!skipCache && !modelingAgentMode && supabaseClient) {
+    // SEMANTIC CACHE DISABLED: Saves 3-5 seconds by skipping expensive embedding generation
+    // Embedding generation via OpenAI API takes 2-4s for complex prompts, causing timeouts
+    // Modelling Agent Mode bypasses this entirely - adopting same approach for all users
+    // Exact hash cache (above) still provides instant responses for perfect matches
+    if (false && !skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
       try {
-        console.log("[Cache] Checking semantic cache before generation...");
-        const cachedResult = await checkCache({
-          prompt: finalPromptToGenerate,
-          diagramType: diagramType,
-          supabase: supabaseClient,
-          googleApiKey: GOOGLE_API_KEY,
-        });
-
-        if (cachedResult) {
+        const embedding = await generateEmbedding(finalPromptToGenerate);
+        const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
+        if (semanticCache) {
           cacheType = "semantic";
-          similarityScore = cachedResult.similarity;
-          console.log(`[Cache] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%`);
-
+          similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -833,38 +630,21 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: cachedResult.similarity,
+            similarity_score: semanticCache.similarity,
             error_occurred: false,
           });
-
-          // Log cache hit to dashboard
-          if (dashboardLogId) {
-            logAsync(async () => {
-              await logGenerationSuccess({
-                supabase: supabaseClient,
-                logId: dashboardLogId!,
-                resultXml: cachedResult.bpmn_xml,
-                durationMs: Date.now() - startTime,
-                cacheHit: true,
-                cacheSimilarity: cachedResult.similarity,
-              });
-            });
-          }
-
           return new Response(
             JSON.stringify({
-              bpmnXml: cachedResult.bpmn_xml,
+              bpmnXml: semanticCache.bpmnXml,
               cached: true,
-              similarity: cachedResult.similarity,
+              similarity: semanticCache.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-        console.log("[Cache] Cache miss, proceeding with generation");
-      } catch (error) {
-        console.warn("[Cache] Cache check failed, proceeding with generation:", error);
-        // Continue with generation if cache fails
+      } catch {
+        /* continue */
       }
     }
 
@@ -883,15 +663,17 @@ Deno.serve(async (req) => {
     modelUsed = "google/gemini-2.5-pro";
     const finalValidation = validateBpmnXml(bpmnXml);
     if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
-    // Store result in semantic cache (async, non-blocking)
-    if (!skipCache && !modelingAgentMode && supabaseClient) {
-      storeCacheAsync({
-        prompt: finalPromptToGenerate,
-        bpmnXml: bpmnXml,
-        diagramType: diagramType,
-        supabase: supabaseClient,
-        googleApiKey: GOOGLE_API_KEY,
-      });
+    if (!skipCache && !modelingAgentMode) {
+      (async () => {
+        try {
+          // EMBEDDING GENERATION DISABLED: Skip expensive OpenAI API call (saves 1-2 seconds)
+          // Store only exact hash cache without semantic embedding
+          // Matches Modelling Agent Mode's efficient approach
+          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, undefined);
+        } catch {
+          /* ignore */
+        }
+      })();
     }
     await logPerformanceMetric({
       function_name: "generate-bpmn",
@@ -904,20 +686,6 @@ Deno.serve(async (req) => {
       similarity_score: similarityScore,
       error_occurred: false,
     });
-
-    // Log successful generation to dashboard
-    if (supabaseClient && dashboardLogId) {
-      logAsync(async () => {
-        await logGenerationSuccess({
-          supabase: supabaseClient,
-          logId: dashboardLogId!,
-          resultXml: bpmnXml,
-          durationMs: Date.now() - startTime,
-          cacheHit: false,
-        });
-      });
-    }
-
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -930,7 +698,6 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error("Error in generate-bpmn:", errorMessage);
     try {
       await logPerformanceMetric({
@@ -946,20 +713,6 @@ Deno.serve(async (req) => {
     } catch {
       /* ignore */
     }
-
-    // Log error to dashboard
-    if (supabaseClient && dashboardLogId) {
-      logAsync(async () => {
-        await logGenerationError({
-          supabase: supabaseClient,
-          logId: dashboardLogId!,
-          errorMessage: errorMessage,
-          errorStack: errorStack,
-          durationMs: Date.now() - startTime,
-        });
-      });
-    }
-
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
