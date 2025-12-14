@@ -289,11 +289,24 @@ async function retryBpmnGeneration(
 
   // Detect if prompt is complex - be aggressive to prevent truncation
   const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
-  const isComplex = prompt.length > 1500 || laneCount >= 3;
-  const useStructureOnly = prompt.length > 1500 || laneCount >= 3; // Very aggressive threshold
+  const participantCount = (
+    prompt.match(
+      /participant|actor|department|system|service|pharmacy|physician|nurse|doctor|patient|customer|supplier/gi,
+    ) || []
+  ).length;
+  const complexityIndicators = (
+    prompt.match(/subprocess|parallel|timer|boundary|escalate|event.*gateway|decision|exclusive|inclusive/gi) || []
+  ).length;
+
+  // Use structure-only mode if:
+  // - Prompt is very long (> 1000 chars)
+  // - Has 2+ lane/pool keywords (e.g., "swimlanes for X, Y, Z")
+  // - Has 4+ participant/role mentions (indicates multiple swimlanes)
+  // - Has high complexity (3+ subprocesses, gateways, etc.)
+  const useStructureOnly = prompt.length > 1000 || laneCount >= 2 || participantCount >= 4 || complexityIndicators >= 3;
 
   console.log(
-    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount})`,
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lanes: ${laneCount}, participants: ${participantCount}, complexity: ${complexityIndicators})`,
   );
 
   // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
@@ -342,7 +355,7 @@ async function retryBpmnGeneration(
               attemptNumber: attempt,
             }
           : undefined,
-        isComplex || attempt > 1, // Use compact DI for complex prompts or retries
+        useStructureOnly || attempt > 1, // Use compact DI for complex prompts or retries
       );
 
       const validation = validateBpmnXml(bpmnXml);
