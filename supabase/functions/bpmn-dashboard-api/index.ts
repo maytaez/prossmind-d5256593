@@ -407,6 +407,7 @@ function generateCSV(data: any[]): string {
     "Output Tokens",
     "Cost (USD)",
     "Source Function",
+    "Result XML",
     "Error Message",
   ];
 
@@ -422,6 +423,7 @@ function generateCSV(data: any[]): string {
     row.output_tokens || "",
     row.estimated_cost_usd || "",
     row.source_function,
+    `"${(row.result_xml || "").replace(/"/g, '""')}"`,
     `"${(row.error_message || "").replace(/"/g, '""')}"`,
   ]);
 
