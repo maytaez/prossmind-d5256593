@@ -442,3 +442,189 @@ export function offsetLayout(layout: Layout, offsetX: number, offsetY: number): 
         totalHeight: layout.totalHeight,
     };
 }
+
+/**
+ * Lane layout interfaces and functions
+ */
+export interface LaneLayout {
+    id: string;
+    name: string;
+    flowNodeRefs: string[];
+    y: number;
+    height: number;
+}
+
+/**
+ * Calculate lane layout - stack lanes vertically based on content
+ */
+export function calculateLaneLayout(
+    lanes: Array<{ id: string; name: string; flowNodeRefs: string[] }>,
+    boundsMap: Map<string, Bounds>,
+    startY: number = 100
+): { lanes: LaneLayout[]; totalHeight: number } {
+    const laneLayouts: LaneLayout[] = [];
+    let currentY = startY;
+
+    const MIN_LANE_HEIGHT = 150;
+    const LANE_PADDING = 40;
+
+    lanes.forEach(lane => {
+        // Find all elements in this lane
+        const laneElements = lane.flowNodeRefs
+            .map(ref => boundsMap.get(ref))
+            .filter(bounds => bounds != null) as Bounds[];
+
+        // Calculate required height based on elements
+        let maxBottom = currentY + MIN_LANE_HEIGHT;
+        laneElements.forEach(bounds => {
+            const bottom = bounds.y + bounds.height + LANE_PADDING;
+            if (bottom > maxBottom) {
+                maxBottom = bottom;
+            }
+        });
+
+        const laneHeight = Math.max(MIN_LANE_HEIGHT, maxBottom - currentY);
+
+        laneLayouts.push({
+            id: lane.id,
+            name: lane.name,
+            flowNodeRefs: lane.flowNodeRefs,
+            y: currentY,
+            height: laneHeight
+        });
+
+        currentY += laneHeight;
+    });
+
+    return {
+        lanes: laneLayouts,
+        totalHeight: currentY - startY
+    };
+}
+
+/**
+ * Adjust element positions to fit within their assigned lanes
+ */
+export function constrainElementsToLanes(
+    boundsMap: Map<string, Bounds>,
+    lanes: LaneLayout[]
+): Map<string, Bounds> {
+    const adjustedBounds = new Map<string, Bounds>();
+
+    lanes.forEach(lane => {
+        const LANE_TOP_MARGIN = 30; // Space for lane label
+        const LANE_BOTTOM_MARGIN = 20;
+
+        lane.flowNodeRefs.forEach(elementId => {
+            const bounds = boundsMap.get(elementId);
+            if (!bounds) return;
+
+            // Adjust Y position to be within lane
+            const minY = lane.y + LANE_TOP_MARGIN;
+            const maxY = lane.y + lane.height - LANE_BOTTOM_MARGIN - bounds.height;
+
+            const adjustedY = Math.max(minY, Math.min(bounds.y, maxY));
+
+            adjustedBounds.set(elementId, {
+                ...bounds,
+                y: adjustedY
+            });
+        });
+    });
+
+    // Copy non-lane elements as-is
+    boundsMap.forEach((bounds, id) => {
+        if (!adjustedBounds.has(id)) {
+            adjustedBounds.set(id, bounds);
+        }
+    });
+
+    return adjustedBounds;
+}
+
+/**
+ * Calculate position for boundary event attached to a task
+ */
+export function calculateBoundaryEventPosition(
+    boundaryEventId: string,
+    attachedToId: string,
+    attachedToBounds: Bounds,
+    position: 'top' | 'bottom' | 'left' | 'right' = 'bottom',
+    offset: number = 0
+): Bounds {
+    const size = ELEMENT_SIZES.boundaryEvent;
+    const halfWidth = size.width / 2;
+    const halfHeight = size.height / 2;
+
+    let x, y;
+
+    switch (position) {
+        case 'bottom':
+            x = attachedToBounds.x + attachedToBounds.width / 2 + offset - halfWidth;
+            y = attachedToBounds.y + attachedToBounds.height - halfHeight;
+            break;
+        case 'top':
+            x = attachedToBounds.x + attachedToBounds.width / 2 + offset - halfWidth;
+            y = attachedToBounds.y - halfHeight;
+            break;
+        case 'left':
+            x = attachedToBounds.x - halfWidth;
+            y = attachedToBounds.y + attachedToBounds.height / 2 + offset - halfHeight;
+            break;
+        case 'right':
+            x = attachedToBounds.x + attachedToBounds.width - halfWidth;
+            y = attachedToBounds.y + attachedToBounds.height / 2 + offset - halfHeight;
+            break;
+    }
+
+    return {
+        x,
+        y,
+        width: size.width,
+        height: size.height
+    };
+}
+
+/**
+ * Position all boundary events attached to tasks
+ */
+export function positionBoundaryEvents(
+    boundaryEvents: Array<{ id: string; attachedToRef: string }>,
+    boundsMap: Map<string, Bounds>
+): Map<string, Bounds> {
+    const boundaryBounds = new Map<string, Bounds>();
+
+    // Group by attached element to handle multiple boundary events
+    const groupedEvents = new Map<string, Array<{ id: string; attachedToRef: string }>>();
+    boundaryEvents.forEach(event => {
+        if (!groupedEvents.has(event.attachedToRef)) {
+            groupedEvents.set(event.attachedToRef, []);
+        }
+        groupedEvents.get(event.attachedToRef)!.push(event);
+    });
+
+    // Position each group
+    groupedEvents.forEach((events, attachedToId) => {
+        const attachedToBounds = boundsMap.get(attachedToId);
+        if (!attachedToBounds) return;
+
+        // Distribute events evenly on bottom edge
+        const spacing = 50;
+        const totalWidth = (events.length - 1) * spacing;
+        const startOffset = -totalWidth / 2;
+
+        events.forEach((event, index) => {
+            const offset = startOffset + index * spacing;
+            const bounds = calculateBoundaryEventPosition(
+                event.id,
+                attachedToId,
+                attachedToBounds,
+                'bottom',
+                offset
+            );
+            boundaryBounds.set(event.id, bounds);
+        });
+    });
+
+    return boundaryBounds;
+}

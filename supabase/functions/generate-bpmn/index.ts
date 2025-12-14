@@ -1,4 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
 import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.ts';
@@ -17,6 +18,23 @@ interface ValidationResult {
 interface SummarizationResult {
   summarizedPrompt: string;
   wasSummarized: boolean;
+}
+
+/**
+ * Detect if prompt requires async generation (conservative thresholds)
+ * Only use async for genuinely complex prompts that risk timeout
+ */
+function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
+  const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
+  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || []).length;
+
+  // Conservative thresholds - only async for truly complex prompts
+  return (
+    promptLength > 1500 ||           // Very long prompts
+    actors >= 4 ||                   // 4+ swimlanes/actors  
+    complexity >= 4 ||               // Multiple complex BPMN features
+    (actors >= 3 && complexity >= 2) // Moderate actors + complexity
+  );
 }
 
 function sanitizeBpmnXml(xml: string): string {
@@ -274,15 +292,88 @@ Deno.serve(async (req) => {
 
     console.log(`[Time Budget] Starting with ${TIMEOUT_LIMIT_MS}ms limit`);
 
-    // INTELLIGENT PROMPT ANALYSIS - Automatically detect and handle complex prompts
+    // INTELLIGENT PROMPT ANALYSIS - Only for extremely long prompts (trust Gemini 2.5 Pro for normal complexity)
     let finalPromptToGenerate = prompt;
     let wasSimplified = false;
     let wasSplit = false;
     let subPrompts: string[] = [];
 
-    // Only analyze if not in modeling agent mode and prompt is reasonably long
-    // LOWERED threshold to 300 to catch semantically complex but concise prompts (was 500)
-    if (!modelingAgentMode && promptLength > 300) {
+    // ASYNC GENERATION FOR COMPLEX PROMPTS - Bypass 60s timeout using background jobs
+    if (!modelingAgentMode && shouldUseAsyncGeneration(prompt, promptLength)) {
+      console.log(`[Async Mode] Complex prompt detected (length: ${promptLength}), creating background job`);
+
+      try {
+        // Create Supabase client
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+        if (!supabaseUrl || !supabaseServiceKey) {
+          console.warn('[Async Mode] Supabase config missing, falling back to sync');
+        } else {
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+          // Get user ID from JWT
+          const authHeader = req.headers.get('Authorization');
+          const token = authHeader?.replace('Bearer ', '');
+          let userId: string | undefined;
+
+          if (token) {
+            const { data: { user } } = await supabase.auth.getUser(token);
+            userId = user?.id;
+          }
+
+          // Create job in vision_bpmn_jobs table
+          const { data: job, error: jobError } = await supabase
+            .from('vision_bpmn_jobs')
+            .insert({
+              user_id: userId || null,
+              source_type: 'prompt',
+              prompt: prompt,
+              diagram_type: diagramType,
+              image_data: null,
+              status: 'pending'
+            })
+            .select()
+            .single();
+
+          if (jobError || !job) {
+            console.error('[Async Mode] Failed to create job:', jobError);
+            console.warn('[Async Mode] Falling back to sync generation');
+          } else {
+            console.log(`[Async Mode] Job created: ${job.id}`);
+
+            // Trigger async processing (fire and forget)
+            fetch(`${supabaseUrl}/functions/v1/process-bpmn-job`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+              },
+              body: JSON.stringify({ jobId: job.id })
+            }).catch(err => console.error('[Async Mode] Failed to trigger processor:', err));
+
+            // Return immediately with job ID for client polling
+            return new Response(JSON.stringify({
+              requiresPolling: true,
+              jobId: job.id,
+              message: 'Complex prompt - generation started in background',
+              estimatedTime: '60-90 seconds'
+            }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+      } catch (asyncError) {
+        console.error('[Async Mode] Error setting up async:', asyncError);
+        console.warn('[Async Mode] Falling back to sync generation');
+        // Continue with normal synchronous generation below
+      }
+    }
+
+    // DISABLED FOR NORMAL USE - Only analyze extremely long prompts (>5000 chars)
+    // Trust Gemini 2.5 Pro + DI optimization to handle complex prompts (proven by Modelling Agent Mode)
+    if (!modelingAgentMode && promptLength > 5000) {
       console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt (elapsed: ${getElapsedTime()}ms)...`);
 
       // Check time budget before expensive AI analysis
@@ -403,7 +494,7 @@ Deno.serve(async (req) => {
     } else if (modelingAgentMode) {
       console.log("[Prompt Analysis] Skipping analysis (modeling agent mode)");
     } else {
-      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars, threshold: 300)`);
+      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars, threshold: 5000)`);
     }
 
     // Final time budget check before generation
@@ -470,7 +561,11 @@ Deno.serve(async (req) => {
       temperature =
         model === "google/gemini-2.5-pro" ? Math.min(temperature + 0.1, 0.4) : Math.min(temperature + 0.2, 0.7);
     modelUsed = model;
-    if (!skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
+    // SEMANTIC CACHE DISABLED: Saves 3-5 seconds by skipping expensive embedding generation
+    // Embedding generation via OpenAI API takes 2-4s for complex prompts, causing timeouts
+    // Modelling Agent Mode bypasses this entirely - adopting same approach for all users
+    // Exact hash cache (above) still provides instant responses for perfect matches
+    if (false && !skipCache && !modelingAgentMode && isSemanticCacheEnabled()) {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
@@ -520,15 +615,10 @@ Deno.serve(async (req) => {
     if (!skipCache && !modelingAgentMode) {
       (async () => {
         try {
-          let embedding: number[] | undefined;
-          if (isSemanticCacheEnabled()) {
-            try {
-              embedding = await generateEmbedding(finalPromptToGenerate);
-            } catch {
-              /* ignore */
-            }
-          }
-          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, embedding);
+          // EMBEDDING GENERATION DISABLED: Skip expensive OpenAI API call (saves 1-2 seconds)
+          // Store only exact hash cache without semantic embedding
+          // Matches Modelling Agent Mode's efficient approach
+          await storeExactHashCache(promptHash, finalPromptToGenerate, diagramType, bpmnXml, undefined);
         } catch {
           /* ignore */
         }

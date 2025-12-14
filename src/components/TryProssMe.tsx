@@ -327,6 +327,23 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         return;
       }
 
+      // Handle async polling for complex prompts
+      if (data?.requiresPolling && data?.jobId) {
+        console.log(`[Async Mode] Complex prompt detected, job created: ${data.jobId}`);
+        console.log(`[Async Mode] Estimated time: ${data.estimatedTime || '60-90 seconds'}`);
+        
+        // Set job ID to trigger polling (existing useEffect on lines 122-274)
+        setCurrentJobId(data.jobId);
+        setGenerationStep("generating");
+        
+        toast.info(data.message || 'Complex prompt - generation started in background', {
+          description: `Estimated time: ${data.estimatedTime || '60-90 seconds'}. We'll notify you when ready.`
+        });
+        
+        // Note: isGenerating stays true, polling will set it to false when complete
+        return;
+      }
+
       // Check if prompt requires splitting into sub-diagrams
       if (data?.requiresSplit && data?.subPrompts) {
         console.log(`[Complex Prompt] Detected complex prompt with ${data.subPrompts.length} sub-prompts, generating diagrams...`);

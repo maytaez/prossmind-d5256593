@@ -1,6 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
+import { checkCache, storeCacheAsync } from '../_shared/semantic-cache.ts';
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -35,6 +37,18 @@ Deno.serve(async (req) => {
             throw new Error("Google API key not configured");
         }
 
+        // Create Supabase client for caching
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+        let supabase = null;
+        if (supabaseUrl && supabaseKey) {
+            supabase = createClient(supabaseUrl, supabaseKey);
+            console.log('[Combined Generation] Cache enabled');
+        } else {
+            console.warn('[Combined Generation] Cache disabled (missing Supabase config)');
+        }
+
         console.log(`[Combined Generation] Starting for ${subPrompts.length} sub-prompts`);
 
         // Generate all sub-diagrams in parallel
@@ -46,7 +60,12 @@ Deno.serve(async (req) => {
                     setTimeout(() => reject(new Error("Sub-diagram generation timeout")), 45000);
                 });
 
-                const generationPromise = generateSingleDiagram(subPrompt, diagramType, GOOGLE_API_KEY);
+                const generationPromise = generateSingleDiagram(
+                    subPrompt,
+                    diagramType,
+                    GOOGLE_API_KEY,
+                    supabase
+                );
                 const result = await Promise.race([generationPromise, timeoutPromise]);
 
                 console.log(`[Combined] Sub-diagram ${index + 1} completed (${result.length} chars)`);
@@ -112,7 +131,29 @@ async function generateSingleDiagram(
     prompt: string,
     diagramType: "bpmn" | "pid",
     googleApiKey: string,
+    supabase: any = null, // SupabaseClient or null
 ): Promise<string> {
+    // Check cache first (if Supabase is available)
+    if (supabase) {
+        try {
+            const cachedResult = await checkCache({
+                prompt,
+                diagramType,
+                supabase,
+                googleApiKey,
+            });
+
+            if (cachedResult) {
+                console.log(`[Single Diagram] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, skipping generation`);
+                return cachedResult.bpmn_xml;
+            }
+
+            console.log(`[Single Diagram] Cache miss, proceeding with generation`);
+        } catch (cacheError) {
+            console.warn('[Single Diagram] Cache check failed, proceeding with generation:', cacheError);
+        }
+    }
+
     // Detect language from the prompt
     const detectedLanguageCode = detectLanguage(prompt);
     const detectedLanguageName = getLanguageName(detectedLanguageCode);
@@ -176,6 +217,17 @@ async function generateSingleDiagram(
 
     if (!xml.includes("<?xml")) {
         throw new Error("Invalid BPMN XML generated");
+    }
+
+    // Store in cache asynchronously (if Supabase is available)
+    if (supabase) {
+        storeCacheAsync({
+            prompt,
+            bpmnXml: xml,
+            diagramType,
+            supabase,
+            googleApiKey,
+        });
     }
 
     return xml;
