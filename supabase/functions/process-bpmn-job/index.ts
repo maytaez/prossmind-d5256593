@@ -195,11 +195,12 @@ async function generateBpmnStructureOnly(
 ): Promise<string> {
   const structureOnlyPrompt =
     prompt +
-    `\n\n⚠️ CRITICAL OUTPUT FORMAT:
-Generate ONLY the BPMN 2.0 process structure WITHOUT diagram interchange.
-Do NOT include any <bpmndi:BPMNDiagram> or <bpmndi:*> elements.
-Layout coordinates will be calculated automatically.
-Include all: process, lanes, tasks, events, gateways, sequence flows with complete attributes.`;
+    `\n\n🚨 CRITICAL - STRUCTURE ONLY MODE:
+Generate ONLY the BPMN 2.0 process structure. Do NOT generate any visual layout information.
+EXCLUDE completely: All <bpmndi:BPMNDiagram>, <bpmndi:BPMNPlane>, <bpmndi:BPMNShape>, <bpmndi:BPMNEdge>, <dc:Bounds>, <di:waypoint> tags.
+INCLUDE: <bpmn:process>, <bpmn:lane>, <bpmn:laneSet>, all tasks, events, gateways, <bpmn:sequenceFlow> with complete attributes and IDs.
+The diagram coordinates will be calculated programmatically after generation.
+End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
 
   const messages = buildMessagesWithExamples(
     systemPrompt,
