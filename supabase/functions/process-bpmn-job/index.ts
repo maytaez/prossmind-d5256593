@@ -101,8 +101,22 @@ async function generateBpmnXmlWithGemini(
   maxTokens: number,
   temperature: number,
   retryContext?: { error: string; errorDetails?: string; attemptNumber: number },
+  useCompactDI: boolean = false,
 ): Promise<string> {
   let generationPrompt = prompt;
+
+  // Add compact DI instruction for complex diagrams or on retry
+  if (useCompactDI || retryContext) {
+    const compactInstruction = `\n\n⚠️ CRITICAL: Use ULTRA-COMPACT diagram interchange to fit within token limit:
+- Minimal spacing (horizontal: 120px, vertical: 80px)
+- Omit all optional DI attributes
+- Use shortest coordinates (no decimals)
+- Minimize whitespace in <bpmndi:> section`;
+
+    if (!generationPrompt.includes(compactInstruction)) {
+      generationPrompt += compactInstruction;
+    }
+  }
 
   if (retryContext) {
     generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}${retryContext.errorDetails ? `\nDetails: ${retryContext.errorDetails}` : ""}\n\nFix: ensure all tags closed, di:waypoint self-closing, no invalid elements, proper namespaces.`;
@@ -181,6 +195,14 @@ async function retryBpmnGeneration(
 ): Promise<string> {
   let lastValidationError: ValidationResult | null = null;
 
+  // Detect if prompt is complex and needs compact DI
+  const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
+  const isComplex = prompt.length > 2000 || laneCount >= 5;
+
+  console.log(
+    `[BPMN Generation] Complexity: ${isComplex ? "HIGH" : "NORMAL"} (length: ${prompt.length}, lanes: ${laneCount})`,
+  );
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
 
@@ -201,6 +223,7 @@ async function retryBpmnGeneration(
               attemptNumber: attempt,
             }
           : undefined,
+        isComplex || attempt > 1, // Use compact DI for complex prompts or retries
       );
 
       const validation = validateBpmnXml(bpmnXml);
