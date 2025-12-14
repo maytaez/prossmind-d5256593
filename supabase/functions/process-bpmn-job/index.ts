@@ -24,6 +24,8 @@ function sanitizeBpmnXml(xml: string): string {
   sanitized = sanitized.replace(/bpmns:/gi, "bpmn:");
   sanitized = sanitized.replace(/bpmndi\:BPMNShape/gi, "bpmndi:BPMNShape");
   sanitized = sanitized.replace(/bpmndi\:BPMNEdge/gi, "bpmndi:BPMNEdge");
+
+  // Fix unclosed di:waypoint tags
   sanitized = sanitized.replace(/<\/\s*di:waypoint\s*>/gi, "");
   sanitized = sanitized.replace(
     /<(\s*)di:waypoint\s*([^>]*?)>/gi,
@@ -33,6 +35,40 @@ function sanitizeBpmnXml(xml: string): string {
       return cleanAttrs ? `<${whitespace}di:waypoint ${cleanAttrs}/>` : `<${whitespace}di:waypoint/>`;
     },
   );
+
+  // Fix unclosed bpmndi:BPMNShape tags (close them if they're missing closing tags)
+  // Look for opening BPMNShape tags without proper closing
+  const shapeOpenings = (sanitized.match(/<bpmndi:BPMNShape[^>]*>/g) || []).length;
+  const shapeClosings = (sanitized.match(/<\/bpmndi:BPMNShape>/g) || []).length;
+
+  if (shapeOpenings > shapeClosings) {
+    console.warn(`[Sanitization] Found ${shapeOpenings} BPMNShape openings but only ${shapeClosings} closings`);
+    // Try to fix by making self-closing if they have no children
+    sanitized = sanitized.replace(
+      /<bpmndi:BPMNShape([^>]*?)>\s*(?=<(?:bpmndi:BPMNShape|bpmndi:BPMNEdge|\/bpmndi:BPMNPlane))/g,
+      "<bpmndi:BPMNShape$1/>",
+    );
+  }
+
+  // Fix unclosed bpmndi:BPMNEdge tags
+  const edgeOpenings = (sanitized.match(/<bpmndi:BPMNEdge[^>]*>/g) || []).length;
+  const edgeClosings = (sanitized.match(/<\/bpmndi:BPMNEdge>/g) || []).length;
+
+  if (edgeOpenings > edgeClosings) {
+    console.warn(`[Sanitization] Found ${edgeOpenings} BPMNEdge openings but only ${edgeClosings} closings`);
+    // Add closing tags before the next opening or plane closing
+    sanitized = sanitized.replace(
+      /<bpmndi:BPMNEdge([^>]*?)>((?:(?!<\/bpmndi:BPMNEdge>).)*?)(?=<(?:bpmndi:BPMNShape|bpmndi:BPMNEdge|\/bpmndi:BPMNPlane))/gs,
+      (match, attrs, content) => {
+        // If content only has waypoints, close the tag
+        if (content.trim().match(/^(<di:waypoint[^>]*\/>[\s\n]*)*$/)) {
+          return `<bpmndi:BPMNEdge${attrs}>${content}</bpmndi:BPMNEdge>`;
+        }
+        return match;
+      },
+    );
+  }
+
   sanitized = sanitized.replace(/<\s*\/\?xml/gi, "<?xml");
   sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, "&amp;");
   return sanitized.trim();
@@ -48,6 +84,31 @@ function validateBpmnXml(xml: string): { isValid: boolean; error?: string } {
     return { isValid: false, error: "Missing BPMN process element" };
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
+
+  // Check for balanced BPMNShape tags
+  const shapeOpenings = (xml.match(/<bpmndi:BPMNShape[^>]*(?<!\/)\s*>/g) || []).length;
+  const shapeSelfClosing = (xml.match(/<bpmndi:BPMNShape[^>]*\/>/g) || []).length;
+  const shapeClosings = (xml.match(/<\/bpmndi:BPMNShape>/g) || []).length;
+
+  if (shapeOpenings !== shapeClosings) {
+    return {
+      isValid: false,
+      error: `Unbalanced BPMNShape tags: ${shapeOpenings} openings, ${shapeClosings} closings, ${shapeSelfClosing} self-closing`,
+    };
+  }
+
+  // Check for balanced BPMNEdge tags
+  const edgeOpenings = (xml.match(/<bpmndi:BPMNEdge[^>]*(?<!\/)\s*>/g) || []).length;
+  const edgeSelfClosing = (xml.match(/<bpmndi:BPMNEdge[^>]*\/>/g) || []).length;
+  const edgeClosings = (xml.match(/<\/bpmndi:BPMNEdge>/g) || []).length;
+
+  if (edgeOpenings !== edgeClosings) {
+    return {
+      isValid: false,
+      error: `Unbalanced BPMNEdge tags: ${edgeOpenings} openings, ${edgeClosings} closings, ${edgeSelfClosing} self-closing`,
+    };
+  }
+
   return { isValid: true };
 }
 
