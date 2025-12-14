@@ -156,7 +156,7 @@ CRITICAL RULES:
     return structured;
   } catch (error) {
     console.error("[Prompt Preprocessor] Failed to parse JSON:", error);
-    throw new Error(`Invalid JSON from Flash: ${error.message}`);
+    throw new Error(`Invalid JSON from Flash: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
