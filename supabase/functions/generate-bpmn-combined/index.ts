@@ -3,6 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
+import {
+  logGenerationRequest,
+  logGenerationSuccess,
+  logGenerationError,
+  logAsync,
+} from "../_shared/dashboard-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,9 +57,43 @@ Deno.serve(async (req) => {
 
     console.log(`[Combined Generation] Starting for ${subPrompts.length} sub-prompts`);
 
+    const startTime = Date.now();
+    let parentLogId: string | null = null;
+
+    // Log parent multi-diagram request
+    if (supabase && userId) {
+      logAsync(async () => {
+        parentLogId = await logGenerationRequest({
+          supabase: supabase!,
+          userId: userId,
+          prompt: originalPrompt,
+          diagramType: diagramType,
+          sourceFunction: "generate-bpmn-combined",
+          isMultiDiagram: true,
+          subPromptCount: subPrompts.length,
+        });
+      });
+    }
+
     // Generate all sub-diagrams in parallel
     const subDiagramPromises = subPrompts.map(async (subPrompt, index) => {
       console.log(`[Combined] Generating sub-diagram ${index + 1}/${subPrompts.length}`);
+
+      // Log each sub-diagram request
+      let subLogId: string | null = null;
+      if (supabase && userId && parentLogId) {
+        logAsync(async () => {
+          subLogId = await logGenerationRequest({
+            supabase: supabase!,
+            userId: userId,
+            prompt: subPrompt,
+            diagramType: diagramType,
+            sourceFunction: "generate-bpmn-combined",
+            isMultiDiagram: false,
+            parentRequestId: parentLogId!,
+          });
+        });
+      }
 
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -64,9 +104,37 @@ Deno.serve(async (req) => {
         const result = await Promise.race([generationPromise, timeoutPromise]);
 
         console.log(`[Combined] Sub-diagram ${index + 1} completed (${result.length} chars)`);
+
+        // Log success for sub-diagram
+        if (supabase && subLogId) {
+          logAsync(async () => {
+            await logGenerationSuccess({
+              supabase: supabase!,
+              logId: subLogId!,
+              resultXml: result,
+              durationMs: Date.now() - startTime,
+              cacheHit: false,
+            });
+          });
+        }
+
         return { xml: result, prompt: subPrompt, index };
       } catch (error) {
         console.error(`[Combined] Sub-diagram ${index + 1} failed:`, error);
+
+        // Log error for sub-diagram
+        if (supabase && subLogId) {
+          logAsync(async () => {
+            await logGenerationError({
+              supabase: supabase!,
+              logId: subLogId!,
+              errorMessage: error instanceof Error ? error.message : "Unknown error",
+              errorStack: error instanceof Error ? error.stack : undefined,
+              durationMs: Date.now() - startTime,
+            });
+          });
+        }
+
         return { xml: createPlaceholderDiagram(subPrompt, index + 1, diagramType), prompt: subPrompt, index };
       }
     });
@@ -100,6 +168,19 @@ Deno.serve(async (req) => {
 
     console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams + mega-diagram`);
 
+    // Log success for parent request
+    if (supabase && parentLogId) {
+      logAsync(async () => {
+        await logGenerationSuccess({
+          supabase: supabase!,
+          logId: parentLogId!,
+          resultXml: combinedXml,
+          durationMs: Date.now() - startTime,
+          cacheHit: false,
+        });
+      });
+    }
+
     return new Response(
       JSON.stringify({
         diagrams,
@@ -115,6 +196,11 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("[Combined Generation] Error:", error);
+
+    // Note: Parent log error logging would go here, but we don't have a reliable
+    // way to track parentLogId in the catch block due to async nature.
+    // Sub-diagram errors are already logged individually above.
+
     return new Response(JSON.stringify({ error: (error as Error).message || "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
