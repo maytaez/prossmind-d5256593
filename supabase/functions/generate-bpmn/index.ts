@@ -1,4 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
 import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
@@ -23,6 +24,24 @@ interface ValidationResult {
 interface SummarizationResult {
   summarizedPrompt: string;
   wasSummarized: boolean;
+}
+
+/**
+ * Detect if prompt requires async generation (conservative thresholds)
+ * Only use async for genuinely complex prompts that risk timeout
+ */
+function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
+  const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
+  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || [])
+    .length;
+
+  // Conservative thresholds - only async for truly complex prompts
+  return (
+    promptLength > 1500 || // Very long prompts
+    actors >= 4 || // 4+ swimlanes/actors
+    complexity >= 4 || // Multiple complex BPMN features
+    (actors >= 3 && complexity >= 2) // Moderate actors + complexity
+  );
 }
 
 function sanitizeBpmnXml(xml: string): string {
@@ -286,6 +305,84 @@ Deno.serve(async (req) => {
     let wasSplit = false;
     let subPrompts: string[] = [];
 
+    // ASYNC GENERATION FOR COMPLEX PROMPTS - Bypass 60s timeout using background jobs
+    if (!modelingAgentMode && shouldUseAsyncGeneration(prompt, promptLength)) {
+      console.log(`[Async Mode] Complex prompt detected (length: ${promptLength}), creating background job`);
+
+      try {
+        // Create Supabase client
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+        if (!supabaseUrl || !supabaseServiceKey) {
+          console.warn("[Async Mode] Supabase config missing, falling back to sync");
+        } else {
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+          // Get user ID from JWT
+          const authHeader = req.headers.get("Authorization");
+          const token = authHeader?.replace("Bearer ", "");
+          let userId: string | undefined;
+
+          if (token) {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser(token);
+            userId = user?.id;
+          }
+
+          // Create job in vision_bpmn_jobs table
+          const { data: job, error: jobError } = await supabase
+            .from("vision_bpmn_jobs")
+            .insert({
+              user_id: userId || null,
+              source_type: "prompt",
+              prompt: prompt,
+              diagram_type: diagramType,
+              image_data: null,
+              status: "pending",
+            })
+            .select()
+            .single();
+
+          if (jobError || !job) {
+            console.error("[Async Mode] Failed to create job:", jobError);
+            console.warn("[Async Mode] Falling back to sync generation");
+          } else {
+            console.log(`[Async Mode] Job created: ${job.id}`);
+
+            // Trigger async processing (fire and forget)
+            fetch(`${supabaseUrl}/functions/v1/process-bpmn-job`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+              },
+              body: JSON.stringify({ jobId: job.id }),
+            }).catch((err) => console.error("[Async Mode] Failed to trigger processor:", err));
+
+            // Return immediately with job ID for client polling
+            return new Response(
+              JSON.stringify({
+                requiresPolling: true,
+                jobId: job.id,
+                message: "Complex prompt - generation started in background",
+                estimatedTime: "60-90 seconds",
+              }),
+              {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              },
+            );
+          }
+        }
+      } catch (asyncError) {
+        console.error("[Async Mode] Error setting up async:", asyncError);
+        console.warn("[Async Mode] Falling back to sync generation");
+        // Continue with normal synchronous generation below
+      }
+    }
+
     // DISABLED FOR NORMAL USE - Only analyze extremely long prompts (>5000 chars)
     // Trust Gemini 2.5 Pro + DI optimization to handle complex prompts (proven by Modelling Agent Mode)
     if (!modelingAgentMode && promptLength > 5000) {
@@ -523,9 +620,9 @@ Deno.serve(async (req) => {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-        if (semanticCache !== null) {
+        if (semanticCache) {
           cacheType = "semantic";
-          similarityScore = semanticCache!.similarity;
+          similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -533,14 +630,14 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache!.similarity,
+            similarity_score: semanticCache.similarity,
             error_occurred: false,
           });
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache!.bpmnXml,
+              bpmnXml: semanticCache.bpmnXml,
               cached: true,
-              similarity: semanticCache!.similarity,
+              similarity: semanticCache.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
