@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import { selectModel } from "../_shared/model-selection.ts";
+import { selectModel, analyzePrompt } from "../_shared/model-selection.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
 
@@ -506,13 +506,7 @@ Deno.serve(async (req) => {
         : getBpmnSystemPrompt(languageCode, languageName, false, true);
 
     // Get appropriate model and token limits based on prompt complexity
-    const modelSelection = selectModel({
-      promptLength: typedJob.prompt.length,
-      diagramType: typedJob.diagram_type,
-      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
-      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
-      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
-    });
+    const modelSelection = selectModel(analyzePrompt(typedJob.prompt, typedJob.diagram_type));
 
     console.log(
       `[Job ${jobId}] Model selection: ${modelSelection.model}, maxTokens: ${modelSelection.maxTokens}, reasoning: ${modelSelection.reasoning}`,
