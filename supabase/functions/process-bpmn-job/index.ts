@@ -243,7 +243,23 @@ End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
     .replace(/```\n?/g, "")
     .trim();
 
-  // Sanitize
+  // CRITICAL: Strip any leaked DI (Gemini often ignores the structure-only instruction)
+  // Remove complete or truncated <bpmndi:BPMNDiagram> sections
+  if (bpmnStructure.includes("<bpmndi:")) {
+    console.warn(`[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction, stripping them`);
+
+    // Strip from first <bpmndi: tag to end (handles truncation)
+    bpmnStructure = bpmnStructure.replace(/<bpmndi:[\s\S]*$/g, "");
+
+    // Ensure proper closing tag
+    if (!bpmnStructure.includes("</bpmn:definitions>")) {
+      bpmnStructure += "\n</bpmn:definitions>";
+    }
+
+    console.log(`[STRUCTURE ONLY] Cleaned structure: ${bpmnStructure.length} chars`);
+  }
+
+  // Sanitize XML
   bpmnStructure = sanitizeBpmnXml(bpmnStructure);
 
   console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
