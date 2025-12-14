@@ -209,6 +209,111 @@ export type Database = {
         }
         Relationships: []
       }
+      bpmn_generation_logs: {
+        Row: {
+          additional_metadata: Json | null
+          cache_hit: boolean | null
+          cache_similarity_score: number | null
+          cached_from_id: string | null
+          client_info: Json | null
+          complexity_level: string | null
+          created_at: string | null
+          detected_language: string | null
+          diagram_type: string
+          error_message: string | null
+          error_stack: string | null
+          estimated_cost_usd: number | null
+          generation_duration_ms: number | null
+          id: string
+          input_tokens: number | null
+          is_multi_diagram: boolean | null
+          job_id: string | null
+          original_prompt: string
+          output_tokens: number | null
+          parent_request_id: string | null
+          request_timestamp: string
+          result_xml: string | null
+          source_function: string
+          status: string
+          sub_prompt_count: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          additional_metadata?: Json | null
+          cache_hit?: boolean | null
+          cache_similarity_score?: number | null
+          cached_from_id?: string | null
+          client_info?: Json | null
+          complexity_level?: string | null
+          created_at?: string | null
+          detected_language?: string | null
+          diagram_type: string
+          error_message?: string | null
+          error_stack?: string | null
+          estimated_cost_usd?: number | null
+          generation_duration_ms?: number | null
+          id?: string
+          input_tokens?: number | null
+          is_multi_diagram?: boolean | null
+          job_id?: string | null
+          original_prompt: string
+          output_tokens?: number | null
+          parent_request_id?: string | null
+          request_timestamp?: string
+          result_xml?: string | null
+          source_function: string
+          status: string
+          sub_prompt_count?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          additional_metadata?: Json | null
+          cache_hit?: boolean | null
+          cache_similarity_score?: number | null
+          cached_from_id?: string | null
+          client_info?: Json | null
+          complexity_level?: string | null
+          created_at?: string | null
+          detected_language?: string | null
+          diagram_type?: string
+          error_message?: string | null
+          error_stack?: string | null
+          estimated_cost_usd?: number | null
+          generation_duration_ms?: number | null
+          id?: string
+          input_tokens?: number | null
+          is_multi_diagram?: boolean | null
+          job_id?: string | null
+          original_prompt?: string
+          output_tokens?: number | null
+          parent_request_id?: string | null
+          request_timestamp?: string
+          result_xml?: string | null
+          source_function?: string
+          status?: string
+          sub_prompt_count?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bpmn_generation_logs_cached_from_id_fkey"
+            columns: ["cached_from_id"]
+            isOneToOne: false
+            referencedRelation: "bpmn_prompt_cache"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bpmn_generation_logs_parent_request_id_fkey"
+            columns: ["parent_request_id"]
+            isOneToOne: false
+            referencedRelation: "bpmn_generation_logs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bpmn_generations: {
         Row: {
           alternative_models: Json | null
@@ -700,6 +805,60 @@ export type Database = {
       }
     }
     Views: {
+      dashboard_cache_performance: {
+        Row: {
+          avg_similarity_score: number | null
+          cache_hit_rate_percent: number | null
+          cache_hits: number | null
+          cache_misses: number | null
+          date: string | null
+          diagram_type: string | null
+          total_requests: number | null
+        }
+        Relationships: []
+      }
+      dashboard_cost_analysis: {
+        Row: {
+          cache_hits: number | null
+          cost_saved_by_cache: number | null
+          cost_without_cache: number | null
+          diagram_type: string | null
+          total_cost: number | null
+          total_input_tokens: number | null
+          total_output_tokens: number | null
+          total_requests: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
+      dashboard_daily_stats: {
+        Row: {
+          active_users: number | null
+          avg_duration_ms: number | null
+          avg_input_tokens: number | null
+          avg_output_tokens: number | null
+          cache_hits: number | null
+          cached_requests: number | null
+          date: string | null
+          diagram_type: string | null
+          failed_requests: number | null
+          successful_requests: number | null
+          total_cost_usd: number | null
+          total_requests: number | null
+        }
+        Relationships: []
+      }
+      dashboard_error_summary: {
+        Row: {
+          affected_users: string[] | null
+          diagram_type: string | null
+          error_count: number | null
+          error_message: string | null
+          last_occurred: string | null
+          source_function: string | null
+        }
+        Relationships: []
+      }
       unique_visitors_by_country: {
         Row: {
           country: string | null
@@ -717,6 +876,12 @@ export type Database = {
         Returns: {
           deleted_prompt_cache_count: number
           deleted_vision_cache_count: number
+        }[]
+      }
+      cleanup_old_dashboard_logs: {
+        Args: { days_old?: number }
+        Returns: {
+          deleted_count: number
         }[]
       }
       get_cache_hit_rate_stats: {
