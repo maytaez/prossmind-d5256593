@@ -5,7 +5,29 @@
  * using a simplified graph layout algorithm.
  */
 
-import { BPMNElement, BPMNSequenceFlow, BPMNProcess } from "./bpmn-json-schema.ts";
+// Define types inline to avoid external dependencies
+export interface BPMNElement {
+  id: string;
+  type: string;
+  name?: string;
+  elements?: BPMNElement[];
+  flows?: BPMNSequenceFlow[];
+  [key: string]: unknown;
+}
+
+export interface BPMNSequenceFlow {
+  id: string;
+  sourceRef: string;
+  targetRef: string;
+  name?: string;
+}
+
+export interface BPMNProcess {
+  id: string;
+  name?: string;
+  elements: BPMNElement[];
+  flows: BPMNSequenceFlow[];
+}
 
 export interface Bounds {
   x: number;
@@ -78,7 +100,8 @@ const LAYOUT_CONFIG = {
  * Get element size based on type
  */
 export function getElementSize(element: BPMNElement): { width: number; height: number } {
-  return ELEMENT_SIZES[element.type] || ELEMENT_SIZES.task;
+  const type = element.type as keyof typeof ELEMENT_SIZES;
+  return ELEMENT_SIZES[type] || ELEMENT_SIZES.task;
 }
 
 /**
@@ -334,7 +357,7 @@ export function calculateLayout(
   const boundsMap = calculateBounds(graph, startX, startY);
 
   // Handle subprocesses - recalculate their size based on content
-  process.elements.forEach((element) => {
+  process.elements.forEach((element: BPMNElement) => {
     if (element.type === "subprocess") {
       const subprocessBounds = calculateSubprocessLayout(element);
       const currentBounds = boundsMap.get(element.id);
@@ -360,7 +383,7 @@ export function calculateLayout(
   });
 
   // Calculate waypoints for edges
-  process.flows.forEach((flow) => {
+  process.flows.forEach((flow: BPMNSequenceFlow) => {
     const sourceBounds = boundsMap.get(flow.sourceRef);
     const targetBounds = boundsMap.get(flow.targetRef);
 
