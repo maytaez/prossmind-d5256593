@@ -4,7 +4,6 @@ import { detectLanguage, getLanguageName } from "../_shared/language-detection.t
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
 import { selectModel } from "../_shared/model-selection.ts";
-import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +17,12 @@ interface BpmnGenerationJob {
   diagram_type: "bpmn" | "pid";
   source_type: string;
   status: string;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  errorDetails?: string;
 }
 
 // Sanitize BPMN XML (exact copy from generate-bpmn for consistency)
@@ -61,7 +66,7 @@ function sanitizeBpmnXml(xml: string): string {
 }
 
 // Validate BPMN XML (exact copy from generate-bpmn for consistency)
-function validateBpmnXml(xml: string): { isValid: boolean; error?: string } {
+function validateBpmnXml(xml: string): ValidationResult {
   if (!xml || typeof xml !== "string") return { isValid: false, error: "Invalid XML: empty or non-string input" };
   if (!xml.trim().startsWith("<?xml")) return { isValid: false, error: "Missing XML declaration" };
   if (!xml.includes("<bpmn:definitions") && !xml.includes("<bpmn:Definitions") && !xml.includes("<definitions"))
@@ -70,11 +75,23 @@ function validateBpmnXml(xml: string): { isValid: boolean; error?: string } {
     return { isValid: false, error: "Missing BPMN process element" };
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
+
+  const unclosedWaypoints = xml.match(/<di:waypoint[^>]*[^\/]>/gi);
+  if (unclosedWaypoints && unclosedWaypoints.length > 0)
+    return {
+      isValid: false,
+      error: "Unclosed di:waypoint tags",
+      errorDetails: `Found ${unclosedWaypoints.length} unclosed tags`,
+    };
+
+  if (xml.includes("bpmns:") && !xml.includes("xmlns:bpmns="))
+    return { isValid: false, error: "Invalid namespace prefix bpmns:" };
+
   return { isValid: true };
 }
 
-// Generate BPMN XML using Gemini - STRUCTURE ONLY (adapted from generate-bpmn)
-async function generateBpmnStructure(
+// Generate BPMN XML with Gemini
+async function generateBpmnXmlWithGemini(
   prompt: string,
   systemPrompt: string,
   diagramType: "bpmn" | "pid",
@@ -83,81 +100,12 @@ async function generateBpmnStructure(
   googleApiKey: string,
   maxTokens: number,
   temperature: number,
-  retryContext?: { error: string; attemptNumber: number },
+  retryContext?: { error: string; errorDetails?: string; attemptNumber: number },
 ): Promise<string> {
   let generationPrompt = prompt;
 
-  // Add structure-only instruction to reduce output size
-  const structureOnlyInstruction = `\n\nCRITICAL OUTPUT FORMAT:
-Generate ONLY the BPMN process structure without diagram interchange.
-Do NOT include <bpmndi:BPMNDiagram> section - layout will be calculated automatically.
-Include: process, lanes, tasks, events, gateways, flows with all attributes.
-Exclude: Any <bpmndi:*> elements, coordinates, or visual positioning.`;
-
   if (retryContext) {
-    generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}\n\nFix: ensure all tags closed, proper namespaces, valid structure.`;
-  } else {
-    generationPrompt += structureOnlyInstruction;
-  }
-
-  const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType, languageCode, languageName);
-  const systemMessage = messages.find((m: any) => m.role === "system");
-  const userMessages = messages.filter((m: any) => m.role === "user");
-
-  console.log(`[GEMINI] Calling Gemini 2.5 Pro for STRUCTURE ONLY (attempt ${retryContext?.attemptNumber || 1})`);
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: userMessages.map((m: any) => ({ role: "user", parts: [{ text: m.content }] })),
-        systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
-        generationConfig: { maxOutputTokens: maxTokens, temperature: temperature },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${errorText}`);
-  }
-
-  const data = await response.json();
-  let bpmnStructure = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-  if (!bpmnStructure) throw new Error("No content generated from Gemini 2.5 Pro");
-
-  // Clean markdown formatting
-  bpmnStructure = bpmnStructure
-    .replace(/```xml\n?/g, "")
-    .replace(/```\n?/g, "")
-    .trim();
-
-  // Sanitize
-  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
-
-  console.log(`[STRUCTURE] Generated ${bpmnStructure.length} chars (structure only)`);
-
-  return bpmnStructure;
-}
-
-// Generate BPMN XML using Gemini (extracted and adapted from generate-bpmn)
-async function generateBpmnXml(
-  prompt: string,
-  systemPrompt: string,
-  diagramType: "bpmn" | "pid",
-  languageCode: string,
-  languageName: string,
-  googleApiKey: string,
-  maxTokens: number,
-  temperature: number,
-  retryContext?: { error: string; attemptNumber: number },
-): Promise<string> {
-  let generationPrompt = prompt;
-  if (retryContext) {
-    generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}\n\nFix: ensure all tags closed, di:waypoint self-closing, no invalid elements, proper namespaces.`;
+    generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}${retryContext.errorDetails ? `\nDetails: ${retryContext.errorDetails}` : ""}\n\nFix: ensure all tags closed, di:waypoint self-closing, no invalid elements, proper namespaces.`;
   }
 
   const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType, languageCode, languageName);
@@ -204,16 +152,22 @@ async function generateBpmnXml(
   const aggressive = estimatedTokens > maxTokens * 0.8;
 
   if (needsDIOptimization(bpmnXml, maxTokens) || aggressive) {
-    console.log(`[BPMN DI Optimization] Before: ${beforeOptimization} chars (~${estimatedTokens} tokens)`);
+    console.log(
+      `[BPMN DI Optimization] Before: ${beforeOptimization} chars (~${estimatedTokens} tokens), aggressive: ${aggressive}`,
+    );
     bpmnXml = optimizeBpmnDI(bpmnXml, aggressive);
     const afterOptimization = bpmnXml.length;
-    console.log(`[BPMN DI Optimization] After: ${afterOptimization} chars (~${estimateTokenCount(bpmnXml)} tokens)`);
+    const reduction = (((beforeOptimization - afterOptimization) / beforeOptimization) * 100).toFixed(1);
+    console.log(
+      `[BPMN DI Optimization] After: ${afterOptimization} chars (~${estimateTokenCount(bpmnXml)} tokens), reduced: ${reduction}%`,
+    );
   }
 
+  console.log("[GEMINI RESPONSE] Final length:", bpmnXml.length);
   return bpmnXml;
 }
 
-// Retry logic for BPMN generation - TWO STEP APPROACH
+// Retry BPMN generation with validation
 async function retryBpmnGeneration(
   prompt: string,
   systemPrompt: string,
@@ -225,13 +179,13 @@ async function retryBpmnGeneration(
   temperature: number,
   maxAttempts: number = 3,
 ): Promise<string> {
-  let lastValidationError: { error?: string } | null = null;
+  let lastValidationError: ValidationResult | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
+
     try {
-      // STEP 1: Generate structure only (no DI, no truncation!)
-      const bpmnStructure = await generateBpmnStructure(
+      const bpmnXml = await generateBpmnXmlWithGemini(
         prompt,
         systemPrompt,
         diagramType,
@@ -241,28 +195,23 @@ async function retryBpmnGeneration(
         maxTokens,
         temperature,
         lastValidationError
-          ? { error: lastValidationError.error || "Validation failed", attemptNumber: attempt }
+          ? {
+              error: lastValidationError.error || "Validation failed",
+              errorDetails: lastValidationError.errorDetails,
+              attemptNumber: attempt,
+            }
           : undefined,
       );
 
-      // Validate structure
-      const validation = validateBpmnXml(bpmnStructure);
-      if (!validation.isValid) {
-        lastValidationError = validation;
-        console.warn(`[BPMN Generation] Structure validation failed attempt ${attempt}:`, validation.error);
-        if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
-        continue;
+      const validation = validateBpmnXml(bpmnXml);
+      if (validation.isValid) {
+        console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
+        return bpmnXml;
       }
 
-      console.log(`[BPMN Generation] Valid structure on attempt ${attempt}`);
-
-      // STEP 2: Add diagram automatically
-      console.log(`[BPMN Generation] Adding diagram layout...`);
-      const completeXml = addBpmnDiagram(bpmnStructure);
-
-      console.log(`[BPMN Generation] Complete XML: ${completeXml.length} chars`);
-
-      return completeXml;
+      lastValidationError = validation;
+      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
       if (attempt === maxAttempts) throw error;
@@ -275,6 +224,7 @@ async function retryBpmnGeneration(
   );
 }
 
+// Main handler
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
