@@ -16,6 +16,11 @@ interface Lane {
   flowNodeRefs: string[];
 }
 
+interface BestMatch {
+  lane: Lane;
+  score: number;
+}
+
 /**
  * Infer lane assignments from element names and types
  */
@@ -45,10 +50,6 @@ export function inferLaneAssignments(lanes: Lane[], elements: BPMNElement[]): La
     const elementKeywords = extractKeywords(element.name || "");
 
     // Find best matching lane
-    interface BestMatch {
-      lane: Lane;
-      score: number;
-    }
     let bestMatch: BestMatch | null = null;
 
     laneKeywords.forEach(({ lane, keywords }) => {
@@ -60,11 +61,12 @@ export function inferLaneAssignments(lanes: Lane[], elements: BPMNElement[]): La
     });
 
     // Assign to best matching lane (or first lane if no match)
-    if (bestMatch && bestMatch.score > 0) {
-      const targetLane = inferredLanes.find((l) => l.id === bestMatch!.lane.id);
+    const match = bestMatch as BestMatch | null;
+    if (match && match.score > 0) {
+      const targetLane = inferredLanes.find((l) => l.id === match.lane.id);
       if (targetLane) {
         targetLane.flowNodeRefs.push(element.id);
-        console.log(`[Lane Assignment] ${element.id} -> ${targetLane.name} (score: ${bestMatch.score})`);
+        console.log(`[Lane Assignment] ${element.id} -> ${targetLane.name} (score: ${match.score})`);
       }
     } else {
       // Default to first lane
