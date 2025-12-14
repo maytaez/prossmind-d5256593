@@ -621,8 +621,9 @@ Deno.serve(async (req) => {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
+          const cachedResult = semanticCache;
           cacheType = "semantic";
-          similarityScore = semanticCache.similarity;
+          similarityScore = cachedResult.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -630,14 +631,14 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache.similarity,
+            similarity_score: cachedResult.similarity,
             error_occurred: false,
           });
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache.bpmnXml,
+              bpmnXml: cachedResult.bpmnXml,
               cached: true,
-              similarity: semanticCache.similarity,
+              similarity: cachedResult.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
