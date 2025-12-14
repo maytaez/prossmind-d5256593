@@ -14,6 +14,12 @@ import {
   fallbackAnalysis,
   fallbackSplit,
 } from "../_shared/prompt-analyzer.ts";
+import {
+  logGenerationRequest,
+  logGenerationSuccess,
+  logGenerationError,
+  logAsync,
+} from "../_shared/dashboard-logger.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -268,6 +274,8 @@ Deno.serve(async (req) => {
   let modelUsed: string | undefined;
   let prompt: string | undefined;
   let promptLength = 0;
+  let dashboardLogId: string | null = null; // Track dashboard log ID
+  let supabaseClient: any = null; // For dashboard logging
   try {
     let requestData;
     try {
@@ -282,6 +290,7 @@ Deno.serve(async (req) => {
     const diagramType = requestData.diagramType || "bpmn";
     const skipCache = requestData.skipCache === true;
     const modelingAgentMode = requestData.modelingAgentMode === true;
+    const userId = requestData.userId; // Get user ID from request
     if (!prompt) throw new Error("Prompt is required");
     promptLength = prompt.length;
     console.log("Generating BPMN for prompt:", prompt);
@@ -291,6 +300,26 @@ Deno.serve(async (req) => {
 
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
+
+    // Initialize Supabase client for dashboard logging
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (supabaseUrl && supabaseKey && userId) {
+      supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+      // Log generation request (async, non-blocking)
+      logAsync(async () => {
+        dashboardLogId = await logGenerationRequest({
+          supabase: supabaseClient,
+          userId: userId,
+          prompt: prompt!,
+          diagramType: diagramType,
+          detectedLanguage: detectedLanguageCode,
+          sourceFunction: "generate-bpmn",
+          isMultiDiagram: false,
+        });
+      });
+    }
 
     // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
     const TIMEOUT_LIMIT_MS = 50000; // 50 seconds, leaving 10s buffer before edge function timeout
@@ -585,6 +614,20 @@ Deno.serve(async (req) => {
           cache_hit: true,
           error_occurred: false,
         });
+
+        // Log cache hit to dashboard
+        if (supabaseClient && dashboardLogId) {
+          logAsync(async () => {
+            await logGenerationSuccess({
+              supabase: supabaseClient,
+              logId: dashboardLogId!,
+              resultXml: exactCache.bpmnXml,
+              durationMs: Date.now() - startTime,
+              cacheHit: true,
+            });
+          });
+        }
+
         return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -686,6 +729,20 @@ Deno.serve(async (req) => {
       similarity_score: similarityScore,
       error_occurred: false,
     });
+
+    // Log successful generation to dashboard
+    if (supabaseClient && dashboardLogId) {
+      logAsync(async () => {
+        await logGenerationSuccess({
+          supabase: supabaseClient,
+          logId: dashboardLogId!,
+          resultXml: bpmnXml,
+          durationMs: Date.now() - startTime,
+          cacheHit: false,
+        });
+      });
+    }
+
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -698,6 +755,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
     console.error("Error in generate-bpmn:", errorMessage);
     try {
       await logPerformanceMetric({
@@ -713,6 +771,20 @@ Deno.serve(async (req) => {
     } catch {
       /* ignore */
     }
+
+    // Log error to dashboard
+    if (supabaseClient && dashboardLogId) {
+      logAsync(async () => {
+        await logGenerationError({
+          supabase: supabaseClient,
+          logId: dashboardLogId!,
+          errorMessage: errorMessage,
+          errorStack: errorStack,
+          durationMs: Date.now() - startTime,
+        });
+      });
+    }
+
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
