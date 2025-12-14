@@ -104,22 +104,29 @@ export function calculateLaneAwareLayout(
     let maxLaneHeight = 0;
     const laneStartY = currentY + LANE_TOP_MARGIN;
 
-    levelGroups.forEach((elements, level) => {
-      const x = startX + level * (100 + HORIZONTAL_SPACING); // Space levels horizontally
-      let y = laneStartY;
+    // Calculate max elements per level to determine vertical spacing
+    const maxElementsPerLevel = Math.max(...Array.from(levelGroups.values()).map((arr) => arr.length));
+    const elementVerticalSpacing = maxElementsPerLevel > 1 ? VERTICAL_SPACING : VERTICAL_SPACING * 2;
 
-      elements.forEach((element, index) => {
+    levelGroups.forEach((levelElements, level) => {
+      const levelX = startX + level * (150 + HORIZONTAL_SPACING); // Horizontal position for this level
+      let elementY = laneStartY;
+
+      // If multiple elements at same level, spread them vertically within the lane
+      const verticalGap = levelElements.length > 1 ? elementVerticalSpacing : 0;
+
+      levelElements.forEach((element, elementIndex) => {
         const size = getElementSize(element);
 
         boundsMap.set(element.id, {
-          x,
-          y,
+          x: levelX,
+          y: elementY,
           width: size.width,
           height: size.height,
         });
 
-        y += size.height + VERTICAL_SPACING;
-        maxLaneHeight = Math.max(maxLaneHeight, y - laneStartY);
+        elementY += size.height + verticalGap;
+        maxLaneHeight = Math.max(maxLaneHeight, elementY - laneStartY);
       });
     });
 
