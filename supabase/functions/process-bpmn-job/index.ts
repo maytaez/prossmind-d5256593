@@ -280,17 +280,17 @@ async function retryBpmnGeneration(
 ): Promise<string> {
   let lastValidationError: ValidationResult | null = null;
 
-  // Detect if prompt is complex and needs compact DI or structure-only
+  // Detect if prompt is complex - be aggressive to prevent truncation
   const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
-  const isComplex = prompt.length > 2000 || laneCount >= 4;
-  const isVeryComplex = prompt.length > 2500 || laneCount >= 5; // Lowered from 6 to 5
+  const isComplex = prompt.length > 1500 || laneCount >= 3;
+  const useStructureOnly = prompt.length > 1500 || laneCount >= 3; // Very aggressive threshold
 
   console.log(
-    `[BPMN Generation] Complexity: ${isVeryComplex ? "VERY HIGH (structure-only)" : isComplex ? "HIGH (compact DI)" : "NORMAL"} (length: ${prompt.length}, lanes: ${laneCount})`,
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount})`,
   );
 
   // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
-  if (isVeryComplex) {
+  if (useStructureOnly) {
     console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
     try {
       const structure = await generateBpmnStructureOnly(
