@@ -180,6 +180,7 @@ async function getRequests(supabase: any, params: QueryParams) {
   let query = supabase
     .from("bpmn_generation_logs")
     .select("*", { count: "exact" })
+    .neq("status", "pending") // Exclude incomplete/pending requests
     .order("request_timestamp", { ascending: false })
     .range(offset, offset + limit - 1);
 
