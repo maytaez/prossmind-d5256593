@@ -86,7 +86,7 @@ export function addBpmnDiagram(structureXml: string): string {
   console.log("[addBpmnDiagram] Generating diagram XML...");
   const diagramXml = generateDiagramXml(
     enhancedLayout,
-    collaboration?.participants[0]?.id || process.id,
+    collaboration?.id || process.id, // Use collaboration ID if present, otherwise process ID
     process.lanes,
   );
 
