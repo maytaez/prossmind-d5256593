@@ -207,47 +207,67 @@ export async function checkCache(options: CacheCheckOptions): Promise<CacheResul
 export function storeCacheAsync(options: CacheStoreOptions): void {
   const { prompt, bpmnXml, diagramType, supabase, googleApiKey } = options;
 
+  console.log(`[Cache] 💾 Starting async cache storage for ${diagramType} prompt (${prompt.length} chars)`);
+
   // Fire-and-forget: don't await this
   (async () => {
     const startTime = Date.now();
-    console.log(`[Cache] 💾 Storing in cache (async): ${diagramType} prompt (${prompt.length} chars)`);
 
     try {
+      console.log(`[Cache] Generating hash and embedding...`);
+
       // Generate hash and embedding
       const [promptHash, embedding] = await Promise.all([
         generatePromptHash(prompt),
         generateEmbedding(prompt, googleApiKey),
       ]);
 
+      console.log(`[Cache] Hash: ${promptHash.substring(0, 16)}..., Embedding dims: ${embedding.length}`);
+
+      // Prepare the data
+      const cacheData = {
+        prompt_text: prompt,
+        prompt_hash: promptHash,
+        prompt_embedding: embedding,
+        diagram_type: diagramType,
+        bpmn_xml: bpmnXml,
+        hit_count: 1,
+        created_at: new Date().toISOString(),
+        last_accessed_at: new Date().toISOString(),
+      };
+
+      console.log(`[Cache] Upserting to database...`);
+
       // Try to insert or update
-      const { error } = await supabase.from("bpmn_prompt_cache").upsert(
-        {
-          prompt_text: prompt,
-          prompt_hash: promptHash,
-          prompt_embedding: embedding,
-          diagram_type: diagramType,
-          bpmn_xml: bpmnXml,
-          hit_count: 1,
-          created_at: new Date().toISOString(),
-          last_accessed_at: new Date().toISOString(),
-        },
-        {
+      const { data, error } = await supabase
+        .from("bpmn_prompt_cache")
+        .upsert(cacheData, {
           onConflict: "prompt_hash,diagram_type",
           ignoreDuplicates: false, // Update if exists
-        },
-      );
+        })
+        .select();
 
       if (error) {
-        console.error("[Cache] Failed to store in cache:", error);
+        console.error("[Cache] ❌ Failed to store in cache:", error);
+        console.error("[Cache] Error details:", JSON.stringify(error, null, 2));
       } else {
         const duration = Date.now() - startTime;
         console.log(`[Cache] ✅ Stored successfully in ${duration}ms`);
+        console.log(`[Cache] Stored entry:`, data ? `ID: ${data[0]?.id}` : "No data returned");
       }
     } catch (error) {
       const duration = Date.now() - startTime;
-      console.error(`[Cache] Error storing in cache (${duration}ms):`, error);
+      console.error(`[Cache] ❌ Error storing in cache (${duration}ms):`, error);
+      if (error instanceof Error) {
+        console.error("[Cache] Error stack:", error.stack);
+      }
     }
-  })();
+  })().catch((err) => {
+    // Extra safety net - should never reach here
+    console.error("[Cache] ❌ Unhandled error in async cache storage:", err);
+  });
+
+  console.log(`[Cache] Cache storage initiated (running in background)`);
 }
 
 /**
