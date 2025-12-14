@@ -4,6 +4,7 @@ import { detectLanguage, getLanguageName } from "../_shared/language-detection.t
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
 import { selectModel } from "../_shared/model-selection.ts";
+import { sanitizeBpmnXml } from "../_shared/xml-sanitizer.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 
 const corsHeaders = {
@@ -265,8 +266,8 @@ async function retryBpmnGeneration(
 
   // Detect if prompt is complex and needs compact DI or structure-only
   const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
-  const isComplex = prompt.length > 2000 || laneCount >= 5;
-  const isVeryComplex = prompt.length > 3000 || laneCount >= 6;
+  const isComplex = prompt.length > 2000 || laneCount >= 4;
+  const isVeryComplex = prompt.length > 2500 || laneCount >= 5; // Lowered from 6 to 5
 
   console.log(
     `[BPMN Generation] Complexity: ${isVeryComplex ? "VERY HIGH (structure-only)" : isComplex ? "HIGH (compact DI)" : "NORMAL"} (length: ${prompt.length}, lanes: ${laneCount})`,
