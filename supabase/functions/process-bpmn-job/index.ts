@@ -6,13 +6,6 @@ import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_sha
 import { selectModel } from "../_shared/model-selection.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
-import { preprocessBpmnPrompt, structuredPromptToEnhancedPrompt } from "../_shared/bpmn-prompt-preprocessor.ts";
-import {
-  logGenerationRequest,
-  logGenerationSuccess,
-  logGenerationError,
-  logAsync,
-} from "../_shared/dashboard-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -290,24 +283,11 @@ async function retryBpmnGeneration(
 
   // Detect if prompt is complex - be aggressive to prevent truncation
   const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
-  const participantCount = (
-    prompt.match(
-      /participant|actor|department|system|service|pharmacy|physician|nurse|doctor|patient|customer|supplier/gi,
-    ) || []
-  ).length;
-  const complexityIndicators = (
-    prompt.match(/subprocess|parallel|timer|boundary|escalate|event.*gateway|decision|exclusive|inclusive/gi) || []
-  ).length;
-
-  // Use structure-only mode if:
-  // - Prompt is very long (> 1000 chars)
-  // - Has 2+ lane/pool keywords (e.g., "swimlanes for X, Y, Z")
-  // - Has 4+ participant/role mentions (indicates multiple swimlanes)
-  // - Has high complexity (3+ subprocesses, gateways, etc.)
-  const useStructureOnly = prompt.length > 1000 || laneCount >= 2 || participantCount >= 4 || complexityIndicators >= 3;
+  const isComplex = prompt.length > 1500 || laneCount >= 3;
+  const useStructureOnly = prompt.length > 1500 || laneCount >= 3; // Very aggressive threshold
 
   console.log(
-    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lanes: ${laneCount}, participants: ${participantCount}, complexity: ${complexityIndicators})`,
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount})`,
   );
 
   // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
@@ -356,7 +336,7 @@ async function retryBpmnGeneration(
               attemptNumber: attempt,
             }
           : undefined,
-        useStructureOnly || attempt > 1, // Use compact DI for complex prompts or retries
+        isComplex || attempt > 1, // Use compact DI for complex prompts or retries
       );
 
       const validation = validateBpmnXml(bpmnXml);
@@ -446,25 +426,6 @@ Deno.serve(async (req) => {
 
     console.log(`[Job ${jobId}] Language: ${languageName} (${languageCode})`);
 
-    const startTime = Date.now();
-    let dashboardLogId: string | null = null;
-
-    // Log async job request to dashboard
-    if (typedJob.user_id) {
-      logAsync(async () => {
-        dashboardLogId = await logGenerationRequest({
-          supabase: supabase,
-          userId: typedJob.user_id,
-          prompt: typedJob.prompt,
-          diagramType: typedJob.diagram_type,
-          detectedLanguage: languageCode,
-          sourceFunction: "process-bpmn-job",
-          isMultiDiagram: false,
-          jobId: jobId,
-        });
-      });
-    }
-
     // Check cache before generation
     try {
       console.log(`[Job ${jobId}] Checking cache for similar prompts...`);
@@ -480,20 +441,6 @@ Deno.serve(async (req) => {
         console.log(
           `[Job ${jobId}] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, returning cached result`,
         );
-
-        // Log cache hit to dashboard
-        if (typedJob.user_id && dashboardLogId) {
-          logAsync(async () => {
-            await logGenerationSuccess({
-              supabase: supabase,
-              logId: dashboardLogId!,
-              resultXml: cachedResult.bpmn_xml,
-              durationMs: 0, // Cache hit, no generation time
-              cacheHit: true,
-              cacheSimilarity: cachedResult.similarity,
-            });
-          });
-        }
 
         // Update job with cached result
         await supabase
@@ -545,26 +492,10 @@ Deno.serve(async (req) => {
     );
 
     try {
-      // PART 1: Preprocess prompt using Flash to structure it
-      console.log(`[Job ${jobId}] Preprocessing prompt with Flash...`);
-      let finalPrompt = typedJob.prompt;
-
-      try {
-        const structured = await preprocessBpmnPrompt(typedJob.prompt, GOOGLE_API_KEY);
-        finalPrompt = structuredPromptToEnhancedPrompt(structured);
-        console.log(
-          `[Job ${jobId}] ✅ Prompt enhanced: ${structured.lanes.length} lanes, ${structured.processSteps.length} steps`,
-        );
-      } catch (preprocessError) {
-        console.warn(`[Job ${jobId}] Preprocessing failed, using original prompt:`, preprocessError);
-        // Fall back to original prompt if preprocessing fails
-        finalPrompt = typedJob.prompt;
-      }
-
-      // PART 2: Generate BPMN (no timeout limit for background processing)
+      // Generate BPMN (no timeout limit for background processing)
       const startTime = Date.now();
       const bpmnXml = await retryBpmnGeneration(
-        finalPrompt, // Use enhanced prompt
+        typedJob.prompt,
         systemPrompt,
         typedJob.diagram_type,
         languageCode,
@@ -577,19 +508,6 @@ Deno.serve(async (req) => {
 
       const generationTime = Date.now() - startTime;
       console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
-
-      // Log success to dashboard
-      if (typedJob.user_id && dashboardLogId) {
-        logAsync(async () => {
-          await logGenerationSuccess({
-            supabase: supabase,
-            logId: dashboardLogId!,
-            resultXml: bpmnXml,
-            durationMs: generationTime,
-            cacheHit: false,
-          });
-        });
-      }
 
       // Store in cache asynchronously (fire-and-forget, doesn't block response)
       storeCacheAsync({
@@ -622,20 +540,6 @@ Deno.serve(async (req) => {
       );
     } catch (generationError) {
       console.error(`[Job ${jobId}] Generation failed:`, generationError);
-
-      // Log error to dashboard
-      if (typedJob.user_id && dashboardLogId) {
-        logAsync(async () => {
-          await logGenerationError({
-            supabase: supabase,
-            logId: dashboardLogId!,
-            errorMessage:
-              generationError instanceof Error ? generationError.message : "Unknown error during generation",
-            errorStack: generationError instanceof Error ? generationError.stack : undefined,
-            durationMs: Date.now() - startTime,
-          });
-        });
-      }
 
       // Store error
       await supabase
