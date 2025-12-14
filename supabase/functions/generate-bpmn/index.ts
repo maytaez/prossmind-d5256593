@@ -7,6 +7,7 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
+import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import {
   analyzePromptComplexity,
   simplifyPrompt,
@@ -210,6 +211,90 @@ async function generateBpmnXmlWithGemini(
   return bpmnXml;
 }
 
+// Generate BPMN structure only (no DI) for very complex diagrams
+async function generateBpmnStructureOnly(
+  prompt: string,
+  systemPrompt: string,
+  diagramType: "bpmn" | "pid",
+  languageCode: string,
+  languageName: string,
+  googleApiKey: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  const structureOnlyPrompt =
+    prompt +
+    `\n\n🚨 CRITICAL - STRUCTURE ONLY MODE:
+Generate ONLY the BPMN 2.0 process structure. Do NOT generate any visual layout information.
+EXCLUDE completely: All <bpmndi:BPMNDiagram>, <bpmndi:BPMNPlane>, <bpmndi:BPMNShape>, <bpmndi:BPMNEdge>, <dc:Bounds>, <di:waypoint> tags.
+INCLUDE: <bpmn:process>, <bpmn:lane>, <bpmn:laneSet>, all tasks, events, gateways, <bpmn:sequenceFlow> with complete attributes and IDs.
+The diagram coordinates will be calculated programmatically after generation.
+End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
+
+  const messages = buildMessagesWithExamples(
+    systemPrompt,
+    structureOnlyPrompt,
+    diagramType,
+    languageCode,
+    languageName,
+  );
+  const systemMessage = messages.find((m: any) => m.role === "system");
+  const userMessages = messages.filter((m: any) => m.role === "user");
+
+  console.log(`[GEMINI] Structure-only mode: requesting process without DI`);
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: userMessages.map((m: any) => ({ role: "user", parts: [{ text: m.content }] })),
+        systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
+        generationConfig: { maxOutputTokens: maxTokens, temperature: temperature },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  let bpmnStructure = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  if (!bpmnStructure) throw new Error("No content generated from Gemini 2.5 Pro");
+
+  // Clean markdown formatting
+  bpmnStructure = bpmnStructure
+    .replace(/```xml\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
+
+  // CRITICAL: Strip any leaked DI (Gemini often ignores the structure-only instruction)
+  // Remove complete or truncated <bpmndi:BPMNDiagram> sections
+  if (bpmnStructure.includes("<bpmndi:")) {
+    console.warn(`[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction, stripping them`);
+
+    // Strip from first <bpmndi: tag to end (handles truncation)
+    bpmnStructure = bpmnStructure.replace(/<bpmndi:[\s\S]*$/g, "");
+
+    // Ensure proper closing tag
+    if (!bpmnStructure.includes("</bpmn:definitions>")) {
+      bpmnStructure += "\n</bpmn:definitions>";
+    }
+
+    console.log(`[STRUCTURE ONLY] Cleaned structure: ${bpmnStructure.length} chars`);
+  }
+
+  // Sanitize XML
+  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
+
+  console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
+  return bpmnStructure;
+}
+
 async function retryBpmnGenerationIfNecessary(
   simplifiedPrompt: string,
   systemPrompt: string,
@@ -222,6 +307,42 @@ async function retryBpmnGenerationIfNecessary(
   maxAttempts: number = 3,
 ): Promise<string> {
   let lastValidationError: ValidationResult | null = null;
+
+  // Detect if prompt is complex - be aggressive to prevent truncation
+  const laneCount = (simplifiedPrompt.match(/lane|swimlane|pool/gi) || []).length;
+  const isComplex = simplifiedPrompt.length > 1500 || laneCount >= 3;
+  const useStructureOnly = simplifiedPrompt.length > 1500 || laneCount >= 3; // Very aggressive threshold
+
+  console.log(
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${simplifiedPrompt.length}, lane keywords: ${laneCount})`,
+  );
+
+  // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
+  if (useStructureOnly) {
+    console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
+    try {
+      const structure = await generateBpmnStructureOnly(
+        simplifiedPrompt,
+        systemPrompt,
+        diagramType,
+        languageCode,
+        languageName,
+        googleApiKey,
+        maxTokens,
+        temperature,
+      );
+
+      // Add diagram layout automatically
+      const completeXml = addBpmnDiagram(structure);
+      console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
+      return completeXml;
+    } catch (error) {
+      console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
+      // Fall through to compact DI mode
+    }
+  }
+
+  // For normal/moderately complex diagrams, use standard generation with retries
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
     try {
