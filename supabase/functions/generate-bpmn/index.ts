@@ -1,14 +1,20 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
-import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.ts';
-import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
-import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
-import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
-import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../_shared/bpmn-di-optimizer.ts';
-import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts, fallbackAnalysis, fallbackSplit } from '../_shared/prompt-analyzer.ts';
-import { logGenerationRequest, logGenerationSuccess, logGenerationError } from '../_shared/dashboard-logger.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
+import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
+import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
+import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
+import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
+import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
+import {
+  analyzePromptComplexity,
+  simplifyPrompt,
+  splitPromptIntoSubPrompts,
+  fallbackAnalysis,
+  fallbackSplit,
+} from "../_shared/prompt-analyzer.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -289,8 +295,8 @@ Deno.serve(async (req) => {
     if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
 
     // Create Supabase client for logging
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (supabaseUrl && supabaseServiceKey) {
       supabase = createClient(supabaseUrl, supabaseServiceKey);
     }
@@ -298,14 +304,16 @@ Deno.serve(async (req) => {
     // Get user ID for logging
     let userId: string | undefined;
     if (supabase) {
-      const authHeader = req.headers.get('Authorization');
-      const token = authHeader?.replace('Bearer ', '');
+      const authHeader = req.headers.get("Authorization");
+      const token = authHeader?.replace("Bearer ", "");
       if (token) {
         try {
-          const { data: { user } } = await supabase.auth.getUser(token);
+          const {
+            data: { user },
+          } = await supabase.auth.getUser(token);
           userId = user?.id;
         } catch (error) {
-          console.warn('[Logging] Failed to get user:', error);
+          console.warn("[Logging] Failed to get user:", error);
         }
       }
     }
@@ -318,7 +326,7 @@ Deno.serve(async (req) => {
         prompt,
         diagramType,
         detectedLanguage: detectedLanguageCode,
-        sourceFunction: 'generate-bpmn',
+        sourceFunction: "generate-bpmn",
         isMultiDiagram: false,
       });
     }
@@ -620,7 +628,7 @@ Deno.serve(async (req) => {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-        if (semanticCache) {
+        if (semanticCache !== null && semanticCache !== undefined) {
           cacheType = "semantic";
           similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
@@ -637,11 +645,11 @@ Deno.serve(async (req) => {
           if (supabase && logId) {
             await logGenerationSuccess({
               supabase,
-              logId,
-              resultXml: semanticCache.bpmnXml,
+              logId: logId!,
+              resultXml: semanticCache!.bpmnXml,
               durationMs: Date.now() - startTime,
               cacheHit: true,
-              cacheSimilarity: semanticCache.similarity,
+              cacheSimilarity: semanticCache!.similarity,
             });
           }
           return new Response(

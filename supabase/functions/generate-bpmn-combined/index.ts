@@ -1,9 +1,9 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
-import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
-import { checkCache, storeCacheAsync } from '../_shared/semantic-cache.ts';
-import { logGenerationRequest, logGenerationSuccess, logGenerationError } from '../_shared/dashboard-logger.ts';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
+import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
+import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -255,26 +255,136 @@ async function generateSingleDiagram(
         throw new Error(`Gemini API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
-    let xml = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    xml = xml
-        .replace(/```xml\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
+    console.log(`[Combined Generation] Starting for ${subPrompts.length} sub-prompts`);
+
+    // Get user ID from authorization header
+    const authHeader = req.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    let actualUserId: string | undefined;
+    if (supabase && token) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser(token);
+        actualUserId = user?.id;
+      } catch (error) {
+        console.warn("[Combined] Failed to get user from token:", error);
+      }
+    }
+    // Fallback to userId from request if token extraction failed
+    const finalUserId = actualUserId || userId;
+
+    // Log parent generation request
+    let parentLogId: string | null = null;
+    if (supabase && finalUserId) {
+      parentLogId = await logGenerationRequest({
+        supabase,
+        userId: finalUserId,
+        prompt: originalPrompt,
+        diagramType,
+        detectedLanguage: detectLanguage(originalPrompt),
+        sourceFunction: "generate-bpmn-combined",
+        isMultiDiagram: true,
+        subPromptCount: subPrompts.length,
+      });
+    }
+
+    const startTime = Date.now();
+
+    // Generate all sub-diagrams in parallel
+    const subDiagramPromises = subPrompts.map(async (subPrompt, index) => {
+      console.log(`[Combined] Generating sub-diagram ${index + 1}/${subPrompts.length}`);
+
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Sub-diagram generation timeout")), 45000);
+        });
+
+        const generationPromise = generateSingleDiagram(subPrompt, diagramType, GOOGLE_API_KEY, supabase);
+        const result = await Promise.race([generationPromise, timeoutPromise]);
 
     if (!xml.includes("<?xml")) {
         throw new Error("Invalid BPMN XML generated");
     }
 
-    // Store in cache asynchronously (if Supabase is available)
-    if (supabase) {
-        storeCacheAsync({
-            prompt,
-            bpmnXml: xml,
-            diagramType,
-            supabase,
-            googleApiKey,
-        });
+    console.log(`[Combined] All ${subDiagramResults.length} sub-diagrams generated successfully`);
+
+    // Return individual diagrams for detailed viewing
+    const diagrams = subDiagramResults.map((result, index) => ({
+      id: `diagram_${index + 1}`,
+      title: result.prompt.substring(0, 80) + (result.prompt.length > 80 ? "..." : ""),
+      xml: result.xml,
+      prompt: result.prompt,
+      index: index + 1,
+    }));
+
+    // Also generate a mega-diagram with all details flattened into one view
+    const combinedXml = createMegaDiagram(subDiagramResults, originalPrompt);
+
+    console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams + mega-diagram`);
+
+    // Log successful generation
+    if (supabase && parentLogId) {
+      await logGenerationSuccess({
+        supabase,
+        logId: parentLogId,
+        resultXml: combinedXml,
+        durationMs: Date.now() - startTime,
+        cacheHit: false,
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        diagrams,
+        combinedXml, // Combined overview with expandable subprocesses
+        diagramCount: diagrams.length,
+        originalPrompt,
+        message: `Successfully generated ${diagrams.length} diagrams + combined overview`,
+        type: "multi-diagram",
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    console.error("[Combined Generation] Error:", error);
+    const errorMessage = (error as Error).message || "Unknown error";
+    // Note: Error logging to bpmn_generation_logs happens within the try block where we have access to logId
+    // Errors caught here are already visible in function logs
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+async function generateSingleDiagram(
+  prompt: string,
+  diagramType: "bpmn" | "pid",
+  googleApiKey: string,
+  supabase: any = null, // SupabaseClient or null
+): Promise<string> {
+  // Check cache first (if Supabase is available)
+  if (supabase) {
+    try {
+      const cachedResult = await checkCache({
+        prompt,
+        diagramType,
+        supabase,
+        googleApiKey,
+      });
+
+      if (cachedResult) {
+        console.log(
+          `[Single Diagram] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, skipping generation`,
+        );
+        return cachedResult.bpmn_xml;
+      }
+
+      console.log(`[Single Diagram] Cache miss, proceeding with generation`);
+    } catch (cacheError) {
+      console.warn("[Single Diagram] Cache check failed, proceeding with generation:", cacheError);
     }
 
     return xml;

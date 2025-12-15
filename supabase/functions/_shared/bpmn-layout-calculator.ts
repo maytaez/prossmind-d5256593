@@ -5,7 +5,7 @@
  * using a simplified graph layout algorithm.
  */
 
-import { BPMNElement, BPMNSequenceFlow, BPMNProcess } from './bpmn-json-schema.ts';
+import { BPMNElement, BPMNSequenceFlow, BPMNProcess } from "./bpmn-json-schema.ts";
 
 export interface Bounds {
     x: number;
@@ -78,7 +78,7 @@ const LAYOUT_CONFIG = {
  * Get element size based on type
  */
 export function getElementSize(element: BPMNElement): { width: number; height: number } {
-    return ELEMENT_SIZES[element.type] || ELEMENT_SIZES.task;
+  return ELEMENT_SIZES[element.type] || ELEMENT_SIZES.task;
 }
 
 /**
@@ -332,78 +332,78 @@ export function calculateLayout(
     startX: number = LAYOUT_CONFIG.startX,
     startY: number = LAYOUT_CONFIG.startY
 ): Layout {
-    const nodes = new Map<string, LayoutNode>();
-    const edges = new Map<string, LayoutEdge>();
+  const nodes = new Map<string, LayoutNode>();
+  const edges = new Map<string, LayoutEdge>();
 
-    // Build graph
-    const graph = buildGraph(process.elements, process.flows);
+  // Build graph
+  const graph = buildGraph(process.elements, process.flows);
 
-    // Assign levels and columns
-    assignLevels(graph);
-    assignColumns(graph);
+  // Assign levels and columns
+  assignLevels(graph);
+  assignColumns(graph);
 
-    // Calculate bounds for each element
-    const boundsMap = calculateBounds(graph, startX, startY);
+  // Calculate bounds for each element
+  const boundsMap = calculateBounds(graph, startX, startY);
 
-    // Handle subprocesses - recalculate their size based on content
-    process.elements.forEach(element => {
-        if (element.type === 'subprocess') {
-            const subprocessBounds = calculateSubprocessLayout(element);
-            const currentBounds = boundsMap.get(element.id);
-            if (currentBounds) {
-                currentBounds.width = subprocessBounds.width;
-                currentBounds.height = subprocessBounds.height;
-            }
-        }
-    });
+  // Handle subprocesses - recalculate their size based on content
+  process.elements.forEach((element) => {
+    if (element.type === "subprocess") {
+      const subprocessBounds = calculateSubprocessLayout(element);
+      const currentBounds = boundsMap.get(element.id);
+      if (currentBounds) {
+        currentBounds.width = subprocessBounds.width;
+        currentBounds.height = subprocessBounds.height;
+      }
+    }
+  });
 
-    // Create layout nodes
-    graph.forEach((graphNode, id) => {
-        const bounds = boundsMap.get(id);
-        if (bounds) {
-            nodes.set(id, {
-                id,
-                element: graphNode.element,
-                bounds,
-                level: graphNode.level ?? 0,
-                column: graphNode.column ?? 0,
-            });
-        }
-    });
+  // Create layout nodes
+  graph.forEach((graphNode, id) => {
+    const bounds = boundsMap.get(id);
+    if (bounds) {
+      nodes.set(id, {
+        id,
+        element: graphNode.element,
+        bounds,
+        level: graphNode.level ?? 0,
+        column: graphNode.column ?? 0,
+      });
+    }
+  });
 
-    // Calculate waypoints for edges
-    process.flows.forEach(flow => {
-        const sourceBounds = boundsMap.get(flow.sourceRef);
-        const targetBounds = boundsMap.get(flow.targetRef);
+  // Calculate waypoints for edges
+  process.flows.forEach((flow) => {
+    const sourceBounds = boundsMap.get(flow.sourceRef);
+    const targetBounds = boundsMap.get(flow.targetRef);
 
-        if (sourceBounds && targetBounds) {
-            const waypoints = calculateWaypoints(flow, sourceBounds, targetBounds);
-            edges.set(flow.id, {
-                id: flow.id,
-                flow,
-                waypoints,
-            });
-        }
-    });
+    if (sourceBounds && targetBounds) {
+      const waypoints = calculateWaypoints(flow, sourceBounds, targetBounds);
+      edges.set(flow.id, {
+        id: flow.id,
+        flow,
+        waypoints,
+      });
+    }
+  });
 
-    // Calculate total dimensions
-    let maxX = 0;
-    let maxY = 0;
+  // Calculate total dimensions
+  let maxX = 0;
+  let maxY = 0;
 
-    nodes.forEach(node => {
-        const right = node.bounds.x + node.bounds.width;
-        const bottom = node.bounds.y + node.bounds.height;
+  nodes.forEach((node) => {
+    const right = node.bounds.x + node.bounds.width;
+    const bottom = node.bounds.y + node.bounds.height;
 
-        if (right > maxX) maxX = right;
-        if (bottom > maxY) maxY = bottom;
-    });
+    if (right > maxX) maxX = right;
+    if (bottom > maxY) maxY = bottom;
+  });
 
-    return {
-        nodes,
-        edges,
-        totalWidth: maxX - startX,
-        totalHeight: maxY - startY,
-    };
+  return {
+    nodes,
+    edges,
+    totalWidth: maxX - startX,
+    totalHeight: maxY - startY,
+  };
 }
 
 /**

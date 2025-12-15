@@ -2,8 +2,8 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 
 // Configuration
 const CACHE_LOOKUP_TIMEOUT = 2000; // 2 seconds max for cache lookup
-const SIMILARITY_THRESHOLD = 0.90; // 90% similarity required for cache hit
-const EMBEDDING_MODEL = 'text-embedding-004';
+const SIMILARITY_THRESHOLD = 0.9; // 90% similarity required for cache hit
+const EMBEDDING_MODEL = "text-embedding-004";
 const EMBEDDING_DIMENSIONS = 768; // text-embedding-004 outputs 768-dimensional vectors
 
 export interface CacheResult {
