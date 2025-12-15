@@ -3,12 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
-import {
-  logGenerationRequest,
-  logGenerationSuccess,
-  logGenerationError,
-  logAsync,
-} from "../_shared/dashboard-logger.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,43 +52,43 @@ Deno.serve(async (req) => {
 
     console.log(`[Combined Generation] Starting for ${subPrompts.length} sub-prompts`);
 
-    const startTime = Date.now();
-    let parentLogId: string | null = null;
+    // Get user ID from authorization header
+    const authHeader = req.headers.get("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    let actualUserId: string | undefined;
+    if (supabase && token) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser(token);
+        actualUserId = user?.id;
+      } catch (error) {
+        console.warn("[Combined] Failed to get user from token:", error);
+      }
+    }
+    // Fallback to userId from request if token extraction failed
+    const finalUserId = actualUserId || userId;
 
-    // Log parent multi-diagram request
-    if (supabase && userId) {
-      logAsync(async () => {
-        parentLogId = await logGenerationRequest({
-          supabase: supabase!,
-          userId: userId,
-          prompt: originalPrompt,
-          diagramType: diagramType,
-          sourceFunction: "generate-bpmn-combined",
-          isMultiDiagram: true,
-          subPromptCount: subPrompts.length,
-        });
+    // Log parent generation request
+    let parentLogId: string | null = null;
+    if (supabase && finalUserId) {
+      parentLogId = await logGenerationRequest({
+        supabase,
+        userId: finalUserId,
+        prompt: originalPrompt,
+        diagramType,
+        detectedLanguage: detectLanguage(originalPrompt),
+        sourceFunction: "generate-bpmn-combined",
+        isMultiDiagram: true,
+        subPromptCount: subPrompts.length,
       });
     }
+
+    const startTime = Date.now();
 
     // Generate all sub-diagrams in parallel
     const subDiagramPromises = subPrompts.map(async (subPrompt, index) => {
       console.log(`[Combined] Generating sub-diagram ${index + 1}/${subPrompts.length}`);
-
-      // Log each sub-diagram request
-      let subLogId: string | null = null;
-      if (supabase && userId && parentLogId) {
-        logAsync(async () => {
-          subLogId = await logGenerationRequest({
-            supabase: supabase!,
-            userId: userId,
-            prompt: subPrompt,
-            diagramType: diagramType,
-            sourceFunction: "generate-bpmn-combined",
-            isMultiDiagram: false,
-            parentRequestId: parentLogId!,
-          });
-        });
-      }
 
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -104,37 +99,9 @@ Deno.serve(async (req) => {
         const result = await Promise.race([generationPromise, timeoutPromise]);
 
         console.log(`[Combined] Sub-diagram ${index + 1} completed (${result.length} chars)`);
-
-        // Log success for sub-diagram
-        if (supabase && subLogId) {
-          logAsync(async () => {
-            await logGenerationSuccess({
-              supabase: supabase!,
-              logId: subLogId!,
-              resultXml: result,
-              durationMs: Date.now() - startTime,
-              cacheHit: false,
-            });
-          });
-        }
-
         return { xml: result, prompt: subPrompt, index };
       } catch (error) {
         console.error(`[Combined] Sub-diagram ${index + 1} failed:`, error);
-
-        // Log error for sub-diagram
-        if (supabase && subLogId) {
-          logAsync(async () => {
-            await logGenerationError({
-              supabase: supabase!,
-              logId: subLogId!,
-              errorMessage: error instanceof Error ? error.message : "Unknown error",
-              errorStack: error instanceof Error ? error.stack : undefined,
-              durationMs: Date.now() - startTime,
-            });
-          });
-        }
-
         return { xml: createPlaceholderDiagram(subPrompt, index + 1, diagramType), prompt: subPrompt, index };
       }
     });
@@ -168,16 +135,14 @@ Deno.serve(async (req) => {
 
     console.log(`[Combined] Success! Returning ${diagrams.length} individual diagrams + mega-diagram`);
 
-    // Log success for parent request
+    // Log successful generation
     if (supabase && parentLogId) {
-      logAsync(async () => {
-        await logGenerationSuccess({
-          supabase: supabase!,
-          logId: parentLogId!,
-          resultXml: combinedXml,
-          durationMs: Date.now() - startTime,
-          cacheHit: false,
-        });
+      await logGenerationSuccess({
+        supabase,
+        logId: parentLogId,
+        resultXml: combinedXml,
+        durationMs: Date.now() - startTime,
+        cacheHit: false,
       });
     }
 
@@ -196,12 +161,10 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("[Combined Generation] Error:", error);
-
-    // Note: Parent log error logging would go here, but we don't have a reliable
-    // way to track parentLogId in the catch block due to async nature.
-    // Sub-diagram errors are already logged individually above.
-
-    return new Response(JSON.stringify({ error: (error as Error).message || "Unknown error" }), {
+    const errorMessage = (error as Error).message || "Unknown error";
+    // Note: Error logging to bpmn_generation_logs happens within the try block where we have access to logId
+    // Errors caught here are already visible in function logs
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
