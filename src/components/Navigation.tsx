@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, LogOut, Shield, Menu, LayoutDashboard, FolderKanban, FileText, Eye, User as UserIcon, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Shield, Menu, LayoutDashboard, FolderKanban, FileText, Eye, User as UserIcon, Settings, BarChart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { User } from "@supabase/supabase-js";
@@ -283,6 +283,12 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                       </Link>
                     </>
                   )}
+                  <Link to={isLocalhost() ? `/admin/bpmn-dashboard${getSubdomainQuery()}` : "/admin/bpmn-dashboard"}>
+                    <Button variant="outline" size="sm" className="gap-2 hover:bg-primary/10 hover:border-primary/50 transition-all whitespace-nowrap" aria-label="BPMN Analytics">
+                      <BarChart className="h-4 w-4" aria-hidden="true" />
+                      Analytics
+                    </Button>
+                  </Link>
                   {isAdmin && (
                     <Link to={isLocalhost() ? `/admin${getSubdomainQuery()}` : "/admin"}>
                       <Button variant="outline" size="sm" className="gap-2 hover:bg-primary/10 hover:border-primary/50 transition-all whitespace-nowrap" aria-label="Admin Dashboard">
@@ -428,6 +434,12 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                   )}
                   {user ? (
                     <>
+                  <Link to={isLocalhost() ? `/admin/bpmn-dashboard${getSubdomainQuery()}` : "/admin/bpmn-dashboard"} onClick={() => setIsSheetOpen(false)}>
+                    <Button variant="outline" className="w-full justify-start gap-2" aria-label="BPMN Analytics">
+                      <BarChart className="h-4 w-4" aria-hidden="true" />
+                      Analytics
+                    </Button>
+                  </Link>
                   {isAdmin && (
                     <Link to={isLocalhost() ? `/admin${getSubdomainQuery()}` : "/admin"} onClick={() => setIsSheetOpen(false)}>
                       <Button variant="outline" className="w-full justify-start gap-2" aria-label="Admin Dashboard">

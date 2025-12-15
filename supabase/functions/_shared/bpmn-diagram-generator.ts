@@ -1,18 +1,18 @@
 /**
  * BPMN Structure-to-Complete Diagram Converter
- *
+ * 
  * Takes structure-only BPMN XML and adds complete diagram interchange (DI)
  */
 
-import { parseStructureXml, generateDiagramXml, insertDiagram } from "./bpmn-xml-parser.ts";
+import { parseStructureXml, generateDiagramXml, insertDiagram } from './bpmn-xml-parser.ts';
 import {
-  calculateLayout,
-  calculateLaneLayout,
-  constrainElementsToLanes,
-  positionBoundaryEvents,
-  type Layout,
-  type Bounds,
-} from "./bpmn-layout-calculator.ts";
+    calculateLayout,
+    calculateLaneLayout,
+    constrainElementsToLanes,
+    positionBoundaryEvents,
+    type Layout,
+    type Bounds
+} from './bpmn-layout-calculator.ts';
 
 /**
  * Main entry point: Add complete BPMN diagram to structure-only XML
