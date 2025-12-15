@@ -537,9 +537,13 @@ Deno.serve(async (req) => {
     const modelSelection = selectModel({
       promptLength: typedJob.prompt.length,
       diagramType: typedJob.diagram_type,
-      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
-      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
-      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+      hasMultiplePools: (typedJob.prompt.match(/pool|swimlane|lane/gi) || []).length > 1,
+      hasComplexGateways: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+      hasSubprocesses: (typedJob.prompt.match(/subprocess|sub-process/gi) || []).length > 0,
+      hasMultipleParticipants: (typedJob.prompt.match(/actor|participant/gi) || []).length > 2,
+      hasErrorHandling: (typedJob.prompt.match(/error|exception|boundary/gi) || []).length > 0,
+      hasDataObjects: (typedJob.prompt.match(/data|document|artifact/gi) || []).length > 0,
+      hasMessageFlows: (typedJob.prompt.match(/message.*flow|message.*event/gi) || []).length > 0,
     });
 
     console.log(
