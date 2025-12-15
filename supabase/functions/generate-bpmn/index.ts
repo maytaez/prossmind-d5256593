@@ -973,8 +973,8 @@ Deno.serve(async (req) => {
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
           cacheType = "semantic";
-          const similarity = semanticCache.similarity;
-          const cachedXml = semanticCache.bpmnXml;
+          const similarity = semanticCache!.similarity;
+          const cachedXml = semanticCache!.bpmnXml;
           similarityScore = similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
