@@ -8,7 +8,7 @@ import type { BpmnIR } from "./types/bpmn-ir.ts";
 import type { EnterpriseStyleProfile } from "./types/bpmn-ir.ts";
 import { calculateLayout } from "./bpmn-layout-calculator.ts";
 import type { Layout, Bounds } from "./bpmn-layout-calculator.ts";
-import type { BPMNElement, BPMNSequenceFlow, BPMNProcess } from "./bpmn-json-schema.ts";
+import type { BPMNElement, BPMNSequenceFlow, BPMNProcess, BPMNElementType } from "./bpmn-json-schema.ts";
 
 const LAYOUT_CONFIG = {
   startX: 200,
@@ -54,11 +54,11 @@ function generateProcessStructure(ir: BpmnIR, styleProfile: EnterpriseStyleProfi
 
   // Generate lanes if present
   if (ir.lanes.length > 0) {
-    xml += "\n    <bpmn:laneSet id=\"LaneSet_1\">";
+    xml += '\n    <bpmn:laneSet id="LaneSet_1">';
     for (const lane of ir.lanes) {
       xml += `\n      <bpmn:lane id="${lane.id}" name="${escapeXml(lane.name)}">`;
       // Add flowNodeRef for nodes in this lane
-      const laneNodes = ir.nodes.filter(n => n.lane === lane.id);
+      const laneNodes = ir.nodes.filter((n) => n.lane === lane.id);
       for (const node of laneNodes) {
         xml += `\n        <bpmn:flowNodeRef>${node.id}</bpmn:flowNodeRef>`;
       }
@@ -94,14 +94,14 @@ function generateProcessStructure(ir: BpmnIR, styleProfile: EnterpriseStyleProfi
  */
 function mapNodeTypeToBpmnElement(nodeType: string): string {
   const mapping: Record<string, string> = {
-    "start_event": "startEvent",
-    "end_event": "endEvent",
-    "user_task": "userTask",
-    "service_task": "serviceTask",
-    "manual_task": "manualTask",
-    "exclusive_gateway": "exclusiveGateway",
-    "parallel_gateway": "parallelGateway",
-    "inclusive_gateway": "inclusiveGateway",
+    start_event: "startEvent",
+    end_event: "endEvent",
+    user_task: "userTask",
+    service_task: "serviceTask",
+    manual_task: "manualTask",
+    exclusive_gateway: "exclusiveGateway",
+    parallel_gateway: "parallelGateway",
+    inclusive_gateway: "inclusiveGateway",
   };
   return mapping[nodeType] || "task";
 }
@@ -109,11 +109,7 @@ function mapNodeTypeToBpmnElement(nodeType: string): string {
 /**
  * Apply naming convention from style profile
  */
-function applyNamingConvention(
-  name: string,
-  nodeType: string,
-  styleProfile: EnterpriseStyleProfile
-): string {
+function applyNamingConvention(name: string, nodeType: string, styleProfile: EnterpriseStyleProfile): string {
   if (nodeType === "service_task" && styleProfile.service_task_prefix) {
     if (!name.startsWith(styleProfile.service_task_prefix)) {
       return `${styleProfile.service_task_prefix} ${name}`;
@@ -125,11 +121,18 @@ function applyNamingConvention(
 /**
  * Calculate layout from BPMN IR
  */
-function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string, number>; laneYPositions?: Map<string, number> } {
+function calculateLayoutFromIR(
+  ir: BpmnIR,
+): Layout & {
+  laneHeights?: Map<string, number>;
+  laneYPositions?: Map<string, number>;
+  totalWidth?: number;
+  totalHeight?: number;
+} {
   // Convert IR to format expected by layout calculator
-  const elements: BPMNElement[] = ir.nodes.map(node => ({
+  const elements: BPMNElement[] = ir.nodes.map((node) => ({
     id: node.id,
-    type: mapNodeTypeToBpmnElement(node.type),
+    type: mapNodeTypeToBpmnElement(node.type) as BPMNElementType,
     name: node.name,
   }));
 
@@ -145,33 +148,37 @@ function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string,
     name: ir.process.name,
     elements,
     flows,
-    lanes: ir.lanes.map(lane => ({
+    lanes: ir.lanes.map((lane) => ({
       id: lane.id,
       name: lane.name,
+      flowNodeRefs: ir.nodes.filter((n) => n.lane === lane.id).map((n) => n.id),
     })),
   };
 
   const layout = calculateLayout(process, LAYOUT_CONFIG.startX, LAYOUT_CONFIG.startY);
-  
+
   // Add lane layout information
   const laneHeights = new Map<string, number>();
   const laneYPositions = new Map<string, number>();
-  
+
   if (ir.lanes.length > 0) {
     let currentY = LAYOUT_CONFIG.startY;
     for (const lane of ir.lanes) {
-      const laneNodes = ir.nodes.filter(n => n.lane === lane.id);
-      const maxY = Math.max(...laneNodes.map(n => {
-        const node = layout.nodes.get(n.id);
-        return node ? node.bounds.y + node.bounds.height : 0;
-      }), LAYOUT_CONFIG.laneHeight);
+      const laneNodes = ir.nodes.filter((n) => n.lane === lane.id);
+      const maxY = Math.max(
+        ...laneNodes.map((n) => {
+          const node = layout.nodes.get(n.id);
+          return node ? node.bounds.y + node.bounds.height : 0;
+        }),
+        LAYOUT_CONFIG.laneHeight,
+      );
       const laneHeight = maxY - currentY + 50; // Add padding
       laneHeights.set(lane.id, laneHeight);
       laneYPositions.set(lane.id, currentY);
       currentY += laneHeight + LAYOUT_CONFIG.laneSpacing;
     }
   }
-  
+
   return {
     ...layout,
     laneHeights,
@@ -182,7 +189,15 @@ function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string,
 /**
  * Generate diagram interchange XML
  */
-function generateDiagramInterchange(ir: BpmnIR, layout: Layout): string {
+function generateDiagramInterchange(
+  ir: BpmnIR,
+  layout: Layout & {
+    laneHeights?: Map<string, number>;
+    laneYPositions?: Map<string, number>;
+    totalWidth?: number;
+    totalHeight?: number;
+  },
+): string {
   let xml = `  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${ir.process.id}">`;
 
