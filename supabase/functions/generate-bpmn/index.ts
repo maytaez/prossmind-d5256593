@@ -15,6 +15,19 @@ import {
   fallbackSplit,
 } from "../_shared/prompt-analyzer.ts";
 import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
+// Multi-stage pipeline imports
+import { normalizeInput } from "../_shared/input-normalizer.ts";
+import { extractSemantics } from "../_shared/semantic-extractor.ts";
+import { generateBpmnIR, deriveTemplateConstraints, generateBpmnIRWithFeedback } from "../_shared/bpmn-ir-generator.ts";
+import { validateBpmnIR } from "../_shared/bpmn-ir-validator.ts";
+import { generateBpmnXml } from "../_shared/bpmn-xml-generator.ts";
+import { retrievePatterns } from "../_shared/pattern-retriever.ts";
+import { getStyleProfile } from "../_shared/style-profile-manager.ts";
+import { getSemanticCache, cacheSemanticResult, getBpmnIRCache, cacheBpmnIR } from "../_shared/multi-stage-cache.ts";
+import { shouldUseMultiStage } from "../_shared/prompt-router.ts";
+import type { SemanticCore } from "../_shared/types/semantic-core.ts";
+import type { BpmnIR } from "../_shared/types/bpmn-ir.ts";
+import type { EnterpriseStyleProfile } from "../_shared/types/bpmn-ir.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -27,20 +40,143 @@ interface SummarizationResult {
   wasSummarized: boolean;
 }
 
+interface MultiStageOptions {
+  diagramType: string;
+  languageCode: string;
+  languageName: string;
+  apiKey: string;
+  supabase: any;
+  skipCache: boolean;
+  returnIntermediate: boolean;
+  enterpriseId?: string;
+  projectId?: string;
+}
+
+interface MultiStageResult {
+  bpmnXml: string;
+  intermediate?: {
+    semanticCore: SemanticCore;
+    bpmnIR: BpmnIR;
+    validation: any;
+  };
+}
+
+/**
+ * Generate BPMN using multi-stage pipeline
+ */
+async function generateBpmnMultiStage(
+  prompt: string,
+  options: MultiStageOptions
+): Promise<MultiStageResult> {
+  // Stage 0: Input Normalization
+  const normalized = await normalizeInput(prompt, {
+    verbosity: "normal",
+    return_intermediate: options.returnIntermediate,
+    enterprise_id: options.enterpriseId,
+    project_id: options.projectId,
+  });
+
+  // Stage 1: Semantic Extraction (with caching)
+  let semanticCore: SemanticCore;
+  if (!options.skipCache) {
+    semanticCore = await getSemanticCache(normalized, options.supabase);
+  }
+  if (!semanticCore) {
+    semanticCore = await extractSemantics(normalized, options.apiKey);
+    if (!options.skipCache) {
+      await cacheSemanticResult(normalized, semanticCore, options.supabase);
+    }
+  }
+
+  // Retrieve patterns and style profile (parallel)
+  const [patterns, styleProfile] = await Promise.all([
+    retrievePatterns(semanticCore, 5, options.supabase),
+    getStyleProfile(options.enterpriseId, options.projectId, options.supabase),
+  ]);
+
+  // Stage 2: BPMN IR Generation
+  const templateConstraints = deriveTemplateConstraints(semanticCore);
+  let bpmnIR: BpmnIR;
+  if (!options.skipCache) {
+    bpmnIR = await getBpmnIRCache(semanticCore, templateConstraints, styleProfile, options.supabase);
+  }
+  if (!bpmnIR) {
+    bpmnIR = await generateBpmnIR(
+      semanticCore,
+      templateConstraints,
+      styleProfile,
+      patterns,
+      options.apiKey
+    );
+    if (!options.skipCache) {
+      await cacheBpmnIR(semanticCore, templateConstraints, styleProfile, bpmnIR, options.supabase);
+    }
+  }
+
+  // Stage 3: Validation + Auto-fix
+  const validation = validateBpmnIR(bpmnIR);
+  if (validation.validation_status === "auto_fixed" && validation.fixed_ir) {
+    bpmnIR = validation.fixed_ir;
+  } else if (validation.validation_status === "requires_manual_fix") {
+    // Retry Stage 2 with validation feedback
+    const validationIssues = validation.issues_detected.map(i => i.message);
+    bpmnIR = await generateBpmnIRWithFeedback(
+      semanticCore,
+      templateConstraints,
+      styleProfile,
+      patterns,
+      validationIssues,
+      options.apiKey
+    );
+  }
+
+  // Stage 4: BPMN XML Generation (deterministic)
+  const bpmnXml = generateBpmnXml(bpmnIR, styleProfile);
+
+  return {
+    bpmnXml,
+    intermediate: options.returnIntermediate
+      ? {
+          semanticCore,
+          bpmnIR,
+          validation,
+        }
+      : undefined,
+  };
+}
+
 /**
  * Detect if prompt requires async generation (conservative thresholds)
  * Only use async for genuinely complex prompts that risk timeout
  */
 function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
+  // Count actual swimlane/actor mentions - look for patterns like "swimlanes for X, Y, Z"
+  // or explicit actor/participant lists
+  const swimlanePattern = /swimlane[s]?\s+(?:for|with|including)\s+([^.,]+(?:,\s*[^.,]+)*)/gi;
+  const swimlaneMatches = [...prompt.matchAll(swimlanePattern)];
+  let explicitSwimlanes = 0;
+  
+  // Count swimlanes from patterns like "swimlanes for A, B, C" -> 3 swimlanes
+  for (const match of swimlaneMatches) {
+    if (match[1]) {
+      const swimlaneList = match[1].split(',').map(s => s.trim()).filter(s => s.length > 0);
+      explicitSwimlanes += swimlaneList.length;
+    }
+  }
+  
+  // Also count generic actor mentions
   const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
   const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || []).length;
+
+  // Use explicit swimlane count if available, otherwise fall back to generic actor count
+  const totalActors = explicitSwimlanes > 0 ? explicitSwimlanes : actors;
 
   // Conservative thresholds - only async for truly complex prompts
   return (
     promptLength > 1500 ||           // Very long prompts
-    actors >= 4 ||                   // 4+ swimlanes/actors  
+    totalActors >= 4 ||              // 4+ swimlanes/actors (improved detection)
     complexity >= 4 ||               // Multiple complex BPMN features
-    (actors >= 3 && complexity >= 2) // Moderate actors + complexity
+    (totalActors >= 3 && complexity >= 2) // Moderate actors + complexity
   );
 }
 
@@ -270,6 +406,27 @@ Deno.serve(async (req) => {
   let promptLength = 0;
   let logId: string | null = null;
   let supabase: any = null;
+  let userId: string | undefined;
+  
+  // Set up timeout detection - Deno edge functions have a 60s hard limit
+  const EDGE_FUNCTION_TIMEOUT_MS = 58000; // 58s to leave buffer
+  const timeoutId = setTimeout(async () => {
+    // If we're still running after 58s, log timeout error
+    if (supabase && logId) {
+      try {
+        await logGenerationError({
+          supabase,
+          logId,
+          errorMessage: "Request timed out after 58 seconds (edge function limit)",
+          errorStack: "Edge function timeout - generation exceeded time limit",
+          durationMs: Date.now() - startTime,
+        });
+      } catch (err) {
+        console.error("[Timeout Handler] Failed to log timeout error:", err);
+      }
+    }
+  }, EDGE_FUNCTION_TIMEOUT_MS);
+  
   try {
     let requestData;
     try {
@@ -302,7 +459,6 @@ Deno.serve(async (req) => {
     }
 
     // Get user ID for logging
-    let userId: string | undefined;
     if (supabase) {
       const authHeader = req.headers.get("Authorization");
       const token = authHeader?.replace("Bearer ", "");
@@ -377,6 +533,88 @@ Deno.serve(async (req) => {
     const hasTimeBudget = (requiredMs: number = 0) => getElapsedTime() + requiredMs < TIMEOUT_LIMIT_MS;
 
     console.log(`[Time Budget] Starting with ${TIMEOUT_LIMIT_MS}ms limit`);
+
+    // MULTI-STAGE PIPELINE ROUTING
+    // Check if we should use multi-stage pipeline (for complex prompts) or direct generation
+    const useMultiStage = shouldUseMultiStage(prompt, {
+      promptLength,
+      forceMultiStage: requestData.forceMultiStage,
+      forceDirect: requestData.forceDirect,
+    });
+
+    if (useMultiStage && diagramType === "bpmn" && !modelingAgentMode) {
+      console.log("[Multi-Stage] Using multi-stage pipeline for complex prompt");
+      try {
+        const result = await generateBpmnMultiStage(
+          prompt,
+          {
+            diagramType,
+            languageCode: detectedLanguageCode,
+            languageName: detectedLanguageName,
+            apiKey: GOOGLE_API_KEY,
+            supabase,
+            skipCache,
+            returnIntermediate: requestData.return_intermediate || false,
+            enterpriseId: requestData.enterprise_id,
+            projectId: requestData.project_id,
+          }
+        );
+
+        if (result.bpmnXml) {
+          modelUsed = "multi-stage-pipeline";
+          const finalValidation = validateBpmnXml(result.bpmnXml);
+          if (!finalValidation.isValid) {
+            throw new Error(`Multi-stage validation failed: ${finalValidation.error}`);
+          }
+
+          // Cache the result
+          if (!skipCache) {
+            (async () => {
+              try {
+                await storeExactHashCache(promptHash, prompt, diagramType, result.bpmnXml, undefined);
+              } catch {
+                /* ignore */
+              }
+            })();
+          }
+
+          await logPerformanceMetric({
+            function_name: "generate-bpmn",
+            cache_type: cacheType,
+            model_used: modelUsed,
+            prompt_length: promptLength,
+            response_time_ms: Date.now() - startTime,
+            cache_hit: false,
+            error_occurred: false,
+          });
+
+          if (supabase && logId) {
+            await logGenerationSuccess({
+              supabase,
+              logId,
+              resultXml: result.bpmnXml,
+              durationMs: Date.now() - startTime,
+              cacheHit: false,
+            });
+          }
+
+          clearTimeout(timeoutId);
+
+          return new Response(
+            JSON.stringify({
+              bpmnXml: result.bpmnXml,
+              cached: false,
+              multiStage: true,
+              intermediate: result.intermediate,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } catch (multiStageError) {
+        console.error("[Multi-Stage] Pipeline failed, falling back to direct generation:", multiStageError);
+        // Fall through to direct generation
+      }
+    }
 
     // INTELLIGENT PROMPT ANALYSIS - Only for extremely long prompts (trust Gemini 2.5 Pro for normal complexity)
     let finalPromptToGenerate = prompt;
@@ -587,6 +825,18 @@ Deno.serve(async (req) => {
     if (!hasTimeBudget(25000)) {
       console.warn(`[Time Budget] Insufficient time for generation (${getElapsedTime()}ms elapsed), forcing split`);
       const quickSplit = fallbackSplit(finalPromptToGenerate || prompt);
+      
+      // Log that we're forcing split due to time budget
+      if (supabase && logId) {
+        await logGenerationError({
+          supabase,
+          logId,
+          errorMessage: "Insufficient time budget - prompt split automatically to prevent timeout",
+          errorStack: `Time budget exceeded: ${getElapsedTime()}ms elapsed, required: 25000ms`,
+          durationMs: getElapsedTime(),
+        });
+      }
+      
       return new Response(JSON.stringify({
         requiresSplit: true,
         subPrompts: quickSplit,
@@ -667,6 +917,26 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Final safety check - ensure we have enough time before starting generation
+    const elapsedBeforeGeneration = getElapsedTime();
+    if (elapsedBeforeGeneration > TIMEOUT_LIMIT_MS - 30000) {
+      // Less than 30s remaining - too risky, log error and return
+      const errorMsg = `Insufficient time remaining for generation (${elapsedBeforeGeneration}ms elapsed, ${TIMEOUT_LIMIT_MS - elapsedBeforeGeneration}ms remaining)`;
+      console.error(`[Time Budget] ${errorMsg}`);
+      
+      if (supabase && logId) {
+        await logGenerationError({
+          supabase,
+          logId,
+          errorMessage: errorMsg,
+          errorStack: "Generation aborted due to insufficient time budget",
+          durationMs: elapsedBeforeGeneration,
+        });
+      }
+      
+      throw new Error(errorMsg);
+    }
+    
     // Use the analyzed/simplified prompt for generation
     const bpmnXml = await retryBpmnGenerationIfNecessary(
       finalPromptToGenerate,
@@ -715,6 +985,9 @@ Deno.serve(async (req) => {
         cacheHit: false,
       });
     }
+    // Clear timeout on successful completion
+    clearTimeout(timeoutId);
+    
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -726,6 +999,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
+    // Clear timeout on error
+    clearTimeout(timeoutId);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Error in generate-bpmn:", errorMessage);
     try {
@@ -756,5 +1031,8 @@ Deno.serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  } finally {
+    // Ensure timeout is cleared in all cases
+    clearTimeout(timeoutId);
   }
 });
