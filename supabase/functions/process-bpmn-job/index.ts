@@ -3,9 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import { selectModel, analyzePrompt } from "../_shared/model-selection.ts";
+import { selectModel } from "../_shared/model-selection.ts";
 import { addBpmnDiagram } from "../_shared/bpmn-diagram-generator.ts";
 import { checkCache, storeCacheAsync } from "../_shared/semantic-cache.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -453,6 +454,21 @@ Deno.serve(async (req) => {
 
     console.log(`[Job ${jobId}] Language: ${languageName} (${languageCode})`);
 
+    // Log generation request
+    let logId: string | null = null;
+    if (typedJob.user_id) {
+      logId = await logGenerationRequest({
+        supabase,
+        userId: typedJob.user_id,
+        prompt: typedJob.prompt,
+        diagramType: typedJob.diagram_type,
+        detectedLanguage: languageCode,
+        sourceFunction: "process-bpmn-job",
+        isMultiDiagram: false,
+        jobId: jobId,
+      });
+    }
+
     // Check cache before generation
     try {
       console.log(`[Job ${jobId}] Checking cache for similar prompts...`);
@@ -468,6 +484,18 @@ Deno.serve(async (req) => {
         console.log(
           `[Job ${jobId}] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, returning cached result`,
         );
+
+        // Log cache hit
+        if (logId) {
+          await logGenerationSuccess({
+            supabase,
+            logId,
+            resultXml: cachedResult.bpmn_xml,
+            durationMs: generationTime,
+            cacheHit: true,
+            cacheSimilarity: cachedResult.similarity,
+          });
+        }
 
         // Update job with cached result
         await supabase
@@ -506,16 +534,23 @@ Deno.serve(async (req) => {
         : getBpmnSystemPrompt(languageCode, languageName, false, true);
 
     // Get appropriate model and token limits based on prompt complexity
-    const criteria = analyzePrompt(typedJob.prompt, typedJob.diagram_type);
-    const modelSelection = selectModel(criteria);
+    const modelSelection = selectModel({
+      promptLength: typedJob.prompt.length,
+      diagramType: typedJob.diagram_type,
+      hasMultipleActors: (typedJob.prompt.match(/actor|participant|swimlane|pool|lane/gi) || []).length > 2,
+      hasComplexFeatures: (typedJob.prompt.match(/subprocess|parallel|timer|boundary|escalate/gi) || []).length > 2,
+      hasMultiplePaths: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+    });
 
     console.log(
       `[Job ${jobId}] Model selection: ${modelSelection.model}, maxTokens: ${modelSelection.maxTokens}, reasoning: ${modelSelection.reasoning}`,
     );
 
+    // Track generation start time for logging
+    const startTime = Date.now();
+
     try {
       // Generate BPMN (no timeout limit for background processing)
-      const startTime = Date.now();
       const bpmnXml = await retryBpmnGeneration(
         typedJob.prompt,
         systemPrompt,
@@ -530,6 +565,17 @@ Deno.serve(async (req) => {
 
       const generationTime = Date.now() - startTime;
       console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
+
+      // Log successful generation
+      if (logId) {
+        await logGenerationSuccess({
+          supabase,
+          logId,
+          resultXml: bpmnXml,
+          durationMs: generationTime,
+          cacheHit: false,
+        });
+      }
 
       // Store in cache asynchronously (fire-and-forget, doesn't block response)
       storeCacheAsync({
@@ -563,12 +609,26 @@ Deno.serve(async (req) => {
     } catch (generationError) {
       console.error(`[Job ${jobId}] Generation failed:`, generationError);
 
+      const errorMessage =
+        generationError instanceof Error ? generationError.message : "Unknown error during generation";
+
+      // Log error
+      if (logId) {
+        await logGenerationError({
+          supabase,
+          logId,
+          errorMessage,
+          errorStack: generationError instanceof Error ? generationError.stack : undefined,
+          durationMs: Date.now() - startTime,
+        });
+      }
+
       // Store error
       await supabase
         .from("vision_bpmn_jobs")
         .update({
           status: "failed",
-          error_message: generationError instanceof Error ? generationError.message : "Unknown error during generation",
+          error_message: errorMessage,
           updated_at: new Date().toISOString(),
         })
         .eq("id", jobId);
