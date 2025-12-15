@@ -311,8 +311,10 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       const { invokeFunction } = await import('@/utils/api-client');
       const { data, error } = await invokeFunction('generate-bpmn', {
         prompt,
-        diagramType
+        diagramType,
+        userId: user?.id
       }, { deduplicate: true });
+
 
       if (error) {
         console.error('Function error:', error);

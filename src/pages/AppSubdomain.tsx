@@ -11,6 +11,7 @@ import Settings from "./app/Settings";
 import TryProssMe from "@/components/TryProssMe";
 import VisionAI from "./VisionAI";
 import Auth from "./Auth";
+import BpmnDashboard from "./admin/BpmnDashboard";
 import { navigateWithSubdomain, getSubdomainQuery } from "@/utils/subdomain";
 
 const AppSubdomain = () => {
@@ -103,6 +104,10 @@ const AppSubdomain = () => {
         <Route 
           path="/settings" 
           element={user ? <Settings user={user} /> : <Navigate to={authPath} replace />} 
+        />
+        <Route 
+          path="/admin/bpmn-dashboard" 
+          element={user ? <BpmnDashboard /> : <Navigate to={authPath} replace />} 
         />
         <Route path="*" element={<Navigate to={dashboardPath} replace />} />
       </Routes>

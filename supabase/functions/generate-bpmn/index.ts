@@ -1,19 +1,14 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from "../_shared/cache.ts";
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from "../_shared/embeddings.ts";
-import { logPerformanceMetric, measureExecutionTime } from "../_shared/metrics.ts";
-import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../_shared/prompts.ts";
-import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
-import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
-import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import {
-  analyzePromptComplexity,
-  simplifyPrompt,
-  splitPromptIntoSubPrompts,
-  fallbackAnalysis,
-  fallbackSplit,
-} from "../_shared/prompt-analyzer.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../_shared/cache.ts';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../_shared/embeddings.ts';
+import { logPerformanceMetric, measureExecutionTime } from '../_shared/metrics.ts';
+import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../_shared/prompts.ts';
+import { analyzePrompt, selectModel } from '../_shared/model-selection.ts';
+import { detectLanguage, getLanguageName } from '../_shared/language-detection.ts';
+import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../_shared/bpmn-di-optimizer.ts';
+import { analyzePromptComplexity, simplifyPrompt, splitPromptIntoSubPrompts, fallbackAnalysis, fallbackSplit } from '../_shared/prompt-analyzer.ts';
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from '../_shared/dashboard-logger.ts';
 
 interface ValidationResult {
   isValid: boolean;
@@ -32,14 +27,13 @@ interface SummarizationResult {
  */
 function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
   const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
-  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || [])
-    .length;
+  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || []).length;
 
   // Conservative thresholds - only async for truly complex prompts
   return (
-    promptLength > 1500 || // Very long prompts
-    actors >= 4 || // 4+ swimlanes/actors
-    complexity >= 4 || // Multiple complex BPMN features
+    promptLength > 1500 ||           // Very long prompts
+    actors >= 4 ||                   // 4+ swimlanes/actors  
+    complexity >= 4 ||               // Multiple complex BPMN features
     (actors >= 3 && complexity >= 2) // Moderate actors + complexity
   );
 }
@@ -230,10 +224,10 @@ async function retryBpmnGenerationIfNecessary(
         temperature,
         lastValidationError
           ? {
-              error: lastValidationError.error || "Validation failed",
-              errorDetails: lastValidationError.errorDetails,
-              attemptNumber: attempt,
-            }
+            error: lastValidationError.error || "Validation failed",
+            errorDetails: lastValidationError.errorDetails,
+            attemptNumber: attempt,
+          }
           : undefined,
       );
       const validation = validateBpmnXml(bpmnXml);
@@ -268,6 +262,8 @@ Deno.serve(async (req) => {
   let modelUsed: string | undefined;
   let prompt: string | undefined;
   let promptLength = 0;
+  let logId: string | null = null;
+  let supabase: any = null;
   try {
     let requestData;
     try {
@@ -292,6 +288,81 @@ Deno.serve(async (req) => {
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
 
+    // Create Supabase client for logging
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (supabaseUrl && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey);
+    }
+
+    // Get user ID for logging
+    let userId: string | undefined;
+    if (supabase) {
+      const authHeader = req.headers.get('Authorization');
+      const token = authHeader?.replace('Bearer ', '');
+      if (token) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser(token);
+          userId = user?.id;
+        } catch (error) {
+          console.warn('[Logging] Failed to get user:', error);
+        }
+      }
+    }
+
+    // Log generation request
+    if (supabase && userId) {
+      logId = await logGenerationRequest({
+        supabase,
+        userId,
+        prompt,
+        diagramType,
+        detectedLanguage: detectedLanguageCode,
+        sourceFunction: 'generate-bpmn',
+        isMultiDiagram: false,
+      });
+    }
+
+    // CHECK CACHE FIRST - Skip expensive complexity analysis if we have a cached result
+    let promptHash: string;
+    try {
+      promptHash = await generateHash(`${prompt}:${diagramType}:${detectedLanguageCode}`);
+    } catch {
+      throw new Error("Failed to generate prompt hash");
+    }
+    if (!skipCache && !modelingAgentMode) {
+      let exactCache;
+      try {
+        exactCache = await checkExactHashCache(promptHash, diagramType);
+      } catch {
+        exactCache = null;
+      }
+      if (exactCache) {
+        cacheType = "exact_hash";
+        await logPerformanceMetric({
+          function_name: "generate-bpmn",
+          cache_type: "exact_hash",
+          prompt_length: prompt.length,
+          response_time_ms: Date.now() - startTime,
+          cache_hit: true,
+          error_occurred: false,
+        });
+        // Log cache hit
+        if (supabase && logId) {
+          await logGenerationSuccess({
+            supabase,
+            logId,
+            resultXml: exactCache.bpmnXml,
+            durationMs: Date.now() - startTime,
+            cacheHit: true,
+          });
+        }
+        return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
     const TIMEOUT_LIMIT_MS = 50000; // 50 seconds, leaving 10s buffer before edge function timeout
     const getElapsedTime = () => Date.now() - startTime;
@@ -311,74 +382,69 @@ Deno.serve(async (req) => {
 
       try {
         // Create Supabase client
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
         if (!supabaseUrl || !supabaseServiceKey) {
-          console.warn("[Async Mode] Supabase config missing, falling back to sync");
+          console.warn('[Async Mode] Supabase config missing, falling back to sync');
         } else {
           const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
           // Get user ID from JWT
-          const authHeader = req.headers.get("Authorization");
-          const token = authHeader?.replace("Bearer ", "");
+          const authHeader = req.headers.get('Authorization');
+          const token = authHeader?.replace('Bearer ', '');
           let userId: string | undefined;
 
           if (token) {
-            const {
-              data: { user },
-            } = await supabase.auth.getUser(token);
+            const { data: { user } } = await supabase.auth.getUser(token);
             userId = user?.id;
           }
 
           // Create job in vision_bpmn_jobs table
           const { data: job, error: jobError } = await supabase
-            .from("vision_bpmn_jobs")
+            .from('vision_bpmn_jobs')
             .insert({
               user_id: userId || null,
-              source_type: "prompt",
+              source_type: 'prompt',
               prompt: prompt,
               diagram_type: diagramType,
               image_data: null,
-              status: "pending",
+              status: 'pending'
             })
             .select()
             .single();
 
           if (jobError || !job) {
-            console.error("[Async Mode] Failed to create job:", jobError);
-            console.warn("[Async Mode] Falling back to sync generation");
+            console.error('[Async Mode] Failed to create job:', jobError);
+            console.warn('[Async Mode] Falling back to sync generation');
           } else {
             console.log(`[Async Mode] Job created: ${job.id}`);
 
             // Trigger async processing (fire and forget)
             fetch(`${supabaseUrl}/functions/v1/process-bpmn-job`, {
-              method: "POST",
+              method: 'POST',
               headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
               },
-              body: JSON.stringify({ jobId: job.id }),
-            }).catch((err) => console.error("[Async Mode] Failed to trigger processor:", err));
+              body: JSON.stringify({ jobId: job.id })
+            }).catch(err => console.error('[Async Mode] Failed to trigger processor:', err));
 
             // Return immediately with job ID for client polling
-            return new Response(
-              JSON.stringify({
-                requiresPolling: true,
-                jobId: job.id,
-                message: "Complex prompt - generation started in background",
-                estimatedTime: "60-90 seconds",
-              }),
-              {
-                status: 200,
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-              },
-            );
+            return new Response(JSON.stringify({
+              requiresPolling: true,
+              jobId: job.id,
+              message: 'Complex prompt - generation started in background',
+              estimatedTime: '60-90 seconds'
+            }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
           }
         }
       } catch (asyncError) {
-        console.error("[Async Mode] Error setting up async:", asyncError);
-        console.warn("[Async Mode] Falling back to sync generation");
+        console.error('[Async Mode] Error setting up async:', asyncError);
+        console.warn('[Async Mode] Falling back to sync generation');
         // Continue with normal synchronous generation below
       }
     }
@@ -386,49 +452,32 @@ Deno.serve(async (req) => {
     // DISABLED FOR NORMAL USE - Only analyze extremely long prompts (>5000 chars)
     // Trust Gemini 2.5 Pro + DI optimization to handle complex prompts (proven by Modelling Agent Mode)
     if (!modelingAgentMode && promptLength > 5000) {
-      console.log(
-        `[Prompt Analysis] Starting analysis for ${promptLength} char prompt (elapsed: ${getElapsedTime()}ms)...`,
-      );
+      console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt (elapsed: ${getElapsedTime()}ms)...`);
 
       // Check time budget before expensive AI analysis
       if (!hasTimeBudget(20000)) {
-        console.warn(
-          `[Time Budget] Insufficient time for full analysis (${getElapsedTime()}ms elapsed), using fallback`,
-        );
+        console.warn(`[Time Budget] Insufficient time for full analysis (${getElapsedTime()}ms elapsed), using fallback`);
         const fallbackResult = fallbackAnalysis(prompt);
-        if (fallbackResult.recommendation === "split") {
+        if (fallbackResult.recommendation === 'split') {
           subPrompts = fallbackSplit(prompt);
-          return new Response(
-            JSON.stringify({
-              requiresSplit: true,
-              subPrompts,
-              analysis: {
-                complexity: fallbackResult.complexity,
-                reasoning: fallbackResult.reasoning + " (time budget exceeded)",
-              },
-              message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts.`,
-            }),
-            {
-              status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            },
-          );
+          return new Response(JSON.stringify({
+            requiresSplit: true,
+            subPrompts,
+            analysis: { complexity: fallbackResult.complexity, reasoning: fallbackResult.reasoning + ' (time budget exceeded)' },
+            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts.`
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
       }
 
       const analysisStartTime = Date.now();
 
       try {
-        const analysis = await analyzePromptComplexity(
-          prompt,
-          GOOGLE_API_KEY,
-          detectedLanguageCode,
-          detectedLanguageName,
-        );
+        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
         const analysisTime = Date.now() - analysisStartTime;
-        console.log(
-          `[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation} (elapsed: ${getElapsedTime()}ms)`,
-        );
+        console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation} (elapsed: ${getElapsedTime()}ms)`);
 
         if (analysis.recommendation === "split") {
           // Very complex - split into multiple sub-prompts
@@ -441,12 +490,7 @@ Deno.serve(async (req) => {
           if (analysis.subPrompts && analysis.subPrompts.length > 0) {
             subPrompts = analysis.subPrompts;
           } else {
-            subPrompts = await splitPromptIntoSubPrompts(
-              prompt,
-              GOOGLE_API_KEY,
-              detectedLanguageCode,
-              detectedLanguageName,
-            );
+            subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
           }
 
           const splitTime = Date.now() - splitStartTime;
@@ -479,12 +523,7 @@ Deno.serve(async (req) => {
           if (analysis.simplifiedPrompt) {
             finalPromptToGenerate = analysis.simplifiedPrompt;
           } else {
-            finalPromptToGenerate = await simplifyPrompt(
-              prompt,
-              GOOGLE_API_KEY,
-              detectedLanguageCode,
-              detectedLanguageName,
-            );
+            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
           }
 
           const simplifyTime = Date.now() - simplifyStartTime;
@@ -499,40 +538,32 @@ Deno.serve(async (req) => {
           );
         }
       } catch (error) {
-        console.error("[Prompt Analysis] AI analysis failed, using fallback heuristics:", error);
+        console.error('[Prompt Analysis] AI analysis failed, using fallback heuristics:', error);
         // CRITICAL SAFETY CHECK: Use fallback heuristics to avoid timeout on complex prompts
         const fallbackResult = fallbackAnalysis(prompt);
 
-        console.log(
-          `[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`,
-        );
+        console.log(`[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`);
 
-        if (fallbackResult.recommendation === "split") {
-          console.log("[Prompt Analysis] Fallback detected complex prompt, splitting...");
+        if (fallbackResult.recommendation === 'split') {
+          console.log('[Prompt Analysis] Fallback detected complex prompt, splitting...');
           subPrompts = fallbackSplit(prompt);
 
-          return new Response(
-            JSON.stringify({
-              requiresSplit: true,
-              subPrompts,
-              analysis: {
-                complexity: fallbackResult.complexity,
-                reasoning: fallbackResult.reasoning + " (fallback heuristics used due to AI timeout)",
-              },
-              message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`,
-            }),
-            {
-              status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+          return new Response(JSON.stringify({
+            requiresSplit: true,
+            subPrompts,
+            analysis: {
+              complexity: fallbackResult.complexity,
+              reasoning: fallbackResult.reasoning + ' (fallback heuristics used due to AI timeout)'
             },
-          );
-        } else if (fallbackResult.recommendation === "simplify") {
-          console.log("[Prompt Analysis] Fallback recommends simplification");
+            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } else if (fallbackResult.recommendation === 'simplify') {
+          console.log('[Prompt Analysis] Fallback recommends simplification');
           // Use a simple reduction strategy - keep only substantial sentences
-          finalPromptToGenerate = prompt
-            .split(". ")
-            .filter((s) => s.length > 20)
-            .join(". ");
+          finalPromptToGenerate = prompt.split('. ').filter(s => s.length > 20).join('. ');
           wasSimplified = true;
           promptLength = finalPromptToGenerate.length;
         }
@@ -548,48 +579,18 @@ Deno.serve(async (req) => {
     if (!hasTimeBudget(25000)) {
       console.warn(`[Time Budget] Insufficient time for generation (${getElapsedTime()}ms elapsed), forcing split`);
       const quickSplit = fallbackSplit(finalPromptToGenerate || prompt);
-      return new Response(
-        JSON.stringify({
-          requiresSplit: true,
-          subPrompts: quickSplit,
-          analysis: { reasoning: "Time budget exceeded before generation - prompt split automatically" },
-          message: `Insufficient time to generate this diagram. It has been split into ${quickSplit.length} sub-prompts.`,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      return new Response(JSON.stringify({
+        requiresSplit: true,
+        subPrompts: quickSplit,
+        analysis: { reasoning: 'Time budget exceeded before generation - prompt split automatically' },
+        message: `Insufficient time to generate this diagram. It has been split into ${quickSplit.length} sub-prompts.`
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    let promptHash: string;
-    try {
-      promptHash = await generateHash(`${finalPromptToGenerate}:${diagramType}:${detectedLanguageCode}`);
-    } catch {
-      throw new Error("Failed to generate prompt hash");
-    }
-    if (!skipCache && !modelingAgentMode) {
-      let exactCache;
-      try {
-        exactCache = await checkExactHashCache(promptHash, diagramType);
-      } catch {
-        exactCache = null;
-      }
-      if (exactCache) {
-        cacheType = "exact_hash";
-        await logPerformanceMetric({
-          function_name: "generate-bpmn",
-          cache_type: "exact_hash",
-          prompt_length: prompt.length,
-          response_time_ms: Date.now() - startTime,
-          cache_hit: true,
-          error_occurred: false,
-        });
-        return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
+    // Cache already checked above, proceed with model selection
     const criteria = analyzePrompt(finalPromptToGenerate, diagramType);
     const modelSelection = selectModel(criteria);
     let { model, temperature, maxTokens } = modelSelection;
@@ -600,10 +601,9 @@ Deno.serve(async (req) => {
     const useNoDI = promptLength > 3000 || complexityScore >= 9;
     const useCompactDI = !useNoDI && (promptLength > 2000 || complexityScore >= 7);
 
-    const systemPrompt =
-      diagramType === "pid"
-        ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
-        : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName, false, true);
+    const systemPrompt = diagramType === 'pid'
+      ? getPidSystemPrompt(detectedLanguageCode, detectedLanguageName)
+      : getBpmnSystemPrompt(detectedLanguageCode, detectedLanguageName, false, true);
 
     console.log(
       `[Model Selection] ${model} with ${maxTokens} tokens (complexity: ${complexityScore}, compactDI: ${useCompactDI}, noDI: ${useNoDI})`,
@@ -622,7 +622,7 @@ Deno.serve(async (req) => {
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
           cacheType = "semantic";
-          similarityScore = semanticCache!.similarity;
+          similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -630,14 +630,25 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache!.similarity,
+            similarity_score: semanticCache.similarity,
             error_occurred: false,
           });
+          // Log semantic cache hit
+          if (supabase && logId) {
+            await logGenerationSuccess({
+              supabase,
+              logId,
+              resultXml: semanticCache.bpmnXml,
+              durationMs: Date.now() - startTime,
+              cacheHit: true,
+              cacheSimilarity: semanticCache.similarity,
+            });
+          }
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache!.bpmnXml,
+              bpmnXml: semanticCache.bpmnXml,
               cached: true,
-              similarity: semanticCache!.similarity,
+              similarity: semanticCache.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -686,6 +697,16 @@ Deno.serve(async (req) => {
       similarity_score: similarityScore,
       error_occurred: false,
     });
+    // Log successful generation
+    if (supabase && logId) {
+      await logGenerationSuccess({
+        supabase,
+        logId,
+        resultXml: bpmnXml,
+        durationMs: Date.now() - startTime,
+        cacheHit: false,
+      });
+    }
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -712,6 +733,16 @@ Deno.serve(async (req) => {
       });
     } catch {
       /* ignore */
+    }
+    // Log error
+    if (supabase && logId) {
+      await logGenerationError({
+        supabase,
+        logId,
+        errorMessage,
+        errorStack: error instanceof Error ? error.stack : undefined,
+        durationMs: Date.now() - startTime,
+      });
     }
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
