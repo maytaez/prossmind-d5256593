@@ -161,6 +161,9 @@ async function generateBpmnMultiStage(prompt: string, options: MultiStageOptions
   // Stage 4: BPMN XML Generation (deterministic)
   console.log("[Multi-Stage] Stage 4: BPMN XML Generation");
   const stage4Start = Date.now();
+  if (!bpmnIR) {
+    throw new Error("BPMN IR is null, cannot generate XML");
+  }
   const bpmnXml = generateBpmnXml(bpmnIR, styleProfile);
   console.log(`[Multi-Stage] Stage 4 completed in ${Date.now() - stage4Start}ms`);
   console.log(`[Multi-Stage] Total pipeline time: ${Date.now() - stageStartTime}ms`);
@@ -170,7 +173,7 @@ async function generateBpmnMultiStage(prompt: string, options: MultiStageOptions
     intermediate: options.returnIntermediate
       ? {
           semanticCore,
-          bpmnIR,
+          bpmnIR: bpmnIR, // bpmnIR is guaranteed non-null here
           validation,
         }
       : undefined,
@@ -968,9 +971,11 @@ Deno.serve(async (req) => {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-        if (semanticCache !== null && semanticCache !== undefined) {
+        if (semanticCache) {
           cacheType = "semantic";
-          similarityScore = semanticCache.similarity;
+          const similarity = semanticCache.similarity;
+          const cachedXml = semanticCache.bpmnXml;
+          similarityScore = similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -978,7 +983,7 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache.similarity,
+            similarity_score: similarity,
             error_occurred: false,
           });
           // Log semantic cache hit
@@ -986,17 +991,17 @@ Deno.serve(async (req) => {
             await logGenerationSuccess({
               supabase,
               logId: logId!,
-              resultXml: semanticCache!.bpmnXml,
+              resultXml: cachedXml,
               durationMs: Date.now() - startTime,
               cacheHit: true,
-              cacheSimilarity: semanticCache!.similarity,
+              cacheSimilarity: similarity,
             });
           }
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache.bpmnXml,
+              bpmnXml: cachedXml,
               cached: true,
-              similarity: semanticCache.similarity,
+              similarity: similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
