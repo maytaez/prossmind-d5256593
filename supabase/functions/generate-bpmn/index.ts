@@ -14,6 +14,7 @@ import {
   fallbackAnalysis,
   fallbackSplit,
 } from "../_shared/prompt-analyzer.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 interface ValidationResult {
   isValid: boolean;
@@ -268,6 +269,8 @@ Deno.serve(async (req) => {
   let modelUsed: string | undefined;
   let prompt: string | undefined;
   let promptLength = 0;
+  let logId: string | null = null;
+  let supabase: any = null;
   try {
     let requestData;
     try {
@@ -291,6 +294,83 @@ Deno.serve(async (req) => {
 
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
     if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
+
+    // Create Supabase client for logging
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (supabaseUrl && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey);
+    }
+
+    // Get user ID for logging
+    let userId: string | undefined;
+    if (supabase) {
+      const authHeader = req.headers.get("Authorization");
+      const token = authHeader?.replace("Bearer ", "");
+      if (token) {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser(token);
+          userId = user?.id;
+        } catch (error) {
+          console.warn("[Logging] Failed to get user:", error);
+        }
+      }
+    }
+
+    // Log generation request
+    if (supabase && userId) {
+      logId = await logGenerationRequest({
+        supabase,
+        userId,
+        prompt,
+        diagramType,
+        detectedLanguage: detectedLanguageCode,
+        sourceFunction: "generate-bpmn",
+        isMultiDiagram: false,
+      });
+    }
+
+    // CHECK CACHE FIRST - Skip expensive complexity analysis if we have a cached result
+    let promptHash: string;
+    try {
+      promptHash = await generateHash(`${prompt}:${diagramType}:${detectedLanguageCode}`);
+    } catch {
+      throw new Error("Failed to generate prompt hash");
+    }
+    if (!skipCache && !modelingAgentMode) {
+      let exactCache;
+      try {
+        exactCache = await checkExactHashCache(promptHash, diagramType);
+      } catch {
+        exactCache = null;
+      }
+      if (exactCache) {
+        cacheType = "exact_hash";
+        await logPerformanceMetric({
+          function_name: "generate-bpmn",
+          cache_type: "exact_hash",
+          prompt_length: prompt.length,
+          response_time_ms: Date.now() - startTime,
+          cache_hit: true,
+          error_occurred: false,
+        });
+        // Log cache hit
+        if (supabase && logId) {
+          await logGenerationSuccess({
+            supabase,
+            logId,
+            resultXml: exactCache.bpmnXml,
+            durationMs: Date.now() - startTime,
+            cacheHit: true,
+          });
+        }
+        return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
     const TIMEOUT_LIMIT_MS = 50000; // 50 seconds, leaving 10s buffer before edge function timeout
@@ -562,34 +642,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    let promptHash: string;
-    try {
-      promptHash = await generateHash(`${finalPromptToGenerate}:${diagramType}:${detectedLanguageCode}`);
-    } catch {
-      throw new Error("Failed to generate prompt hash");
-    }
-    if (!skipCache && !modelingAgentMode) {
-      let exactCache;
-      try {
-        exactCache = await checkExactHashCache(promptHash, diagramType);
-      } catch {
-        exactCache = null;
-      }
-      if (exactCache) {
-        cacheType = "exact_hash";
-        await logPerformanceMetric({
-          function_name: "generate-bpmn",
-          cache_type: "exact_hash",
-          prompt_length: prompt.length,
-          response_time_ms: Date.now() - startTime,
-          cache_hit: true,
-          error_occurred: false,
-        });
-        return new Response(JSON.stringify({ bpmnXml: exactCache.bpmnXml, cached: true }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
+    // Cache already checked above, proceed with model selection
     const criteria = analyzePrompt(finalPromptToGenerate, diagramType);
     const modelSelection = selectModel(criteria);
     let { model, temperature, maxTokens } = modelSelection;
@@ -622,7 +675,7 @@ Deno.serve(async (req) => {
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
           cacheType = "semantic";
-          similarityScore = semanticCache!.similarity;
+          similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -630,14 +683,25 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: semanticCache!.similarity,
+            similarity_score: semanticCache.similarity,
             error_occurred: false,
           });
+          // Log semantic cache hit
+          if (supabase && logId) {
+            await logGenerationSuccess({
+              supabase,
+              logId,
+              resultXml: semanticCache.bpmnXml,
+              durationMs: Date.now() - startTime,
+              cacheHit: true,
+              cacheSimilarity: semanticCache.similarity,
+            });
+          }
           return new Response(
             JSON.stringify({
-              bpmnXml: semanticCache!.bpmnXml,
+              bpmnXml: semanticCache.bpmnXml,
               cached: true,
-              similarity: semanticCache!.similarity,
+              similarity: semanticCache.similarity,
               wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -686,6 +750,16 @@ Deno.serve(async (req) => {
       similarity_score: similarityScore,
       error_occurred: false,
     });
+    // Log successful generation
+    if (supabase && logId) {
+      await logGenerationSuccess({
+        supabase,
+        logId,
+        resultXml: bpmnXml,
+        durationMs: Date.now() - startTime,
+        cacheHit: false,
+      });
+    }
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -712,6 +786,16 @@ Deno.serve(async (req) => {
       });
     } catch {
       /* ignore */
+    }
+    // Log error
+    if (supabase && logId) {
+      await logGenerationError({
+        supabase,
+        logId,
+        errorMessage,
+        errorStack: error instanceof Error ? error.stack : undefined,
+        durationMs: Date.now() - startTime,
+      });
     }
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
