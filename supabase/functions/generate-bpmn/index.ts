@@ -1112,8 +1112,8 @@ Deno.serve(async (req) => {
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
           cacheType = "semantic";
-          const similarity = semanticCache.similarity;
-          const cachedXml = semanticCache.bpmnXml;
+          const similarity = semanticCache!.similarity;
+          const cachedXml = semanticCache!.bpmnXml;
           similarityScore = similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
@@ -1172,7 +1172,7 @@ Deno.serve(async (req) => {
     }
 
     // Use the analyzed/simplified prompt for generation
-    const bpmnXml = await retryBpmnGenerationIfNecessary(
+    let bpmnXml = await retryBpmnGenerationIfNecessary(
       finalPromptToGenerate,
       systemPrompt,
       diagramType,

@@ -739,7 +739,7 @@ Deno.serve(async (req) => {
 
     try {
       // Generate BPMN (no timeout limit for background processing)
-      const bpmnXml = await retryBpmnGeneration(
+      let bpmnXml = await retryBpmnGeneration(
         typedJob.prompt,
         systemPrompt,
         typedJob.diagram_type,
