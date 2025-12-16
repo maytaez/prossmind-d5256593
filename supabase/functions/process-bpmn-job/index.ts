@@ -68,6 +68,81 @@ function sanitizeBpmnXml(xml: string): string {
   return sanitized.trim();
 }
 
+// Repair truncated XML by removing incomplete elements
+function repairTruncatedXml(xml: string): string {
+  let repaired = xml;
+
+  // Find and remove incomplete condition expressions
+  // Pattern 1: conditionExpression with ${... that doesn't have closing brace
+  // Match: <bpmn:conditionExpression>${... (without closing })
+  const incompleteConditionRegex = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
+  let matches: Array<{ match: string; index: number; expr: string }> = [];
+  let match;
+
+  while ((match = incompleteConditionRegex.exec(repaired)) !== null) {
+    const expr = match[1];
+    // Check if expression is incomplete (doesn't end with })
+    if (!expr.endsWith("}")) {
+      matches.push({ match: match[0], index: match.index, expr });
+    }
+  }
+
+  // Remove matches in reverse order to preserve indices
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { match: matchStr, index, expr } = matches[i];
+    console.warn(`[XML Repair] Removing incomplete condition expression: ${expr}`);
+
+    // Find if this is inside a sequenceFlow
+    const beforeMatch = repaired.substring(0, index);
+    const afterMatch = repaired.substring(index + matchStr.length);
+    const sequenceFlowStart = beforeMatch.lastIndexOf("<bpmn:sequenceFlow");
+
+    if (sequenceFlowStart !== -1) {
+      // Find the matching closing tag
+      const sequenceFlowEnd = afterMatch.indexOf("</bpmn:sequenceFlow>");
+      if (sequenceFlowEnd !== -1) {
+        // Remove the entire sequenceFlow
+        repaired =
+          beforeMatch.substring(0, sequenceFlowStart) +
+          afterMatch.substring(sequenceFlowEnd + "</bpmn:sequenceFlow>".length);
+      } else {
+        // Just remove the condition expression
+        repaired = beforeMatch + afterMatch;
+      }
+    } else {
+      // Just remove the condition expression
+      repaired = beforeMatch + afterMatch;
+    }
+  }
+
+  // Pattern 2: conditionExpression cut off mid-generation (no closing tag, ends with ${...)
+  // This catches cases where the XML ends abruptly like: <bpmn:conditionExpression>${loanAmount
+  repaired = repaired.replace(/<bpmn:sequenceFlow[^>]*>\s*<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/gm, (match) => {
+    console.warn(`[XML Repair] Removing sequence flow with cut-off condition expression`);
+    return "";
+  });
+
+  // Pattern 3: Any remaining incomplete ${ expressions at the end of the file (standalone)
+  repaired = repaired.replace(/(\$\{[^}]*?)$/m, "");
+
+  // Ensure XML ends properly
+  if (!repaired.trim().endsWith("</bpmn:definitions>")) {
+    // Try to close any open tags before definitions
+    const lastDefinitionsIndex = repaired.lastIndexOf("</bpmn:definitions>");
+    if (lastDefinitionsIndex > 0) {
+      repaired = repaired.substring(0, lastDefinitionsIndex) + "</bpmn:definitions>";
+    } else if (repaired.includes("<bpmn:definitions")) {
+      // Find the last complete element and close definitions there
+      const lastProcessIndex = repaired.lastIndexOf("</bpmn:process>");
+      if (lastProcessIndex > 0) {
+        repaired = repaired.substring(0, lastProcessIndex + "</bpmn:process>".length) + "\n</bpmn:definitions>";
+      }
+    }
+  }
+
+  return repaired;
+}
+
 // Validate BPMN XML (exact copy from generate-bpmn for consistency)
 function validateBpmnXml(xml: string): ValidationResult {
   if (!xml || typeof xml !== "string") return { isValid: false, error: "Invalid XML: empty or non-string input" };
@@ -78,6 +153,71 @@ function validateBpmnXml(xml: string): ValidationResult {
     return { isValid: false, error: "Missing BPMN process element" };
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
+
+  // Check for truncated/incomplete condition expressions
+  // Pattern 1: conditionExpression with ${... that doesn't have closing brace before </conditionExpression>
+  const incompleteConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
+  let incompleteConditions: string[] = [];
+  let conditionMatch;
+  while ((conditionMatch = incompleteConditionPattern.exec(xml)) !== null) {
+    const expr = conditionMatch[1];
+    // Check if expression is incomplete (doesn't end with })
+    if (!expr.endsWith("}")) {
+      incompleteConditions.push(conditionMatch[0]);
+    }
+  }
+  if (incompleteConditions.length > 0) {
+    return {
+      isValid: false,
+      error: "Truncated XML: incomplete condition expressions detected",
+      errorDetails: `Found ${incompleteConditions.length} incomplete condition expression(s). The XML appears to have been truncated during generation.`,
+    };
+  }
+
+  // Check for condition expressions cut off mid-generation (no closing tag)
+  // Pattern: <bpmn:conditionExpression>${... at end of file or before unexpected content
+  const cutOffConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/m;
+  const cutOffMatch = xml.match(cutOffConditionPattern);
+  if (cutOffMatch) {
+    return {
+      isValid: false,
+      error: "Truncated XML: condition expressions cut off",
+      errorDetails: `Found condition expression that was cut off: ${cutOffMatch[1]}. The XML appears to have been truncated during generation.`,
+    };
+  }
+
+  // Check for incomplete ${ expressions anywhere (standalone, not in tags) - this catches cases like "${loanAmount" at end
+  const standaloneIncompletePattern = /(\$\{[^}]*?)$/m;
+  const standaloneMatch = xml.match(standaloneIncompletePattern);
+  if (standaloneMatch) {
+    // Check if this is at the very end of the file (no closing tags after it)
+    const matchIndex = xml.lastIndexOf(standaloneMatch[0]);
+    const afterMatch = xml.substring(matchIndex + standaloneMatch[0].length).trim();
+    // If there's no proper closing tag after the incomplete expression, it's truncated
+    if (
+      !afterMatch ||
+      (!afterMatch.includes("</bpmn:definitions>") && !afterMatch.includes("</bpmn:conditionExpression>"))
+    ) {
+      return {
+        isValid: false,
+        error: "Truncated XML: incomplete expression at end of file",
+        errorDetails: `Found incomplete expression at end: ${standaloneMatch[1]}. The XML appears to have been truncated during generation.`,
+      };
+    }
+  }
+
+  // Check if XML ends properly - must end with </bpmn:definitions>
+  if (!xml.trim().endsWith("</bpmn:definitions>")) {
+    // Check if there's an incomplete tag or expression at the end
+    const last100Chars = xml.substring(Math.max(0, xml.length - 100));
+    if (last100Chars.includes("${") && !last100Chars.includes("}")) {
+      return {
+        isValid: false,
+        error: "Truncated XML: file ends with incomplete expression",
+        errorDetails: `XML does not end properly and contains incomplete expression. The XML appears to have been truncated during generation.`,
+      };
+    }
+  }
 
   const unclosedWaypoints = xml.match(/<di:waypoint[^>]*[^\/]>/gi);
   if (unclosedWaypoints && unclosedWaypoints.length > 0)
@@ -373,10 +513,50 @@ async function retryBpmnGeneration(
         isComplex || attempt > 1, // Use compact DI for complex prompts or retries
       );
 
-      const validation = validateBpmnXml(bpmnXml);
+      let xmlToValidate = bpmnXml;
+
+      // Check for truncation and try to repair
+      const validation = validateBpmnXml(xmlToValidate);
+      if (!validation.isValid && validation.error?.includes("Truncated XML")) {
+        console.warn(`[BPMN Generation] Truncated XML detected, attempting repair...`);
+        xmlToValidate = repairTruncatedXml(xmlToValidate);
+        const repairedValidation = validateBpmnXml(xmlToValidate);
+        if (repairedValidation.isValid) {
+          console.log(`[BPMN Generation] Truncated XML repaired successfully on attempt ${attempt}`);
+          return xmlToValidate;
+        } else {
+          console.warn(`[BPMN Generation] Repair failed, will retry with structure-only mode`);
+          // Force structure-only mode on next attempt if truncation detected
+          if (attempt < maxAttempts) {
+            // Skip to structure-only retry
+            try {
+              console.log(`[BPMN Generation] Retrying with structure-only mode due to truncation`);
+              const structure = await generateBpmnStructureOnly(
+                prompt,
+                systemPrompt,
+                diagramType,
+                languageCode,
+                languageName,
+                googleApiKey,
+                maxTokens,
+                temperature,
+              );
+              const completeXml = await addBpmnDiagram(structure);
+              const structureValidation = validateBpmnXml(completeXml);
+              if (structureValidation.isValid) {
+                console.log(`[BPMN Generation] Structure-only mode succeeded after truncation`);
+                return completeXml;
+              }
+            } catch (structureError) {
+              console.error(`[BPMN Generation] Structure-only retry failed:`, structureError);
+            }
+          }
+        }
+      }
+
       if (validation.isValid) {
         console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
-        return bpmnXml;
+        return xmlToValidate;
       }
 
       lastValidationError = validation;
@@ -574,7 +754,47 @@ Deno.serve(async (req) => {
       const generationTime = Date.now() - startTime;
       console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
 
-      // Log successful generation
+      // Final validation before logging success - catch any issues that might have been missed
+      const finalValidation = validateBpmnXml(bpmnXml);
+      if (!finalValidation.isValid) {
+        console.error(`[Job ${jobId}] Final validation failed after generation: ${finalValidation.error}`);
+
+        // Try to repair one more time
+        const repairedXml = repairTruncatedXml(bpmnXml);
+        const repairedValidation = validateBpmnXml(repairedXml);
+
+        if (repairedValidation.isValid) {
+          console.log(`[Job ${jobId}] XML repaired after final validation`);
+          // Use repaired XML
+          bpmnXml = repairedXml;
+        } else {
+          // Validation failed even after repair - log as error
+          const errorMessage = `Generated XML failed validation: ${finalValidation.error}${finalValidation.errorDetails ? ` - ${finalValidation.errorDetails}` : ""}`;
+
+          if (logId) {
+            await logGenerationError({
+              supabase,
+              logId,
+              errorMessage,
+              errorStack: `Validation failed: ${finalValidation.error}`,
+              durationMs: generationTime,
+            });
+          }
+
+          await supabase
+            .from("vision_bpmn_jobs")
+            .update({
+              status: "failed",
+              error_message: errorMessage,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", jobId);
+
+          throw new Error(errorMessage);
+        }
+      }
+
+      // Log successful generation (only after validation passes)
       if (logId) {
         await logGenerationSuccess({
           supabase,
