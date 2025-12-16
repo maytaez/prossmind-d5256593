@@ -292,6 +292,66 @@ async function summarizeInputWithFlash(userPrompt: string, googleApiKey: string)
   }
 }
 
+// Repair truncated XML by removing incomplete elements
+function repairTruncatedXml(xml: string): string {
+  let repaired = xml;
+
+  // Find and remove incomplete condition expressions
+  const incompleteConditionRegex = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
+  let matches: Array<{ match: string; index: number; expr: string }> = [];
+  let match;
+
+  while ((match = incompleteConditionRegex.exec(repaired)) !== null) {
+    const expr = match[1];
+    if (!expr.endsWith("}")) {
+      matches.push({ match: match[0], index: match.index, expr });
+    }
+  }
+
+  // Remove matches in reverse order to preserve indices
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { match: matchStr, index, expr } = matches[i];
+    console.warn(`[XML Repair] Removing incomplete condition expression: ${expr}`);
+    const beforeMatch = repaired.substring(0, index);
+    const afterMatch = repaired.substring(index + matchStr.length);
+    const sequenceFlowStart = beforeMatch.lastIndexOf("<bpmn:sequenceFlow");
+
+    if (sequenceFlowStart !== -1) {
+      const sequenceFlowEnd = afterMatch.indexOf("</bpmn:sequenceFlow>");
+      if (sequenceFlowEnd !== -1) {
+        repaired =
+          beforeMatch.substring(0, sequenceFlowStart) +
+          afterMatch.substring(sequenceFlowEnd + "</bpmn:sequenceFlow>".length);
+      } else {
+        repaired = beforeMatch + afterMatch;
+      }
+    } else {
+      repaired = beforeMatch + afterMatch;
+    }
+  }
+
+  repaired = repaired.replace(/<bpmn:sequenceFlow[^>]*>\s*<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/gm, () => {
+    console.warn(`[XML Repair] Removing sequence flow with cut-off condition expression`);
+    return "";
+  });
+
+  repaired = repaired.replace(/(\$\{[^}]*?)$/m, "");
+
+  if (!repaired.trim().endsWith("</bpmn:definitions>")) {
+    const lastDefinitionsIndex = repaired.lastIndexOf("</bpmn:definitions>");
+    if (lastDefinitionsIndex > 0) {
+      repaired = repaired.substring(0, lastDefinitionsIndex) + "</bpmn:definitions>";
+    } else if (repaired.includes("<bpmn:definitions")) {
+      const lastProcessIndex = repaired.lastIndexOf("</bpmn:process>");
+      if (lastProcessIndex > 0) {
+        repaired = repaired.substring(0, lastProcessIndex + "</bpmn:process>".length) + "\n</bpmn:definitions>";
+      }
+    }
+  }
+
+  return repaired;
+}
+
 function validateBpmnXml(xml: string): ValidationResult {
   if (!xml || typeof xml !== "string") return { isValid: false, error: "Invalid XML: empty or non-string input" };
   if (!xml.trim().startsWith("<?xml")) return { isValid: false, error: "Missing XML declaration" };
@@ -301,6 +361,68 @@ function validateBpmnXml(xml: string): ValidationResult {
     return { isValid: false, error: "Missing BPMN process element" };
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
+
+  // Check for truncated/incomplete condition expressions
+  const incompleteConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
+  let incompleteConditions: string[] = [];
+  let conditionMatch;
+  while ((conditionMatch = incompleteConditionPattern.exec(xml)) !== null) {
+    const expr = conditionMatch[1];
+    if (!expr.endsWith("}")) {
+      incompleteConditions.push(conditionMatch[0]);
+    }
+  }
+  if (incompleteConditions.length > 0) {
+    return {
+      isValid: false,
+      error: "Truncated XML: incomplete condition expressions detected",
+      errorDetails: `Found ${incompleteConditions.length} incomplete condition expression(s). The XML appears to have been truncated during generation.`,
+    };
+  }
+
+  const cutOffConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/m;
+  const cutOffMatch = xml.match(cutOffConditionPattern);
+  if (cutOffMatch) {
+    return {
+      isValid: false,
+      error: "Truncated XML: condition expressions cut off",
+      errorDetails: `Found condition expression that was cut off: ${cutOffMatch[1]}. The XML appears to have been truncated during generation.`,
+    };
+  }
+
+  // Check for incomplete ${ expressions anywhere (standalone, not in tags) - this catches cases like "${loanAmount" at end
+  const standaloneIncompletePattern = /(\$\{[^}]*?)$/m;
+  const standaloneMatch = xml.match(standaloneIncompletePattern);
+  if (standaloneMatch) {
+    // Check if this is at the very end of the file (no closing tags after it)
+    const matchIndex = xml.lastIndexOf(standaloneMatch[0]);
+    const afterMatch = xml.substring(matchIndex + standaloneMatch[0].length).trim();
+    // If there's no proper closing tag after the incomplete expression, it's truncated
+    if (
+      !afterMatch ||
+      (!afterMatch.includes("</bpmn:definitions>") && !afterMatch.includes("</bpmn:conditionExpression>"))
+    ) {
+      return {
+        isValid: false,
+        error: "Truncated XML: incomplete expression at end of file",
+        errorDetails: `Found incomplete expression at end: ${standaloneMatch[1]}. The XML appears to have been truncated during generation.`,
+      };
+    }
+  }
+
+  // Check if XML ends properly - must end with </bpmn:definitions>
+  if (!xml.trim().endsWith("</bpmn:definitions>")) {
+    // Check if there's an incomplete tag or expression at the end
+    const last100Chars = xml.substring(Math.max(0, xml.length - 100));
+    if (last100Chars.includes("${") && !last100Chars.includes("}")) {
+      return {
+        isValid: false,
+        error: "Truncated XML: file ends with incomplete expression",
+        errorDetails: `XML does not end properly and contains incomplete expression. The XML appears to have been truncated during generation.`,
+      };
+    }
+  }
+
   const unclosedWaypoints = xml.match(/<di:waypoint[^>]*[^\/]>/gi);
   if (unclosedWaypoints && unclosedWaypoints.length > 0)
     return {
@@ -411,13 +533,30 @@ async function retryBpmnGenerationIfNecessary(
             }
           : undefined,
       );
-      const validation = validateBpmnXml(bpmnXml);
-      if (validation.isValid) {
+
+      let xmlToValidate = bpmnXml;
+
+      // Check for truncation and try to repair
+      const validation = validateBpmnXml(xmlToValidate);
+      if (!validation.isValid && validation.error?.includes("Truncated XML")) {
+        console.warn(`[BPMN Generation] Truncated XML detected, attempting repair...`);
+        xmlToValidate = repairTruncatedXml(xmlToValidate);
+        const repairedValidation = validateBpmnXml(xmlToValidate);
+        if (repairedValidation.isValid) {
+          console.log(`[BPMN Generation] Truncated XML repaired successfully on attempt ${attempt}`);
+          return xmlToValidate;
+        } else {
+          console.warn(`[BPMN Generation] Repair failed: ${repairedValidation.error}`);
+          lastValidationError = repairedValidation;
+        }
+      } else if (validation.isValid) {
         console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
-        return bpmnXml;
+        return xmlToValidate;
+      } else {
+        lastValidationError = validation;
       }
-      lastValidationError = validation;
-      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
+
+      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, lastValidationError.error);
       if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
@@ -973,8 +1112,8 @@ Deno.serve(async (req) => {
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
         if (semanticCache) {
           cacheType = "semantic";
-          const similarity = semanticCache!.similarity;
-          const cachedXml = semanticCache!.bpmnXml;
+          const similarity = semanticCache.similarity;
+          const cachedXml = semanticCache.bpmnXml;
           similarityScore = similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
@@ -1045,8 +1184,30 @@ Deno.serve(async (req) => {
       3,
     );
     modelUsed = "google/gemini-2.5-pro";
-    const finalValidation = validateBpmnXml(bpmnXml);
-    if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
+    let finalValidation = validateBpmnXml(bpmnXml);
+    if (!finalValidation.isValid) {
+      console.warn(`[BPMN Generation] Final validation failed, attempting repair: ${finalValidation.error}`);
+      // Try to repair before throwing
+      const repairedXml = repairTruncatedXml(bpmnXml);
+      finalValidation = validateBpmnXml(repairedXml);
+      if (finalValidation.isValid) {
+        console.log(`[BPMN Generation] XML repaired successfully after final validation`);
+        bpmnXml = repairedXml;
+      } else {
+        // Still invalid after repair - this is a real error
+        const errorMsg = `Final validation failed: ${finalValidation.error}${finalValidation.errorDetails ? ` - ${finalValidation.errorDetails}` : ""}`;
+        if (supabase && logId) {
+          await logGenerationError({
+            supabase,
+            logId,
+            errorMessage: errorMsg,
+            errorStack: `Validation failed: ${finalValidation.error}`,
+            durationMs: Date.now() - startTime,
+          });
+        }
+        throw new Error(errorMsg);
+      }
+    }
     if (!skipCache && !modelingAgentMode) {
       (async () => {
         try {
