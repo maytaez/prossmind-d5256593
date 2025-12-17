@@ -15,7 +15,8 @@ interface LaneElements {
 }
 
 /**
- * Calculate lane-aware layout by grouping elements by lane and laying out each lane independently
+ * Calculate lane-aware layout with global level coordination
+ * This ensures elements connected across lanes are aligned horizontally
  */
 export function calculateLaneAwareLayout(
   lanes: Array<{ id: string; name: string; flowNodeRefs: string[] }>,
@@ -27,8 +28,8 @@ export function calculateLaneAwareLayout(
   boundsMap: Map<string, Bounds>;
   laneLayouts: Array<{ id: string; y: number; height: number }>;
 } {
-  const HORIZONTAL_SPACING = 120;
-  const VERTICAL_SPACING = 100;
+  const HORIZONTAL_SPACING = 150;
+  const VERTICAL_SPACING = 80;
   const LANE_TOP_MARGIN = 50;
   const LANE_BOTTOM_MARGIN = 30;
   const MIN_LANE_HEIGHT = 150;
@@ -37,7 +38,22 @@ export function calculateLaneAwareLayout(
   const elementMap = new Map<string, BPMNElement>();
   elements.forEach((el) => elementMap.set(el.id, el));
 
-  // Group elements by lane
+  // Build element-to-lane mapping
+  const elementToLane = new Map<string, string>();
+  lanes.forEach((lane) => {
+    lane.flowNodeRefs.forEach((ref) => {
+      elementToLane.set(ref, lane.id);
+    });
+  });
+
+  // STEP 1: Calculate GLOBAL levels considering ALL flows (including cross-lane)
+  // This ensures connected elements across lanes are aligned horizontally
+  const globalLevels = assignGlobalLevels(elements, flows);
+
+  // Find max level to determine total width
+  const maxLevel = Math.max(...Array.from(globalLevels.values()), 0);
+
+  // STEP 2: Group elements by lane
   const laneGroups: LaneElements[] = lanes.map((lane) => ({
     laneId: lane.id,
     laneName: lane.name,
@@ -45,28 +61,7 @@ export function calculateLaneAwareLayout(
     startNodes: [],
   }));
 
-  // For each lane, find start nodes (elements with no incoming edges from within the lane)
-  laneGroups.forEach((laneGroup) => {
-    const laneElementIds = new Set(laneGroup.elements.map((el) => el.id));
-
-    laneGroup.elements.forEach((element) => {
-      // Check if this element has incoming flows from within the lane
-      const hasIncomingFromLane = flows.some(
-        (flow) => flow.targetRef === element.id && laneElementIds.has(flow.sourceRef),
-      );
-
-      if (!hasIncomingFromLane) {
-        laneGroup.startNodes.push(element);
-      }
-    });
-
-    // If no start nodes found (circular reference), just use the first element
-    if (laneGroup.startNodes.length === 0 && laneGroup.elements.length > 0) {
-      laneGroup.startNodes.push(laneGroup.elements[0]);
-    }
-  });
-
-  // Layout each lane independently
+  // STEP 3: Layout lanes vertically, positioning elements based on global levels
   const boundsMap = new Map<string, Bounds>();
   const laneLayouts: Array<{ id: string; y: number; height: number }> = [];
   let currentY = startY;
@@ -83,39 +78,34 @@ export function calculateLaneAwareLayout(
       return;
     }
 
-    // Build lane-local flow graph
-    const laneElementIds = new Set(laneGroup.elements.map((el) => el.id));
-    const laneFlows = flows.filter((flow) => laneElementIds.has(flow.sourceRef) && laneElementIds.has(flow.targetRef));
-
-    // Assign levels using BFS from start nodes
-    const levels = assignLevelsForLane(laneGroup.elements, laneFlows, laneGroup.startNodes);
-
-    // Group by level
+    // Group elements by their global level
     const levelGroups = new Map<number, BPMNElement[]>();
     laneGroup.elements.forEach((element) => {
-      const level = levels.get(element.id) ?? 0;
+      const level = globalLevels.get(element.id) ?? 0;
       if (!levelGroups.has(level)) {
         levelGroups.set(level, []);
       }
       levelGroups.get(level)!.push(element);
     });
 
-    // Layout elements left-to-right by level
+    // Layout elements within this lane
     let maxLaneHeight = 0;
     const laneStartY = currentY + LANE_TOP_MARGIN;
 
-    // Calculate max elements per level to determine vertical spacing
-    const maxElementsPerLevel = Math.max(...Array.from(levelGroups.values()).map((arr) => arr.length));
-    const elementVerticalSpacing = maxElementsPerLevel > 1 ? VERTICAL_SPACING : VERTICAL_SPACING * 2;
+    // Sort levels to process them in order
+    const sortedLevels = Array.from(levelGroups.keys()).sort((a, b) => a - b);
 
-    levelGroups.forEach((levelElements, level) => {
-      const levelX = startX + level * (150 + HORIZONTAL_SPACING); // Horizontal position for this level
+    sortedLevels.forEach((level) => {
+      const levelElements = levelGroups.get(level)!;
+      // Use standard element width (120) for consistent alignment across lanes
+      const STANDARD_ELEMENT_WIDTH = 120;
+      const levelX = startX + level * (STANDARD_ELEMENT_WIDTH + HORIZONTAL_SPACING);
+
+      // Position elements at this level vertically within the lane
       let elementY = laneStartY;
 
-      // If multiple elements at same level, spread them vertically within the lane
-      const verticalGap = levelElements.length > 1 ? elementVerticalSpacing : 0;
-
-      levelElements.forEach((element, elementIndex) => {
+      // If multiple elements at same level, stack them vertically
+      levelElements.forEach((element) => {
         const size = getElementSize(element);
 
         boundsMap.set(element.id, {
@@ -125,7 +115,7 @@ export function calculateLaneAwareLayout(
           height: size.height,
         });
 
-        elementY += size.height + verticalGap;
+        elementY += size.height + VERTICAL_SPACING;
         maxLaneHeight = Math.max(maxLaneHeight, elementY - laneStartY);
       });
     });
@@ -145,16 +135,35 @@ export function calculateLaneAwareLayout(
 }
 
 /**
- * Assign levels (columns) to elements within a lane using BFS
+ * Assign global levels to ALL elements considering ALL flows (including cross-lane)
+ * This ensures elements connected across lanes are at the same horizontal level
  */
-function assignLevelsForLane(
+function assignGlobalLevels(
   elements: BPMNElement[],
   flows: BPMNSequenceFlow[],
-  startNodes: BPMNElement[],
 ): Map<string, number> {
   const levels = new Map<string, number>();
   const visited = new Set<string>();
   const queue: Array<{ element: BPMNElement; level: number }> = [];
+
+  // Build element lookup
+  const elementMap = new Map<string, BPMNElement>();
+  elements.forEach((el) => elementMap.set(el.id, el));
+
+  // Find start nodes (elements with no incoming flows)
+  const incomingCount = new Map<string, number>();
+  elements.forEach((el) => incomingCount.set(el.id, 0));
+  flows.forEach((flow) => {
+    const count = incomingCount.get(flow.targetRef) || 0;
+    incomingCount.set(flow.targetRef, count + 1);
+  });
+
+  const startNodes = elements.filter((el) => (incomingCount.get(el.id) || 0) === 0);
+
+  // If no clear start nodes, use first element
+  if (startNodes.length === 0 && elements.length > 0) {
+    startNodes.push(elements[0]);
+  }
 
   // Initialize with start nodes
   startNodes.forEach((node) => {
@@ -163,21 +172,21 @@ function assignLevelsForLane(
     queue.push({ element: node, level: 0 });
   });
 
-  // BFS
+  // BFS to assign levels globally
   while (queue.length > 0) {
     const { element, level } = queue.shift()!;
 
-    // Find outgoing flows
+    // Find outgoing flows (including cross-lane)
     const outgoingFlows = flows.filter((flow) => flow.sourceRef === element.id);
 
     outgoingFlows.forEach((flow) => {
-      const targetElement = elements.find((el) => el.id === flow.targetRef);
+      const targetElement = elementMap.get(flow.targetRef);
       if (!targetElement) return;
 
       const newLevel = level + 1;
       const currentLevel = levels.get(targetElement.id);
 
-      // Update level if this path is longer
+      // Update level if this path is longer (ensures longest path determines level)
       if (currentLevel === undefined || currentLevel < newLevel) {
         levels.set(targetElement.id, newLevel);
       }
@@ -189,10 +198,19 @@ function assignLevelsForLane(
     });
   }
 
-  // Handle unvisited elements (disconnected)
+  // Handle unvisited elements (disconnected components)
   elements.forEach((element) => {
     if (!levels.has(element.id)) {
-      levels.set(element.id, 0);
+      // Try to find minimum level from any incoming flow
+      const incomingFlows = flows.filter((flow) => flow.targetRef === element.id);
+      if (incomingFlows.length > 0) {
+        const minIncomingLevel = Math.min(
+          ...incomingFlows.map((flow) => levels.get(flow.sourceRef) ?? 0),
+        );
+        levels.set(element.id, minIncomingLevel + 1);
+      } else {
+        levels.set(element.id, 0);
+      }
     }
   });
 

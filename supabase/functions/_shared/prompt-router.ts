@@ -44,14 +44,17 @@ export function shouldUseMultiStage(
 
   // Multi-stage criteria:
   // 1. Long prompts (> 500 chars)
-  // 2. Multiple actors (>= 3)
-  // 3. Complex features (gateways, subprocesses, etc.)
+  // 2. Multiple actors (>= 3) - more aggressive threshold
+  // 3. Complex features (gateways, subprocesses, etc.) - lower threshold
   // 4. Combination of moderate complexity
+  // 5. Explicit swimlanes mentioned (indicates complex process)
 
   const isLong = promptLength > 500;
   const hasMultipleActors = totalActors >= 3;
-  const hasComplexFeatures = complexity >= 2;
+  const hasComplexFeatures = complexity >= 1; // Lower threshold - any complex feature
   const isModeratelyComplex = totalActors >= 2 && complexity >= 1;
+  const hasExplicitSwimlanes = explicitSwimlanes > 0; // Explicit swimlanes = definitely complex
 
-  return isLong || hasMultipleActors || hasComplexFeatures || isModeratelyComplex;
+  // More aggressive routing for complex prompts
+  return isLong || hasMultipleActors || hasComplexFeatures || isModeratelyComplex || hasExplicitSwimlanes;
 }

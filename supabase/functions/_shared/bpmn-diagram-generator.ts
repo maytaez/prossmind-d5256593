@@ -11,7 +11,8 @@ import {
     constrainElementsToLanes,
     positionBoundaryEvents,
     type Layout,
-    type Bounds
+    type Bounds,
+    type Point
 } from './bpmn-layout-calculator.ts';
 
 /**
@@ -112,29 +113,46 @@ export async function addBpmnDiagram(structureXml: string): Promise<string> {
         )
       : { edges: new Map() }; // We'll need to recalculate edges for lane layout
 
-  // For lane-aware layout, recalculate edges
+  // For lane-aware layout, recalculate edges with smart routing
   let edgesMap = baseLayout.edges;
   if (process.lanes.length > 0) {
     edgesMap = new Map();
+    
+    // Build element-to-lane mapping
+    const elementToLane = new Map<string, string>();
+    process.lanes.forEach((lane) => {
+      lane.flowNodeRefs.forEach((ref) => {
+        elementToLane.set(ref, lane.id);
+      });
+    });
+
+    // Build lane lookup for Y positions
+    const laneYPositions = new Map<string, number>();
+    const laneHeights = new Map<string, number>();
+    laneLayouts.forEach((lane) => {
+      laneYPositions.set(lane.id, lane.y);
+      laneHeights.set(lane.id, lane.height);
+    });
+
     process.flows.forEach((flow) => {
       const sourceBounds = finalBoundsMap.get(flow.sourceRef);
       const targetBounds = finalBoundsMap.get(flow.targetRef);
 
       if (sourceBounds && targetBounds) {
-        // Simple waypoint calculation
-        const sourcePoint = {
-          x: sourceBounds.x + sourceBounds.width,
-          y: sourceBounds.y + sourceBounds.height / 2,
-        };
-        const targetPoint = {
-          x: targetBounds.x,
-          y: targetBounds.y + targetBounds.height / 2,
-        };
+        const waypoints = calculateSmartWaypoints(
+          sourceBounds,
+          targetBounds,
+          flow.sourceRef,
+          flow.targetRef,
+          elementToLane,
+          laneYPositions,
+          laneHeights,
+        );
 
         edgesMap.set(flow.id, {
           id: flow.id,
           flow,
-          waypoints: [sourcePoint, targetPoint],
+          waypoints,
         });
       }
     });
@@ -165,3 +183,107 @@ export async function addBpmnDiagram(structureXml: string): Promise<string> {
 
   return completeXml;
 }
+
+/**
+ * Calculate smart waypoints that route around lanes to minimize crossings
+ */
+function calculateSmartWaypoints(
+  sourceBounds: Bounds,
+  targetBounds: Bounds,
+  sourceId: string,
+  targetId: string,
+  elementToLane: Map<string, string>,
+  laneYPositions: Map<string, number>,
+  laneHeights: Map<string, number>,
+): Point[] {
+  const sourcePoint: Point = {
+    x: sourceBounds.x + sourceBounds.width,
+    y: sourceBounds.y + sourceBounds.height / 2,
+  };
+
+  const targetPoint: Point = {
+    x: targetBounds.x,
+    y: targetBounds.y + targetBounds.height / 2,
+  };
+
+  const sourceLane = elementToLane.get(sourceId);
+  const targetLane = elementToLane.get(targetId);
+
+  // If same lane or no lane info, use simple routing
+  if (sourceLane === targetLane || !sourceLane || !targetLane) {
+    // Check if target is to the right
+    if (targetBounds.x > sourceBounds.x + sourceBounds.width) {
+      return [sourcePoint, targetPoint];
+    }
+    // Otherwise, route with intermediate points
+    const midX = (sourcePoint.x + targetPoint.x) / 2;
+    return [
+      sourcePoint,
+      { x: midX, y: sourcePoint.y },
+      { x: midX, y: targetPoint.y },
+      targetPoint,
+    ];
+  }
+
+  // Cross-lane flow: route around lanes
+  const sourceLaneY = laneYPositions.get(sourceLane) || 0;
+  const sourceLaneHeight = laneHeights.get(sourceLane) || 0;
+  const targetLaneY = laneYPositions.get(targetLane) || 0;
+  const targetLaneHeight = laneHeights.get(targetLane) || 0;
+
+  // Determine routing direction
+  const sourceLaneBottom = sourceLaneY + sourceLaneHeight;
+  const targetLaneTop = targetLaneY;
+
+  // If target is to the right, route horizontally first, then vertically
+  if (targetBounds.x > sourceBounds.x + sourceBounds.width) {
+    // Route right from source, then down/up to target lane, then right to target
+    const exitX = sourcePoint.x + 50; // Small horizontal offset
+    const entryX = targetPoint.x - 50; // Small horizontal offset
+    
+    // Determine vertical routing point (between lanes)
+    let routingY: number;
+    if (targetLaneTop > sourceLaneBottom) {
+      // Target is below source - route below source lane
+      routingY = sourceLaneBottom + 20;
+    } else if (sourceLaneY > targetLaneTop + targetLaneHeight) {
+      // Source is below target - route above source lane
+      routingY = sourceLaneY - 20;
+    } else {
+      // Lanes overlap - use midpoint
+      routingY = (sourcePoint.y + targetPoint.y) / 2;
+    }
+
+    return [
+      sourcePoint,
+      { x: exitX, y: sourcePoint.y },
+      { x: exitX, y: routingY },
+      { x: entryX, y: routingY },
+      { x: entryX, y: targetPoint.y },
+      targetPoint,
+    ];
+  }
+
+  // Target is to the left or same X - route with vertical offset
+  const midX = (sourcePoint.x + targetPoint.x) / 2;
+  
+  // Determine vertical routing point
+  let routingY: number;
+  if (targetLaneTop > sourceLaneBottom) {
+    routingY = sourceLaneBottom + 20;
+  } else if (sourceLaneY > targetLaneTop + targetLaneHeight) {
+    routingY = sourceLaneY - 20;
+  } else {
+    routingY = (sourcePoint.y + targetPoint.y) / 2;
+  }
+
+  return [
+    sourcePoint,
+    { x: sourcePoint.x + 30, y: sourcePoint.y },
+    { x: sourcePoint.x + 30, y: routingY },
+    { x: targetPoint.x - 30, y: routingY },
+    { x: targetPoint.x - 30, y: targetPoint.y },
+    targetPoint,
+  ];
+}
+

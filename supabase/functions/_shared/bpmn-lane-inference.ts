@@ -109,68 +109,120 @@ function calculateMatchScore(
 ): number {
   let score = 0;
 
+  const elementName = (element.name || "").toLowerCase();
+  const laneNameLower = lane.name.toLowerCase();
+  const elementType = element.type;
+
   // 1. Direct keyword matches (most important)
-  let keywordMatches = 0;
   elementKeywords.forEach((keyword) => {
     if (laneKeywords.has(keyword)) {
-      keywordMatches++;
-      score += 10; // High weight for direct matches
+      score += 15; // High weight for direct matches
     }
   });
 
-  // 2. Element type heuristics (generic, not domain-specific)
-  const elementType = element.type;
-  const laneNameLower = lane.name.toLowerCase();
-
-  // Service/Send tasks → likely belong to system/automated lanes
-  if (
-    (elementType === "serviceTask" || elementType === "sendTask" || elementType === "receiveTask") &&
-    (laneNameLower.includes("system") || laneNameLower.includes("automated") || laneNameLower.includes("service"))
-  ) {
-    score += 5;
-  }
-
-  // User/Manual tasks → likely belong to human actor lanes
-  // (any lane that doesn't contain 'system', 'automated', 'service')
-  if (
-    (elementType === "userTask" || elementType === "manualTask") &&
-    !laneNameLower.includes("system") &&
-    !laneNameLower.includes("automated") &&
-    !laneNameLower.includes("service")
-  ) {
-    score += 3;
-  }
-
-  // 3. Capitalization hints - proper nouns in element names often match lane names
-  // e.g., "Contact Patient" → "Patient" lane
-  const elementName = element.name || "";
+  // 2. Exact word matches (case-insensitive)
   const elementWords = elementName.split(/\s+/);
-  const laneWords = lane.name.split(/\s+/);
-
+  const laneWords = laneNameLower.split(/\s+/);
+  
   elementWords.forEach((word) => {
+    if (word.length > 2 && laneWords.includes(word)) {
+      score += 12; // Strong match
+    }
+  });
+
+  // 3. Domain-specific keyword matching for common BPMN domains
+  // Banking/Finance
+  if (laneNameLower.includes("compliance") || laneNameLower.includes("risk")) {
+    if (elementName.includes("due diligence") || elementName.includes("kyc") || 
+        elementName.includes("sanctions") || elementName.includes("pep") ||
+        elementName.includes("escalat") || elementName.includes("audit")) {
+      score += 20;
+    }
+  }
+  
+  if (laneNameLower.includes("risk")) {
+    if (elementName.includes("risk") || elementName.includes("score") || 
+        elementName.includes("assess")) {
+      score += 15;
+    }
+  }
+  
+  if (laneNameLower.includes("front office") || laneNameLower.includes("front")) {
+    if (elementName.includes("customer") || elementName.includes("notify") ||
+        elementName.includes("approve") || elementName.includes("account")) {
+      score += 12;
+    }
+  }
+  
+  if (laneNameLower.includes("back office") || laneNameLower.includes("back")) {
+    if (elementName.includes("capture") || elementName.includes("application") ||
+        elementName.includes("sanctions") || elementName.includes("archive")) {
+      score += 12;
+    }
+  }
+  
+  if (laneNameLower.includes("customer")) {
+    if (elementName.includes("customer") || elementName.includes("notify") ||
+        elementName.includes("request") || elementName.includes("send")) {
+      score += 15;
+    }
+  }
+
+  // 4. Element type heuristics
+  // Service/Send tasks → likely belong to system/automated/back office lanes
+  if (elementType === "serviceTask" || elementType === "sendTask" || elementType === "receiveTask") {
+    if (laneNameLower.includes("system") || laneNameLower.includes("automated") || 
+        laneNameLower.includes("service") || laneNameLower.includes("back office")) {
+      score += 8;
+    }
+  }
+
+  // User/Manual tasks → likely belong to human actor lanes (not system/automated)
+  if (elementType === "userTask" || elementType === "manualTask") {
+    if (!laneNameLower.includes("system") && !laneNameLower.includes("automated") && 
+        !laneNameLower.includes("service")) {
+      score += 5;
+    }
+    // Prefer compliance/risk/front office for user tasks
+    if (laneNameLower.includes("compliance") || laneNameLower.includes("risk") ||
+        laneNameLower.includes("front office")) {
+      score += 3;
+    }
+  }
+
+  // 5. Capitalization hints - proper nouns in element names often match lane names
+  const elementNameOriginal = element.name || "";
+  const elementWordsOriginal = elementNameOriginal.split(/\s+/);
+  
+  elementWordsOriginal.forEach((word) => {
     // Check if word is capitalized (likely a proper noun/actor name)
-    if (word.length > 0 && word[0] === word[0].toUpperCase()) {
+    if (word.length > 0 && word[0] === word[0].toUpperCase() && word[0] !== word[0].toLowerCase()) {
       laneWords.forEach((laneWord) => {
         if (word.toLowerCase() === laneWord.toLowerCase()) {
-          score += 7; // Good indicator of lane assignment
+          score += 10; // Good indicator of lane assignment
         }
       });
     }
   });
 
-  // 4. Substring matching for compound words
-  // e.g., "Prescription" in element name matches "Pharmacy" lane if both contain "pharma"
-  const elementNameLower = elementName.toLowerCase();
-  if (elementNameLower.length > 3 && laneNameLower.length > 3) {
+  // 6. Substring matching for compound words
+  if (elementName.length > 3 && laneNameLower.length > 3) {
     // Check for significant substrings (4+ chars)
-    for (let i = 0; i <= elementNameLower.length - 4; i++) {
-      const substring = elementNameLower.substring(i, i + 4);
+    for (let i = 0; i <= elementName.length - 4; i++) {
+      const substring = elementName.substring(i, i + 4);
       if (laneNameLower.includes(substring)) {
-        score += 2;
+        score += 3;
         break; // Only count once
       }
     }
   }
 
-  return score;
+  // 7. Negative scoring - avoid mismatches
+  // Don't assign customer-facing tasks to back office
+  if (laneNameLower.includes("back office") && 
+      (elementName.includes("notify customer") || elementName.includes("approve"))) {
+    score -= 5;
+  }
+
+  return Math.max(0, score); // Ensure non-negative
 }

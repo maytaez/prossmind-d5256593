@@ -8,7 +8,7 @@ import type { BpmnIR } from "./types/bpmn-ir.ts";
 import type { EnterpriseStyleProfile } from "./types/bpmn-ir.ts";
 import { calculateLayout } from "./bpmn-layout-calculator.ts";
 import type { Layout, Bounds } from "./bpmn-layout-calculator.ts";
-import type { BPMNElement, BPMNSequenceFlow, BPMNProcess } from "./bpmn-json-schema.ts";
+import type { BPMNElement, BPMNSequenceFlow, BPMNProcess, BPMNElementType } from "./bpmn-json-schema.ts";
 
 const LAYOUT_CONFIG = {
   startX: 200,
@@ -125,11 +125,11 @@ function applyNamingConvention(
 /**
  * Calculate layout from BPMN IR
  */
-function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string, number>; laneYPositions?: Map<string, number> } {
+function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string, number>; laneYPositions?: Map<string, number>; totalWidth?: number; totalHeight?: number } {
   // Convert IR to format expected by layout calculator
   const elements: BPMNElement[] = ir.nodes.map(node => ({
     id: node.id,
-    type: mapNodeTypeToBpmnElement(node.type),
+    type: mapNodeTypeToBpmnElement(node.type) as BPMNElementType,
     name: node.name,
   }));
 
@@ -148,6 +148,7 @@ function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string,
     lanes: ir.lanes.map(lane => ({
       id: lane.id,
       name: lane.name,
+      flowNodeRefs: ir.nodes.filter(n => n.lane === lane.id).map(n => n.id),
     })),
   };
 
@@ -182,7 +183,7 @@ function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string,
 /**
  * Generate diagram interchange XML
  */
-function generateDiagramInterchange(ir: BpmnIR, layout: Layout): string {
+function generateDiagramInterchange(ir: BpmnIR, layout: Layout & { laneHeights?: Map<string, number>; laneYPositions?: Map<string, number>; totalWidth?: number; totalHeight?: number }): string {
   let xml = `  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${ir.process.id}">`;
 
