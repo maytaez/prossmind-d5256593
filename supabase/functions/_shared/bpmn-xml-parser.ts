@@ -30,13 +30,6 @@ export interface ParsedCollaboration {
  * Parse structure-only BPMN XML to extract process definition
  */
 export async function parseStructureXml(xml: string): Promise<{
-  process: ParsedProcess;
-  collaboration?: ParsedCollaboration;
-}> {
-  // Simple XML parsing using regex (lightweight, no external deps)
-  // For production, consider using a proper XML parser
-
-  const result: {
     process: ParsedProcess;
     collaboration?: ParsedCollaboration;
 }> {

@@ -12,10 +12,7 @@ export interface RoutingOptions {
 /**
  * Determine if prompt should use multi-stage pipeline
  */
-export function shouldUseMultiStage(
-  prompt: string,
-  options: RoutingOptions = {}
-): boolean {
+export function shouldUseMultiStage(prompt: string, options: RoutingOptions = {}): boolean {
   // User override
   if (options.forceMultiStage === true) return true;
   if (options.forceDirect === true) return false;
@@ -32,13 +29,17 @@ export function shouldUseMultiStage(
 
   for (const match of swimlaneMatches) {
     if (match[1]) {
-      const swimlaneList = match[1].split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      const swimlaneList = match[1]
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
       explicitSwimlanes += swimlaneList.length;
     }
   }
 
   const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
-  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || []).length;
+  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || [])
+    .length;
 
   const totalActors = explicitSwimlanes > 0 ? explicitSwimlanes : actors;
 

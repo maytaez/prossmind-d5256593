@@ -34,6 +34,7 @@ interface RequestLog {
   estimated_cost_usd: number | null;
   request_timestamp: string;
   source_function: string;
+  result_xml: string | null;
 }
 
 export function RequestsTable() {
