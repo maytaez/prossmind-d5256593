@@ -1,9 +1,12 @@
 import Navigation from "@/components/Navigation";
-import { Bot, Workflow, Eye, Zap, Shield, Gauge } from "lucide-react";
+import { Bot, Workflow, Eye, Zap, Shield, Gauge, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/layout/PageContainer";
 import { motion } from "framer-motion";
 import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
+import { Link } from "react-router-dom";
+import { typography } from "@/utils/typography";
 
 const featuresDetailed = [
   {
@@ -53,13 +56,30 @@ const Features = () => {
       
       <main className="pt-24 pb-20">
         <PageContainer>
-          <div className="text-center mb-16">
-            <h1 className="text-5xl font-bold mb-4">
-              Powerful <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Features</span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Everything you need to automate your business processes with cutting-edge AI technology
-            </p>
+          <div className="mb-16">
+            <div className="max-w-3xl">
+              <h1 className={typography.pageHeading}>
+                Powerful <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Features</span>
+              </h1>
+              <p className={`${typography.bodyLarge} text-muted-foreground`}>
+                Everything you need to automate your business processes with cutting-edge AI technology
+              </p>
+            </div>
+            
+            {/* CTAs - Left-aligned on desktop */}
+            <div className="flex flex-col sm:flex-row items-start gap-4 mt-8">
+              <Link to="/auth">
+                <Button size="lg" className="gap-2">
+                  Get Started
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link to="/pricing">
+                <Button variant="outline" size="lg">
+                  View Pricing
+                </Button>
+              </Link>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">

@@ -221,7 +221,7 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                   
                   const className = `px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap relative flex items-center gap-2 ${
                     isActive
-                      ? "text-primary-foreground"
+                      ? "text-primary-foreground font-semibold"
                       : "text-foreground/70 hover:text-foreground hover:bg-muted/80 hover:scale-[1.02]"
                   }`;
                   
@@ -253,11 +253,18 @@ const Navigation = ({ user: userProp }: { user?: User | null }) => {
                       aria-label={`Navigate to ${item.name} page`}
                     >
                       {isActive ? (
-                        <motion.div
-                          layoutId={prefersReducedMotion ? undefined : "activeNavIndicator"}
-                          className="absolute inset-0 bg-primary rounded-full shadow-md"
-                          transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
-                        />
+                        <>
+                          <motion.div
+                            layoutId={prefersReducedMotion ? undefined : "activeNavIndicator"}
+                            className="absolute inset-0 bg-primary rounded-full shadow-md"
+                            transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
+                          />
+                          <motion.div
+                            layoutId={prefersReducedMotion ? undefined : "activeUnderline"}
+                            className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-foreground rounded-full"
+                            transition={getReducedMotionTransition(prefersReducedMotion) || { type: "spring", stiffness: 380, damping: 30 }}
+                          />
+                        </>
                       ) : null}
                       {Icon && <Icon className="h-4 w-4 relative z-10" />}
                       <span className="relative z-10">{item.name}</span>
