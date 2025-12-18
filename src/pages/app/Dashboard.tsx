@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import PageContainer from "@/components/layout/PageContainer";
 import { navigateWithSubdomain } from "@/utils/subdomain";
 import { getRecentProjects, updateLastAccessed, type Project } from "@/utils/projects-service";
+import { featureFlags } from "@/config/featureFlags";
 
 interface DashboardProps {
   user: User;
@@ -29,7 +30,11 @@ const Dashboard = ({ user }: DashboardProps) => {
         console.error("Failed to load recent projects:", error);
         setRecentProjects([]);
       } else if (data) {
-        setRecentProjects(data);
+        // Filter out P&ID projects if feature flag is disabled
+        const filteredProjects = featureFlags.enablePidDiagrams 
+          ? data 
+          : data.filter(p => p.diagram_type !== 'pid');
+        setRecentProjects(filteredProjects);
       }
       setIsLoadingProjects(false);
     };
@@ -62,7 +67,7 @@ const Dashboard = ({ user }: DashboardProps) => {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <div className={`grid gap-6 mb-8 ${featureFlags.enablePidDiagrams ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
           <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/bpmn-generator')}>
             <CardHeader className="flex-1">
               <div className="flex flex-col items-center text-center mb-4">
@@ -79,21 +84,23 @@ const Dashboard = ({ user }: DashboardProps) => {
             </CardContent>
           </Card>
 
-          <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/pid-generator')}>
-            <CardHeader className="flex-1">
-              <div className="flex flex-col items-center text-center mb-4">
-                <Factory className="h-10 w-10 text-primary mb-4" />
-                <CardTitle>New P&ID Diagram</CardTitle>
-              </div>
-              <CardDescription className="text-center">Create a new piping and instrumentation diagram</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-auto">
-              <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateWithSubdomain(navigate, '/pid-generator'); }}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create P&ID
-              </Button>
-            </CardContent>
-          </Card>
+          {featureFlags.enablePidDiagrams && (
+            <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/pid-generator')}>
+              <CardHeader className="flex-1">
+                <div className="flex flex-col items-center text-center mb-4">
+                  <Factory className="h-10 w-10 text-primary mb-4" />
+                  <CardTitle>New P&ID Diagram</CardTitle>
+                </div>
+                <CardDescription className="text-center">Create a new piping and instrumentation diagram</CardDescription>
+              </CardHeader>
+              <CardContent className="mt-auto">
+                <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateWithSubdomain(navigate, '/pid-generator'); }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create P&ID
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="cursor-pointer hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05),0_0_20px_hsl(var(--primary)/0.3)] hover:scale-[1.02] hover:-translate-y-1 transition-all duration-300 flex flex-col" onClick={() => navigateWithSubdomain(navigate, '/vision-ai')}>
             <CardHeader className="flex-1">
