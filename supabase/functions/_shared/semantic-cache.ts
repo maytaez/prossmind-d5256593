@@ -3,8 +3,8 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 // Configuration
 const CACHE_LOOKUP_TIMEOUT = 2000; // 2 seconds max for cache lookup
 const SIMILARITY_THRESHOLD = 0.9; // 90% similarity required for cache hit
-const EMBEDDING_MODEL = "text-embedding-004";
-const EMBEDDING_DIMENSIONS = 768; // text-embedding-004 outputs 768-dimensional vectors
+const EMBEDDING_MODEL = "text-embedding-3-small"; // OpenAI model
+const EMBEDDING_DIMENSIONS = 1536; // OpenAI text-embedding-3-small outputs 1536-dimensional vectors
 
 export interface CacheResult {
     id: string;
@@ -45,36 +45,45 @@ export async function generatePromptHash(prompt: string): Promise<string> {
 }
 
 /**
- * Generate vector embedding for a text using Gemini's embedding API
+ * Generate vector embedding for a text using OpenAI's embedding API
+ * Uses text-embedding-3-small which outputs 1536-dimensional vectors
  */
-export async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
+export async function generateEmbedding(text: string, _googleApiKey: string): Promise<number[]> {
     const startTime = Date.now();
 
     try {
+        // Get OpenAI API key from environment
+        const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+        if (!OPENAI_API_KEY) {
+            throw new Error('OPENAI_API_KEY not configured in environment variables');
+        }
+
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${apiKey}`,
+            'https://api.openai.com/v1/embeddings',
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`
+                },
                 body: JSON.stringify({
-                    model: `models/${EMBEDDING_MODEL}`,
-                    content: {
-                        parts: [{ text: text }]
-                    }
+                    model: EMBEDDING_MODEL,
+                    input: text,
+                    encoding_format: 'float'
                 }),
             }
         );
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Embedding API error: ${errorText}`);
+            throw new Error(`OpenAI Embedding API error: ${errorText}`);
         }
 
         const data = await response.json();
-        const embedding = data.embedding?.values;
+        const embedding = data.data?.[0]?.embedding;
 
         if (!embedding || !Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS) {
-            throw new Error(`Invalid embedding response: expected ${EMBEDDING_DIMENSIONS} dimensions`);
+            throw new Error(`Invalid embedding response: expected ${EMBEDDING_DIMENSIONS} dimensions, got ${embedding?.length || 0}`);
         }
 
         const duration = Date.now() - startTime;
@@ -221,19 +230,26 @@ export function storeCacheAsync(options: CacheStoreOptions): void {
         try {
             console.log(`[Cache] Generating hash and embedding...`);
 
-            // Generate hash and embedding
-            const [promptHash, embedding] = await Promise.all([
-                generatePromptHash(prompt),
-                generateEmbedding(prompt, googleApiKey)
-            ]);
+            // Generate hash (always succeeds)
+            const promptHash = await generatePromptHash(prompt);
 
-            console.log(`[Cache] Hash: ${promptHash.substring(0, 16)}..., Embedding dims: ${embedding.length}`);
+            // Try to generate embedding, but don't fail if it doesn't work
+            let embedding: number[] | null = null;
+            try {
+                embedding = await generateEmbedding(prompt, googleApiKey);
+                console.log(`[Cache] ✅ Embedding generated: ${embedding.length} dimensions`);
+            } catch (embeddingError) {
+                console.warn('[Cache] ⚠️  Embedding generation failed, storing without embedding:', embeddingError);
+                // Continue without embedding - we'll still get exact hash cache benefits
+            }
+
+            console.log(`[Cache] Hash: ${promptHash.substring(0, 16)}..., Has embedding: ${embedding !== null}`);
 
             // Prepare the data
             const cacheData = {
                 prompt_text: prompt,
                 prompt_hash: promptHash,
-                prompt_embedding: embedding,
+                prompt_embedding: embedding, // Will be null if embedding failed
                 diagram_type: diagramType,
                 bpmn_xml: bpmnXml,
                 hit_count: 1,
@@ -257,7 +273,8 @@ export function storeCacheAsync(options: CacheStoreOptions): void {
                 console.error('[Cache] Error details:', JSON.stringify(error, null, 2));
             } else {
                 const duration = Date.now() - startTime;
-                console.log(`[Cache] ✅ Stored successfully in ${duration}ms`);
+                const cacheType = embedding ? 'with embedding' : 'hash-only (no embedding)';
+                console.log(`[Cache] ✅ Stored successfully in ${duration}ms (${cacheType})`);
                 console.log(`[Cache] Stored entry:`, data ? `ID: ${data[0]?.id}` : 'No data returned');
             }
         } catch (error) {
