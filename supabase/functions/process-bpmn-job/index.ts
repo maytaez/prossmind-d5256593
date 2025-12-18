@@ -17,7 +17,7 @@ interface BpmnGenerationJob {
   id: string;
   user_id: string;
   prompt: string;
-  diagram_type: "bpmn" | "pid";
+  diagram_type: 'bpmn' | 'pid';
   source_type: string;
   status: string;
 }
@@ -68,83 +68,6 @@ function sanitizeBpmnXml(xml: string): string {
   return sanitized.trim();
 }
 
-// Repair truncated XML by removing incomplete elements
-function repairTruncatedXml(xml: string): string {
-  let repaired = xml;
-
-  // Find and remove incomplete condition expressions
-  // Pattern 1: conditionExpression with ${... that doesn't have closing brace
-  // Match: <bpmn:conditionExpression>${... (without closing })
-  const incompleteConditionRegex = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
-  let matches: Array<{ match: string, index: number, expr: string }> = [];
-  let match;
-
-  while ((match = incompleteConditionRegex.exec(repaired)) !== null) {
-    const expr = match[1];
-    // Check if expression is incomplete (doesn't end with })
-    if (!expr.endsWith('}')) {
-      matches.push({ match: match[0], index: match.index, expr });
-    }
-  }
-
-  // Remove matches in reverse order to preserve indices
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { match: matchStr, index, expr } = matches[i];
-    console.warn(`[XML Repair] Removing incomplete condition expression: ${expr}`);
-
-    // Find if this is inside a sequenceFlow
-    const beforeMatch = repaired.substring(0, index);
-    const afterMatch = repaired.substring(index + matchStr.length);
-    const sequenceFlowStart = beforeMatch.lastIndexOf('<bpmn:sequenceFlow');
-
-    if (sequenceFlowStart !== -1) {
-      // Find the matching closing tag
-      const sequenceFlowEnd = afterMatch.indexOf('</bpmn:sequenceFlow>');
-      if (sequenceFlowEnd !== -1) {
-        // Remove the entire sequenceFlow
-        repaired = beforeMatch.substring(0, sequenceFlowStart) +
-          afterMatch.substring(sequenceFlowEnd + '</bpmn:sequenceFlow>'.length);
-      } else {
-        // Just remove the condition expression
-        repaired = beforeMatch + afterMatch;
-      }
-    } else {
-      // Just remove the condition expression
-      repaired = beforeMatch + afterMatch;
-    }
-  }
-
-  // Pattern 2: conditionExpression cut off mid-generation (no closing tag, ends with ${...)
-  // This catches cases where the XML ends abruptly like: <bpmn:conditionExpression>${loanAmount
-  repaired = repaired.replace(
-    /<bpmn:sequenceFlow[^>]*>\s*<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/gm,
-    (match) => {
-      console.warn(`[XML Repair] Removing sequence flow with cut-off condition expression`);
-      return '';
-    }
-  );
-
-  // Pattern 3: Any remaining incomplete ${ expressions at the end of the file (standalone)
-  repaired = repaired.replace(/(\$\{[^}]*?)$/m, '');
-
-  // Ensure XML ends properly
-  if (!repaired.trim().endsWith('</bpmn:definitions>')) {
-    // Try to close any open tags before definitions
-    const lastDefinitionsIndex = repaired.lastIndexOf('</bpmn:definitions>');
-    if (lastDefinitionsIndex > 0) {
-      repaired = repaired.substring(0, lastDefinitionsIndex) + '</bpmn:definitions>';
-    } else if (repaired.includes('<bpmn:definitions')) {
-      // Find the last complete element and close definitions there
-      const lastProcessIndex = repaired.lastIndexOf('</bpmn:process>');
-      if (lastProcessIndex > 0) {
-        repaired = repaired.substring(0, lastProcessIndex + '</bpmn:process>'.length) + '\n</bpmn:definitions>';
-      }
-    }
-  }
-
-  return repaired;
-}
-
 // Validate BPMN XML (exact copy from generate-bpmn for consistency)
 function validateBpmnXml(xml: string): ValidationResult {
   if (!xml || typeof xml !== "string") return { isValid: false, error: "Invalid XML: empty or non-string input" };
@@ -155,68 +78,6 @@ function validateBpmnXml(xml: string): ValidationResult {
     return { isValid: false, error: "Missing BPMN process element" };
   if (!xml.includes("<bpmndi:BPMNDiagram") && !xml.includes("<bpmndi:BPMNPlane"))
     return { isValid: false, error: "Missing BPMN diagram interchange" };
-
-  // Check for truncated/incomplete condition expressions
-  // Pattern 1: conditionExpression with ${... that doesn't have closing brace before </conditionExpression>
-  const incompleteConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^}]*?)<\/bpmn:conditionExpression>/g;
-  let incompleteConditions: string[] = [];
-  let conditionMatch;
-  while ((conditionMatch = incompleteConditionPattern.exec(xml)) !== null) {
-    const expr = conditionMatch[1];
-    // Check if expression is incomplete (doesn't end with })
-    if (!expr.endsWith('}')) {
-      incompleteConditions.push(conditionMatch[0]);
-    }
-  }
-  if (incompleteConditions.length > 0) {
-    return {
-      isValid: false,
-      error: "Truncated XML: incomplete condition expressions detected",
-      errorDetails: `Found ${incompleteConditions.length} incomplete condition expression(s). The XML appears to have been truncated during generation.`,
-    };
-  }
-
-  // Check for condition expressions cut off mid-generation (no closing tag)
-  // Pattern: <bpmn:conditionExpression>${... at end of file or before unexpected content
-  const cutOffConditionPattern = /<bpmn:conditionExpression[^>]*>(\$\{[^<}]*?)$/m;
-  const cutOffMatch = xml.match(cutOffConditionPattern);
-  if (cutOffMatch) {
-    return {
-      isValid: false,
-      error: "Truncated XML: condition expressions cut off",
-      errorDetails: `Found condition expression that was cut off: ${cutOffMatch[1]}. The XML appears to have been truncated during generation.`,
-    };
-  }
-
-  // Check for incomplete ${ expressions anywhere (standalone, not in tags) - this catches cases like "${loanAmount" at end
-  const standaloneIncompletePattern = /(\$\{[^}]*?)$/m;
-  const standaloneMatch = xml.match(standaloneIncompletePattern);
-  if (standaloneMatch) {
-    // Check if this is at the very end of the file (no closing tags after it)
-    const matchIndex = xml.lastIndexOf(standaloneMatch[0]);
-    const afterMatch = xml.substring(matchIndex + standaloneMatch[0].length).trim();
-    // If there's no proper closing tag after the incomplete expression, it's truncated
-    if (!afterMatch || (!afterMatch.includes('</bpmn:definitions>') && !afterMatch.includes('</bpmn:conditionExpression>'))) {
-      return {
-        isValid: false,
-        error: "Truncated XML: incomplete expression at end of file",
-        errorDetails: `Found incomplete expression at end: ${standaloneMatch[1]}. The XML appears to have been truncated during generation.`,
-      };
-    }
-  }
-
-  // Check if XML ends properly - must end with </bpmn:definitions>
-  if (!xml.trim().endsWith('</bpmn:definitions>')) {
-    // Check if there's an incomplete tag or expression at the end
-    const last100Chars = xml.substring(Math.max(0, xml.length - 100));
-    if (last100Chars.includes('${') && !last100Chars.includes('}')) {
-      return {
-        isValid: false,
-        error: "Truncated XML: file ends with incomplete expression",
-        errorDetails: `XML does not end properly and contains incomplete expression. The XML appears to have been truncated during generation.`,
-      };
-    }
-  }
 
   const unclosedWaypoints = xml.match(/<di:waypoint[^>]*[^\/]>/gi);
   if (unclosedWaypoints && unclosedWaypoints.length > 0)
@@ -264,7 +125,7 @@ async function generateBpmnXmlWithGemini(
     generationPrompt = `${prompt}\n\n⚠️ CRITICAL: Previous BPMN XML failed validation: ${retryContext.error}${retryContext.errorDetails ? `\nDetails: ${retryContext.errorDetails}` : ""}\n\nFix: ensure all tags closed, di:waypoint self-closing, no invalid elements, proper namespaces.`;
   }
 
-  const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType as "bpmn" | "pid" | "dmn", languageCode, languageName);
+  const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType, languageCode, languageName);
   const systemMessage = messages.find((m: any) => m.role === "system");
   const userMessages = messages.filter((m: any) => m.role === "user");
 
@@ -308,15 +169,11 @@ async function generateBpmnXmlWithGemini(
   const aggressive = estimatedTokens > maxTokens * 0.8;
 
   if (needsDIOptimization(bpmnXml, maxTokens) || aggressive) {
-    console.log(
-      `[BPMN DI Optimization] Before: ${beforeOptimization} chars (~${estimatedTokens} tokens), aggressive: ${aggressive}`,
-    );
+    console.log(`[BPMN DI Optimization] Before: ${beforeOptimization} chars (~${estimatedTokens} tokens), aggressive: ${aggressive}`);
     bpmnXml = optimizeBpmnDI(bpmnXml, aggressive);
     const afterOptimization = bpmnXml.length;
     const reduction = (((beforeOptimization - afterOptimization) / beforeOptimization) * 100).toFixed(1);
-    console.log(
-      `[BPMN DI Optimization] After: ${afterOptimization} chars (~${estimateTokenCount(bpmnXml)} tokens), reduced: ${reduction}%`,
-    );
+    console.log(`[BPMN DI Optimization] After: ${afterOptimization} chars (~${estimateTokenCount(bpmnXml)} tokens), reduced: ${reduction}%`);
   }
 
   console.log("[GEMINI RESPONSE] Final length:", bpmnXml.length);
@@ -334,16 +191,14 @@ async function generateBpmnStructureOnly(
   maxTokens: number,
   temperature: number,
 ): Promise<string> {
-  const structureOnlyPrompt =
-    prompt +
-    `\n\n🚨 CRITICAL - STRUCTURE ONLY MODE:
+  const structureOnlyPrompt = prompt + `\n\n🚨 CRITICAL - STRUCTURE ONLY MODE:
 Generate ONLY the BPMN 2.0 process structure. Do NOT generate any visual layout information.
 EXCLUDE completely: All <bpmndi:BPMNDiagram>, <bpmndi:BPMNPlane>, <bpmndi:BPMNShape>, <bpmndi:BPMNEdge>, <dc:Bounds>, <di:waypoint> tags.
 INCLUDE: <bpmn:process>, <bpmn:lane>, <bpmn:laneSet>, all tasks, events, gateways, <bpmn:sequenceFlow> with complete attributes and IDs.
 The diagram coordinates will be calculated programmatically after generation.
 End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
 
-  const messages = buildMessagesWithExamples(systemPrompt, structureOnlyPrompt, diagramType as "bpmn" | "pid" | "dmn", languageCode, languageName);
+  const messages = buildMessagesWithExamples(systemPrompt, structureOnlyPrompt, diagramType, languageCode, languageName);
   const systemMessage = messages.find((m: any) => m.role === "system");
   const userMessages = messages.filter((m: any) => m.role === "user");
 
@@ -382,384 +237,425 @@ End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
   // Remove complete or truncated <bpmndi:BPMNDiagram> sections
   if (bpmnStructure.includes('<bpmndi:')) {
     console.warn(`[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction, stripping them`);
-    // Remove bpmndi section
-    bpmnStructure = bpmnStructure.replace(/<bpmndi:[\s\S]*?<\/bpmndi:BPMNDiagram>/gi, '');
-    bpmnStructure = bpmnStructure.replace(/<bpmndi:[\s\S]*$/gi, '');
-    // Ensure it ends with </bpmn:definitions>
-    if (!bpmnStructure.trim().endsWith('</bpmn:definitions>')) {
-      bpmnStructure = bpmnStructure.replace(/<\/bpmn:definitions>.*$/gi, '</bpmn:definitions>');
-      if (!bpmnStructure.includes('</bpmn:definitions>')) {
-        bpmnStructure += '\n</bpmn:definitions>';
+
+    // Detect if prompt is complex - be aggressive to prevent truncation
+    const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
+
+    // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
+    const explicitSwimLanes = (
+      prompt.match(
+        /(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi,
+      ) || []
+    ).length;
+
+    // Detect complex BPMN features
+    const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
+    const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
+    const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
+    const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
+    const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(
+      Boolean,
+    ).length;
+
+    // Count multiple actors/participants (look for comma-separated names or "and")
+    const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
+    const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
+
+    // Determine if structure-only mode is needed
+    const isComplex = prompt.length > 1500 || laneCount >= 3;
+    const useStructureOnly =
+      prompt.length > 1500 || // Long prompts
+      laneCount >= 3 || // Multiple lane keywords
+      explicitSwimLanes > 0 || // Explicit swimlanes listed
+      complexFeatureCount >= 2 || // Multiple complex features
+      hasMultipleActors; // Multiple actors/participants
+
+    console.log(
+      `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`,
+    );
+
+    // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
+    if (useStructureOnly) {
+      console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
+      try {
+        const structure = await generateBpmnStructureOnly(
+          prompt,
+          systemPrompt,
+          diagramType,
+          languageCode,
+          languageName,
+          googleApiKey,
+          maxTokens,
+          temperature,
+        );
+
+        // Add diagram layout automatically
+        const completeXml = await addBpmnDiagram(structure);
+        console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
+        return completeXml;
+      } catch (error) {
+        console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
+        // Fall through to compact DI mode
       }
+
+      // Sanitize XML
+      bpmnStructure = sanitizeBpmnXml(bpmnStructure);
+
+      console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
+      return bpmnStructure;
     }
-  }
 
-  // Sanitize XML
-  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
+    // Retry BPMN generation with validation
+    async function retryBpmnGeneration(
+      prompt: string,
+      systemPrompt: string,
+      diagramType: "bpmn" | "pid",
+      languageCode: string,
+      languageName: string,
+      googleApiKey: string,
+      maxTokens: number,
+      temperature: number,
+      maxAttempts: number = 3,
+    ): Promise<string> {
+      let lastValidationError: ValidationResult | null = null;
 
-  console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
-  return bpmnStructure;
-}
+      // Detect if prompt is complex - be aggressive to prevent truncation
+      const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
 
-// Retry BPMN generation with validation
-async function retryBpmnGeneration(
-  prompt: string,
-  systemPrompt: string,
-  diagramType: "bpmn" | "pid",
-  languageCode: string,
-  languageName: string,
-  googleApiKey: string,
-  maxTokens: number,
-  temperature: number,
-  maxAttempts: number = 3,
-): Promise<string> {
-  let lastValidationError: ValidationResult | null = null;
+      // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
+      const explicitSwimLanes = (prompt.match(/(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi) || []).length;
 
-  // Detect if prompt is complex - be aggressive to prevent truncation
-  const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
+      // Detect complex BPMN features
+      const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
+      const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
+      const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
+      const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
+      const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(Boolean).length;
 
-  // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
-  const explicitSwimLanes = (prompt.match(/(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi) || []).length;
+      // Count multiple actors/participants (look for comma-separated names or "and")
+      const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
+      const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
 
-  // Detect complex BPMN features
-  const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
-  const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
-  const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
-  const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
-  const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(Boolean).length;
+      // Determine if structure-only mode is needed
+      const isComplex = prompt.length > 1500 || laneCount >= 3;
+      const useStructureOnly =
+        prompt.length > 1500 || // Long prompts
+        laneCount >= 3 || // Multiple lane keywords
+        explicitSwimLanes > 0 || // Explicit swimlanes listed
+        complexFeatureCount >= 2 || // Multiple complex features
+        hasMultipleActors; // Multiple actors/participants
 
-  // Count multiple actors/participants (look for comma-separated names or "and")
-  const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
-  const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
+      console.log(`[BPMN Generation] Structure-only: ${useStructureOnly ? 'YES' : 'NO'} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`);
 
-  // Determine if structure-only mode is needed
-  const isComplex = prompt.length > 1500 || laneCount >= 3;
-  const useStructureOnly =
-    prompt.length > 1500 || // Long prompts
-    laneCount >= 3 || // Multiple lane keywords
-    explicitSwimLanes > 0 || // Explicit swimlanes listed
-    complexFeatureCount >= 2 || // Multiple complex features
-    hasMultipleActors; // Multiple actors/participants
+      // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
+      if (useStructureOnly) {
+        console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
+        try {
+          const structure = await generateBpmnStructureOnly(
+            prompt,
+            systemPrompt,
+            diagramType,
+            languageCode,
+            languageName,
+            googleApiKey,
+            maxTokens,
+            temperature,
+          );
 
-  console.log(`[BPMN Generation] Structure-only: ${useStructureOnly ? 'YES' : 'NO'} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`);
-
-  // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
-  if (useStructureOnly) {
-    console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
-    try {
-      const structure = await generateBpmnStructureOnly(
-        prompt,
-        systemPrompt,
-        diagramType,
-        languageCode,
-        languageName,
-        googleApiKey,
-        maxTokens,
-        temperature,
-      );
-
-      // Add diagram layout automatically
-      const completeXml = await addBpmnDiagram(structure);
-      console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
-      return completeXml;
-    } catch (error) {
-      console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
-      // Fall through to compact DI mode
-    }
-  }
-
-  // For complex diagrams or failover, use compact DI mode
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
-
-    try {
-      const bpmnXml = await generateBpmnXmlWithGemini(
-        prompt,
-        systemPrompt,
-        diagramType,
-        languageCode,
-        languageName,
-        googleApiKey,
-        maxTokens,
-        temperature,
-        lastValidationError
-          ? {
-            error: lastValidationError.error || "Validation failed",
-            errorDetails: lastValidationError.errorDetails,
-            attemptNumber: attempt,
-          }
-          : undefined,
-        isComplex || attempt > 1, // Use compact DI for complex prompts or retries
-      );
-
-      let xmlToValidate = bpmnXml;
-
-      // Check for truncation and try to repair
-      const validation = validateBpmnXml(xmlToValidate);
-      if (!validation.isValid && validation.error?.includes("Truncated XML")) {
-        console.warn(`[BPMN Generation] Truncated XML detected, attempting repair...`);
-        xmlToValidate = repairTruncatedXml(xmlToValidate);
-        const repairedValidation = validateBpmnXml(xmlToValidate);
-        if (repairedValidation.isValid) {
-          console.log(`[BPMN Generation] Truncated XML repaired successfully on attempt ${attempt}`);
-          return xmlToValidate;
-        } else {
-          console.warn(`[BPMN Generation] Repair failed, will retry with structure-only mode`);
-          // Force structure-only mode on next attempt if truncation detected
-          if (attempt < maxAttempts) {
-            // Skip to structure-only retry
-            try {
-              console.log(`[BPMN Generation] Retrying with structure-only mode due to truncation`);
-              const structure = await generateBpmnStructureOnly(
-                prompt,
-                systemPrompt,
-                diagramType,
-                languageCode,
-                languageName,
-                googleApiKey,
-                maxTokens,
-                temperature,
-              );
-              const completeXml = await addBpmnDiagram(structure);
-              const structureValidation = validateBpmnXml(completeXml);
-              if (structureValidation.isValid) {
-                console.log(`[BPMN Generation] Structure-only mode succeeded after truncation`);
-                return completeXml;
-              }
-            } catch (structureError) {
-              console.error(`[BPMN Generation] Structure-only retry failed:`, structureError);
-            }
-          }
+          // Add diagram layout automatically
+          const completeXml = await addBpmnDiagram(structure);
+          console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
+          return completeXml;
+        } catch (error) {
+          console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
+          // Fall through to compact DI mode
         }
       }
 
-      if (validation.isValid) {
-        console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
-        return xmlToValidate;
+      // For complex diagrams or failover, use compact DI mode
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
+
+        try {
+          const bpmnXml = await generateBpmnXmlWithGemini(
+            prompt,
+            systemPrompt,
+            diagramType,
+            languageCode,
+            languageName,
+            googleApiKey,
+            maxTokens,
+            temperature,
+            lastValidationError
+              ? {
+                error: lastValidationError.error || "Validation failed",
+                errorDetails: lastValidationError.errorDetails,
+                attemptNumber: attempt,
+              }
+              : undefined,
+            isComplex || attempt > 1, // Use compact DI for complex prompts or retries
+          );
+
+          const validation = validateBpmnXml(bpmnXml);
+          if (validation.isValid) {
+            console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
+            return bpmnXml;
+          }
+
+          lastValidationError = validation;
+          console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
+          if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
+          if (attempt === maxAttempts) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
 
-      lastValidationError = validation;
-      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
-      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
-      if (attempt === maxAttempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-
-  throw new Error(
-    `Failed to generate valid BPMN XML after ${maxAttempts} attempts. Last error: ${lastValidationError?.error || "Unknown"}`,
-  );
-}
-
-// Main handler
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const { jobId } = await req.json();
-
-    if (!jobId) {
-      throw new Error("Job ID is required");
+      throw new Error(
+        `Failed to generate valid BPMN XML after ${maxAttempts} attempts. Last error: ${lastValidationError?.error || "Unknown"}`,
+      );
     }
 
-    console.log(`[Job ${jobId}] Starting async BPMN generation`);
+    // Main handler
+    Deno.serve(async (req) => {
+      if (req.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders });
+      }
 
-    // Create Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      try {
+        const { jobId } = await req.json();
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Supabase configuration missing");
-    }
+        if (!jobId) {
+          throw new Error('Job ID is required');
+        }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+        console.log(`[Job ${jobId}] Starting async BPMN generation`);
 
-    // Get job from database
-    const { data: job, error: fetchError } = await supabase
-      .from("vision_bpmn_jobs")
-      .select("*")
-      .eq("id", jobId)
-      .eq("source_type", "prompt") // Only process prompt-based jobs
-      .single();
+        // Create Supabase client
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (fetchError || !job) {
-      console.error(`[Job ${jobId}] Job not found:`, fetchError);
-      return new Response(JSON.stringify({ error: "Job not found" }), { status: 404, headers: corsHeaders });
-    }
+        if (!supabaseUrl || !supabaseKey) {
+          throw new Error('Supabase configuration missing');
+        }
 
-    const typedJob = job as unknown as BpmnGenerationJob;
+        const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!typedJob.prompt) {
-      throw new Error("Job prompt is missing");
-    }
+        // Get job from database
+        const { data: job, error: fetchError } = await supabase
+          .from('vision_bpmn_jobs')
+          .select('*')
+          .eq('id', jobId)
+          .eq('source_type', 'prompt') // Only process prompt-based jobs
+          .single();
 
-    // Update status to processing
-    await supabase
-      .from("vision_bpmn_jobs")
-      .update({
-        status: "processing",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
+        if (fetchError || !job) {
+          console.error(`[Job ${jobId}] Job not found:`, fetchError);
+          return new Response(
+            JSON.stringify({ error: 'Job not found' }),
+            { status: 404, headers: corsHeaders }
+          );
+        }
 
-    console.log(`[Job ${jobId}] Processing prompt: ${typedJob.prompt.substring(0, 100)}...`);
+        const typedJob = job as unknown as BpmnGenerationJob;
 
-    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-    if (!GOOGLE_API_KEY) {
-      throw new Error("Google API key not configured");
-    }
+        if (!typedJob.prompt) {
+          throw new Error('Job prompt is missing');
+        }
 
-    // Detect language
-    const languageCode = detectLanguage(typedJob.prompt);
-    const languageName = getLanguageName(languageCode);
+        // Update status to processing
+        await supabase
+          .from('vision_bpmn_jobs')
+          .update({
+            status: 'processing',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
 
-    console.log(`[Job ${jobId}] Language: ${languageName} (${languageCode})`);
+        console.log(`[Job ${jobId}] Processing prompt: ${typedJob.prompt.substring(0, 100)}...`);
 
-    // Log generation request
-    let logId: string | null = null;
-    if (typedJob.user_id) {
-      logId = await logGenerationRequest({
-        supabase,
-        userId: typedJob.user_id,
-        prompt: typedJob.prompt,
-        diagramType: typedJob.diagram_type,
-        detectedLanguage: languageCode,
-        sourceFunction: 'process-bpmn-job',
-        isMultiDiagram: false,
-        jobId: jobId,
-      });
-    }
+        const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+        if (!GOOGLE_API_KEY) {
+          throw new Error('Google API key not configured');
+        }
 
-    // Check cache before generation
-    try {
-      console.log(`[Job ${jobId}] Checking cache for similar prompts...`);
-      const cachedResult = await checkCache({
-        prompt: typedJob.prompt,
-        diagramType: typedJob.diagram_type,
-        supabase,
-        googleApiKey: GOOGLE_API_KEY,
-      });
+        // Detect language
+        const languageCode = detectLanguage(typedJob.prompt);
+        const languageName = getLanguageName(languageCode);
 
-      if (cachedResult) {
-        const generationTime = 0; // Cache hit, no generation needed
-        console.log(
-          `[Job ${jobId}] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, returning cached result`,
-        );
+        console.log(`[Job ${jobId}] Language: ${languageName} (${languageCode})`);
 
-        // Log cache hit
-        if (logId) {
-          await logGenerationSuccess({
+        // Log generation request
+        let logId: string | null = null;
+        if (typedJob.user_id) {
+          logId = await logGenerationRequest({
             supabase,
-            logId,
-            resultXml: cachedResult.bpmn_xml,
-            durationMs: generationTime,
-            cacheHit: true,
-            cacheSimilarity: cachedResult.similarity,
+            userId: typedJob.user_id,
+            prompt: typedJob.prompt,
+            diagramType: typedJob.diagram_type,
+            detectedLanguage: languageCode,
+            sourceFunction: 'process-bpmn-job',
+            isMultiDiagram: false,
+            jobId: jobId,
           });
         }
 
-        // Update job with cached result
-        await supabase
-          .from("vision_bpmn_jobs")
-          .update({
-            status: "completed",
-            bpmn_xml: cachedResult.bpmn_xml,
-            model_used: "cache-hit",
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", jobId);
+        // Check cache before generation
+        try {
+          console.log(`[Job ${jobId}] Checking cache for similar prompts...`);
+          const cachedResult = await checkCache({
+            prompt: typedJob.prompt,
+            diagramType: typedJob.diagram_type,
+            supabase,
+            googleApiKey: GOOGLE_API_KEY,
+          });
 
-        return new Response(
-          JSON.stringify({
-            success: true,
-            jobId,
-            generationTimeMs: 0,
-            cacheHit: true,
-            similarity: cachedResult.similarity,
-          }),
-          { status: 200, headers: corsHeaders },
+          if (cachedResult) {
+            const generationTime = 0; // Cache hit, no generation needed
+            console.log(`[Job ${jobId}] 🎯 Cache hit! Similarity: ${(cachedResult.similarity * 100).toFixed(1)}%, returning cached result`);
+
+            // Log cache hit
+            if (logId) {
+              await logGenerationSuccess({
+                supabase,
+                logId,
+                resultXml: cachedResult.bpmn_xml,
+                durationMs: generationTime,
+                cacheHit: true,
+                cacheSimilarity: cachedResult.similarity,
+              });
+            }
+
+            // Update job with cached result
+            await supabase
+              .from('vision_bpmn_jobs')
+              .update({
+                status: 'completed',
+                bpmn_xml: cachedResult.bpmn_xml,
+                model_used: 'cache-hit',
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', jobId);
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                jobId,
+                generationTimeMs: generationTime,
+                cacheHit: true,
+                similarity: cachedResult.similarity
+              }),
+              { status: 200, headers: corsHeaders }
+            );
+          }
+        } catch (error) {
+          console.error(`[Job ${jobId}] Cache check failed:`, error);
+          // Continue with generation if cache check fails
+        }
+
+        // Get system prompt
+        const systemPrompt =
+          typedJob.diagram_type === "pid"
+            ? getPidSystemPrompt(languageCode, languageName)
+            : getBpmnSystemPrompt(languageCode, languageName, false, true);
+
+        // Get appropriate model and token limits based on prompt complexity
+        const modelSelection = selectModel({
+          promptLength: typedJob.prompt.length,
+          diagramType: typedJob.diagram_type,
+          hasMultiplePools: (typedJob.prompt.match(/pool|swimlane|lane/gi) || []).length > 1,
+          hasComplexGateways: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
+          hasSubprocesses: (typedJob.prompt.match(/subprocess|sub-process/gi) || []).length > 0,
+          hasMultipleParticipants: (typedJob.prompt.match(/actor|participant/gi) || []).length > 2,
+          hasErrorHandling: (typedJob.prompt.match(/error|exception|boundary/gi) || []).length > 0,
+          hasDataObjects: (typedJob.prompt.match(/data|document|artifact/gi) || []).length > 0,
+          hasMessageFlows: (typedJob.prompt.match(/message.*flow|message.*event/gi) || []).length > 0,
+        });
+
+        console.log(
+          `[Job ${jobId}] Model selection: ${modelSelection.model}, maxTokens: ${modelSelection.maxTokens}, reasoning: ${modelSelection.reasoning}`,
         );
-      }
-    } catch (error) {
-      console.error(`[Job ${jobId}] Cache check error:`, error);
-      // Continue with generation if cache check fails
-    }
 
-    // Get system prompt
-    const systemPrompt =
-      typedJob.diagram_type === "pid"
-        ? getPidSystemPrompt(languageCode, languageName)
-        : getBpmnSystemPrompt(languageCode, languageName, false, true);
+        // Track generation start time for logging
+        const startTime = Date.now();
 
-    // Get appropriate model and token limits based on prompt complexity
-    const modelSelection = selectModel({
-      promptLength: typedJob.prompt.length,
-      diagramType: typedJob.diagram_type,
-      hasMultiplePools: (typedJob.prompt.match(/pool|swimlane|lane/gi) || []).length > 1,
-      hasComplexGateways: (typedJob.prompt.match(/gateway|decision|exclusive|parallel|inclusive/gi) || []).length > 1,
-      hasSubprocesses: (typedJob.prompt.match(/subprocess|sub-process/gi) || []).length > 0,
-      hasMultipleParticipants: (typedJob.prompt.match(/actor|participant/gi) || []).length > 2,
-      hasErrorHandling: (typedJob.prompt.match(/error|exception|boundary/gi) || []).length > 0,
-      hasDataObjects: (typedJob.prompt.match(/data|document|artifact/gi) || []).length > 0,
-      hasMessageFlows: (typedJob.prompt.match(/message.*flow|message.*event/gi) || []).length > 0,
-    });
+        try {
+          // Generate BPMN (no timeout limit for background processing)
+          const bpmnXml = await retryBpmnGeneration(
+            typedJob.prompt,
+            systemPrompt,
+            typedJob.diagram_type,
+            languageCode,
+            languageName,
+            GOOGLE_API_KEY,
+            modelSelection.maxTokens, // Use dynamic token limit from model selection
+            modelSelection.temperature, // Use dynamic temperature
+            3, // max attempts
+          );
 
-    console.log(
-      `[Job ${jobId}] Model selection: ${modelSelection.model}, maxTokens: ${modelSelection.maxTokens}, reasoning: ${modelSelection.reasoning}`,
-    );
+          const generationTime = Date.now() - startTime;
+          console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
 
-    // Track generation start time for logging
-    const startTime = Date.now();
+          // Log successful generation
+          if (logId) {
+            await logGenerationSuccess({
+              supabase,
+              logId,
+              resultXml: bpmnXml,
+              durationMs: generationTime,
+              cacheHit: false,
+            });
+          }
 
-    try {
-      // Generate BPMN (no timeout limit for background processing)
-      let bpmnXml = await retryBpmnGeneration(
-        typedJob.prompt,
-        systemPrompt,
-        typedJob.diagram_type,
-        languageCode,
-        languageName,
-        GOOGLE_API_KEY,
-        modelSelection.maxTokens, // Use dynamic token limit from model selection
-        modelSelection.temperature, // Use dynamic temperature
-        3, // max attempts
-      );
+          // Store in cache asynchronously (fire-and-forget, doesn't block response)
+          storeCacheAsync({
+            prompt: typedJob.prompt,
+            bpmnXml: bpmnXml,
+            diagramType: typedJob.diagram_type,
+            supabase,
+            googleApiKey: GOOGLE_API_KEY,
+          });
 
-      const generationTime = Date.now() - startTime;
-      console.log(`[Job ${jobId}] BPMN generated successfully in ${generationTime}ms (${bpmnXml.length} chars)`);
+          // Store result
+          await supabase
+            .from("vision_bpmn_jobs")
+            .update({
+              status: "completed",
+              bpmn_xml: bpmnXml,
+              model_used: "gemini-2.5-pro",
+              completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", jobId);
 
-      // Final validation before logging success - catch any issues that might have been missed
-      const finalValidation = validateBpmnXml(bpmnXml);
-      if (!finalValidation.isValid) {
-        console.error(`[Job ${jobId}] Final validation failed after generation: ${finalValidation.error}`);
+          return new Response(
+            JSON.stringify({
+              success: true,
+              jobId,
+              generationTimeMs: generationTime,
+            }),
+            { status: 200, headers: corsHeaders },
+          );
+        } catch (generationError) {
+          console.error(`[Job ${jobId}] Generation failed:`, generationError);
 
-        // Try to repair one more time
-        const repairedXml = repairTruncatedXml(bpmnXml);
-        const repairedValidation = validateBpmnXml(repairedXml);
+          const errorMessage =
+            generationError instanceof Error ? generationError.message : "Unknown error during generation";
 
-        if (repairedValidation.isValid) {
-          console.log(`[Job ${jobId}] XML repaired after final validation`);
-          // Use repaired XML
-          bpmnXml = repairedXml;
-        } else {
-          // Validation failed even after repair - log as error
-          const errorMessage = `Generated XML failed validation: ${finalValidation.error}${finalValidation.errorDetails ? ` - ${finalValidation.errorDetails}` : ''}`;
-
+          // Log error
           if (logId) {
             await logGenerationError({
               supabase,
               logId,
               errorMessage,
-              errorStack: `Validation failed: ${finalValidation.error}`,
-              durationMs: generationTime,
+              errorStack: generationError instanceof Error ? generationError.stack : undefined,
+              durationMs: Date.now() - startTime,
             });
           }
 
+          // Store error
           await supabase
             .from("vision_bpmn_jobs")
             .update({
@@ -769,92 +665,21 @@ Deno.serve(async (req) => {
             })
             .eq("id", jobId);
 
-          throw new Error(errorMessage);
+          return new Response(
+            JSON.stringify({
+              error: generationError instanceof Error ? generationError.message : "Generation failed",
+              jobId,
+            }),
+            { status: 500, headers: corsHeaders },
+          );
         }
+      } catch (error) {
+        console.error("[process-bpmn-job] Error:", error);
+        return new Response(
+          JSON.stringify({
+            error: error instanceof Error ? error.message : "Unknown error",
+          }),
+          { status: 500, headers: corsHeaders },
+        );
       }
-
-      // Log successful generation (only after validation passes)
-      if (logId) {
-        await logGenerationSuccess({
-          supabase,
-          logId,
-          resultXml: bpmnXml,
-          durationMs: generationTime,
-          cacheHit: false,
-        });
-      }
-
-      // Store in cache asynchronously (fire-and-forget, doesn't block response)
-      storeCacheAsync({
-        prompt: typedJob.prompt,
-        bpmnXml: bpmnXml,
-        diagramType: typedJob.diagram_type,
-        supabase,
-        googleApiKey: GOOGLE_API_KEY,
-      });
-
-      // Store result
-      await supabase
-        .from("vision_bpmn_jobs")
-        .update({
-          status: "completed",
-          bpmn_xml: bpmnXml,
-          model_used: "gemini-2.5-pro",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          jobId,
-          generationTimeMs: generationTime,
-        }),
-        { status: 200, headers: corsHeaders },
-      );
-    } catch (generationError) {
-      console.error(`[Job ${jobId}] Generation failed:`, generationError);
-
-      const errorMessage =
-        generationError instanceof Error ? generationError.message : "Unknown error during generation";
-
-      // Log error
-      if (logId) {
-        await logGenerationError({
-          supabase,
-          logId,
-          errorMessage,
-          errorStack: generationError instanceof Error ? generationError.stack : undefined,
-          durationMs: Date.now() - startTime,
-        });
-      }
-
-      // Store error
-      await supabase
-        .from("vision_bpmn_jobs")
-        .update({
-          status: "failed",
-          error_message: errorMessage,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
-
-      return new Response(
-        JSON.stringify({
-          error: generationError instanceof Error ? generationError.message : "Generation failed",
-          jobId,
-        }),
-        { status: 500, headers: corsHeaders },
-      );
-    }
-  } catch (error) {
-    console.error("[process-bpmn-job] Error:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Unknown error",
-      }),
-      { status: 500, headers: corsHeaders },
-    );
-  }
-});
+    });
