@@ -233,191 +233,154 @@ End your XML at </bpmn:definitions> without any <bpmndi:*> section.`;
     .replace(/```\n?/g, "")
     .trim();
 
-  // CRITICAL: Strip any leaked DI (Gemini often ignores the structure-only instruction)
-  // Remove complete or truncated <bpmndi:BPMNDiagram> sections
-  if (bpmnStructure.includes('<bpmndi:')) {
-    console.warn(`[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction, stripping them`);
-
-    // Detect if prompt is complex - be aggressive to prevent truncation
-    const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
-
-    // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
-    const explicitSwimLanes = (
-      prompt.match(
-        /(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi,
-      ) || []
-    ).length;
-
-    // Detect complex BPMN features
-    const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
-    const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
-    const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
-    const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
-    const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(
-      Boolean,
-    ).length;
-
-    // Count multiple actors/participants (look for comma-separated names or "and")
-    const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
-    const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
-
-    // Determine if structure-only mode is needed
-    const isComplex = prompt.length > 1500 || laneCount >= 3;
-    const useStructureOnly =
-      prompt.length > 1500 || // Long prompts
-      laneCount >= 3 || // Multiple lane keywords
-      explicitSwimLanes > 0 || // Explicit swimlanes listed
-      complexFeatureCount >= 2 || // Multiple complex features
-      hasMultipleActors; // Multiple actors/participants
-
-    console.log(
-      `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`,
+  // CRITICAL: Strip any leaked DI (Gemini sometimes ignores structure-only instruction)
+  if (bpmnStructure.includes("<bpmndi:")) {
+    console.warn(
+      `[STRUCTURE ONLY] Warning: Output contains DI tags despite instruction; stripping from first <bpmndi:...> onward`,
     );
 
-    // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
-    if (useStructureOnly) {
-      console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
-      try {
-        const structure = await generateBpmnStructureOnly(
-          prompt,
-          systemPrompt,
-          diagramType,
-          languageCode,
-          languageName,
-          googleApiKey,
-          maxTokens,
-          temperature,
-        );
+    const diStart = bpmnStructure.indexOf("<bpmndi:");
+    if (diStart !== -1) {
+      let head = bpmnStructure.slice(0, diStart).trim();
 
-        // Add diagram layout automatically
-        const completeXml = await addBpmnDiagram(structure);
-        console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
-        return completeXml;
-      } catch (error) {
-        console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
-        // Fall through to compact DI mode
+      // Ensure we still end with a closing definitions tag if it exists later in the text
+      const closeTag = "</bpmn:definitions>";
+      if (!head.includes(closeTag)) {
+        const closeIdx = bpmnStructure.indexOf(closeTag, diStart);
+        if (closeIdx !== -1) head = `${head}\n${closeTag}`;
       }
 
-      // Sanitize XML
-      bpmnStructure = sanitizeBpmnXml(bpmnStructure);
-
-      console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
-      return bpmnStructure;
+      bpmnStructure = head;
     }
+  }
 
-    // Retry BPMN generation with validation
-    async function retryBpmnGeneration(
-      prompt: string,
-      systemPrompt: string,
-      diagramType: "bpmn" | "pid",
-      languageCode: string,
-      languageName: string,
-      googleApiKey: string,
-      maxTokens: number,
-      temperature: number,
-      maxAttempts: number = 3,
-    ): Promise<string> {
-      let lastValidationError: ValidationResult | null = null;
+  // Sanitize XML (removes leaked/invalid tags, fixes namespaces, etc.)
+  bpmnStructure = sanitizeBpmnXml(bpmnStructure);
 
-      // Detect if prompt is complex - be aggressive to prevent truncation
-      const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
+  console.log(`[STRUCTURE ONLY] Generated ${bpmnStructure.length} chars`);
+  return bpmnStructure;
+}
 
-      // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
-      const explicitSwimLanes = (prompt.match(/(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi) || []).length;
+// Retry BPMN generation with validation (top-level, used by main handler)
+async function retryBpmnGeneration(
+  prompt: string,
+  systemPrompt: string,
+  diagramType: "bpmn" | "pid",
+  languageCode: string,
+  languageName: string,
+  googleApiKey: string,
+  maxTokens: number,
+  temperature: number,
+  maxAttempts: number = 3,
+): Promise<string> {
+  let lastValidationError: ValidationResult | null = null;
 
-      // Detect complex BPMN features
-      const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
-      const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
-      const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
-      const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
-      const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(Boolean).length;
+  // Detect if prompt is complex - be aggressive to prevent truncation
+  const laneCount = (prompt.match(/lane|swimlane|pool/gi) || []).length;
 
-      // Count multiple actors/participants (look for comma-separated names or "and")
-      const actorMatches = prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
-      const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
+  // Count explicit swimlanes/participants (e.g., "Patient, System, Doctor")
+  const explicitSwimLanes = (
+    prompt.match(
+      /(?:swimlane|lane|pool|participant|actor)(?:s)?\s+(?:for|including|:)?\s*([A-Z][^,\.\n]+(?:,\s*[A-Z][^,\.\n]+)*)/gi,
+    ) || []
+  ).length;
 
-      // Determine if structure-only mode is needed
-      const isComplex = prompt.length > 1500 || laneCount >= 3;
-      const useStructureOnly =
-        prompt.length > 1500 || // Long prompts
-        laneCount >= 3 || // Multiple lane keywords
-        explicitSwimLanes > 0 || // Explicit swimlanes listed
-        complexFeatureCount >= 2 || // Multiple complex features
-        hasMultipleActors; // Multiple actors/participants
+  // Detect complex BPMN features
+  const hasGateways = /gateway|decision|exclusive|parallel|inclusive|event-based/gi.test(prompt);
+  const hasSubprocesses = /subprocess|sub-process|nested process/gi.test(prompt);
+  const hasMessageEvents = /message event|send.*message|receive.*message|notification/gi.test(prompt);
+  const hasBoundaryEvents = /boundary event|timer|escalat|interrupt/gi.test(prompt);
+  const complexFeatureCount = [hasGateways, hasSubprocesses, hasMessageEvents, hasBoundaryEvents].filter(Boolean)
+    .length;
 
-      console.log(`[BPMN Generation] Structure-only: ${useStructureOnly ? 'YES' : 'NO'} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`);
+  // Count multiple actors/participants (look for comma-separated names or "and")
+  const actorMatches =
+    prompt.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*(?:,|and)\s*([A-Z][a-z]+)/g) || [];
+  const hasMultipleActors = actorMatches.length >= 2 || explicitSwimLanes > 0;
 
-      // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
-      if (useStructureOnly) {
-        console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
-        try {
-          const structure = await generateBpmnStructureOnly(
-            prompt,
-            systemPrompt,
-            diagramType,
-            languageCode,
-            languageName,
-            googleApiKey,
-            maxTokens,
-            temperature,
-          );
+  // Determine if structure-only mode is needed
+  const isComplex = prompt.length > 1500 || laneCount >= 3;
+  const useStructureOnly =
+    prompt.length > 1500 || // Long prompts
+    laneCount >= 3 || // Multiple lane keywords
+    explicitSwimLanes > 0 || // Explicit swimlanes listed
+    complexFeatureCount >= 2 || // Multiple complex features
+    hasMultipleActors; // Multiple actors/participants
 
-          // Add diagram layout automatically
-          const completeXml = await addBpmnDiagram(structure);
-          console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
-          return completeXml;
-        } catch (error) {
-          console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
-          // Fall through to compact DI mode
-        }
-      }
+  console.log(
+    `[BPMN Generation] Structure-only: ${useStructureOnly ? "YES" : "NO"} (length: ${prompt.length}, lane keywords: ${laneCount}, explicit lanes: ${explicitSwimLanes}, complex features: ${complexFeatureCount}, multiple actors: ${hasMultipleActors})`,
+  );
 
-      // For complex diagrams or failover, use compact DI mode
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
-
-        try {
-          const bpmnXml = await generateBpmnXmlWithGemini(
-            prompt,
-            systemPrompt,
-            diagramType,
-            languageCode,
-            languageName,
-            googleApiKey,
-            maxTokens,
-            temperature,
-            lastValidationError
-              ? {
-                error: lastValidationError.error || "Validation failed",
-                errorDetails: lastValidationError.errorDetails,
-                attemptNumber: attempt,
-              }
-              : undefined,
-            isComplex || attempt > 1, // Use compact DI for complex prompts or retries
-          );
-
-          const validation = validateBpmnXml(bpmnXml);
-          if (validation.isValid) {
-            console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
-            return bpmnXml;
-          }
-
-          lastValidationError = validation;
-          console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
-          if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
-          if (attempt === maxAttempts) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
-
-      throw new Error(
-        `Failed to generate valid BPMN XML after ${maxAttempts} attempts. Last error: ${lastValidationError?.error || "Unknown"}`,
+  // For VERY complex diagrams, use structure-only mode (no DI from Gemini)
+  if (useStructureOnly) {
+    console.log(`[BPMN Generation] Using structure-only mode + automatic layout`);
+    try {
+      const structure = await generateBpmnStructureOnly(
+        prompt,
+        systemPrompt,
+        diagramType,
+        languageCode,
+        languageName,
+        googleApiKey,
+        maxTokens,
+        temperature,
       );
-    }
 
-    // Main handler
+      // Add diagram layout automatically
+      const completeXml = await addBpmnDiagram(structure);
+      console.log(`[BPMN Generation] Structure-only complete: ${completeXml.length} chars`);
+      return completeXml;
+    } catch (error) {
+      console.error(`[BPMN Generation] Structure-only failed, falling back to compact DI:`, error);
+      // Fall through to compact DI mode
+    }
+  }
+
+  // For complex diagrams or failover, use compact DI mode
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`[BPMN Generation] Attempt ${attempt}/${maxAttempts}`);
+
+    try {
+      const bpmnXml = await generateBpmnXmlWithGemini(
+        prompt,
+        systemPrompt,
+        diagramType,
+        languageCode,
+        languageName,
+        googleApiKey,
+        maxTokens,
+        temperature,
+        lastValidationError
+          ? {
+              error: lastValidationError.error || "Validation failed",
+              errorDetails: lastValidationError.errorDetails,
+              attemptNumber: attempt,
+            }
+          : undefined,
+        isComplex || attempt > 1, // Use compact DI for complex prompts or retries
+      );
+
+      const validation = validateBpmnXml(bpmnXml);
+      if (validation.isValid) {
+        console.log(`[BPMN Generation] Valid XML on attempt ${attempt}`);
+        return bpmnXml;
+      }
+
+      lastValidationError = validation;
+      console.warn(`[BPMN Generation] Validation failed attempt ${attempt}:`, validation.error);
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error(`[BPMN Generation] Error attempt ${attempt}:`, error);
+      if (attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  throw new Error(
+    `Failed to generate valid BPMN XML after ${maxAttempts} attempts. Last error: ${lastValidationError?.error || "Unknown"}`,
+  );
+}
+
     Deno.serve(async (req) => {
       if (req.method === "OPTIONS") {
         return new Response(null, { headers: corsHeaders });
