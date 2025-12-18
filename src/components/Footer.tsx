@@ -10,10 +10,10 @@ const Footer = () => {
   return (
     <footer className="border-t border-border bg-background">
       <div className="container mx-auto px-6 py-12">
-        {/* Main Footer Content - 3 Column Layout */}
+        {/* Main Footer Content - 4 Column Layout */}
         <motion.div 
           ref={ref}
-          className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8"
           variants={staggerContainerVariants}
           initial="hidden"
           animate={isInView ? "visible" : "hidden"}
@@ -41,17 +41,8 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
-                <a href={getSubdomainUrl('docs')} className="hover:text-foreground transition-colors relative group">
-                  Documentation
-                  <motion.span
-                    className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
-                    whileHover={{ width: "100%" }}
-                  />
-                </a>
-              </li>
-              <li>
-                <a href={getSubdomainUrl('status')} className="hover:text-foreground transition-colors relative group">
-                  Status
+                <a href={getSubdomainUrl('app')} className="hover:text-foreground transition-colors relative group">
+                  Dashboard
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}
@@ -61,36 +52,45 @@ const Footer = () => {
             </ul>
           </motion.div>
 
-          {/* Legal Column */}
+          {/* Resources Column - NEW */}
           <motion.div variants={staggerItemVariants}>
-            <h3 className="font-semibold text-lg mb-4">Legal</h3>
+            <h3 className="font-semibold text-lg mb-4">Resources</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link to="/privacy" className="hover:text-foreground transition-colors relative group">
-                  Privacy Policy
+                <a href={getSubdomainUrl('docs')} className="hover:text-foreground transition-colors relative group">
+                  Documentation
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}
                   />
-                </Link>
+                </a>
               </li>
               <li>
-                <Link to="/terms" className="hover:text-foreground transition-colors relative group">
-                  Terms of Service
+                <a href={getSubdomainUrl('docs')} className="hover:text-foreground transition-colors relative group">
+                  Tutorials
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}
                   />
-                </Link>
+                </a>
               </li>
               <li>
-                <Link to="/contact" className="hover:text-foreground transition-colors relative group">
-                  Contact
+                <a href={getSubdomainUrl('status')} className="hover:text-foreground transition-colors relative group">
+                  System Status
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}
                   />
-                </Link>
+                </a>
+              </li>
+              <li>
+                <a href={getSubdomainUrl('docs')} className="hover:text-foreground transition-colors relative group">
+                  API Reference
+                  <motion.span
+                    className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
+                    whileHover={{ width: "100%" }}
+                  />
+                </a>
               </li>
             </ul>
           </motion.div>
@@ -111,6 +111,31 @@ const Footer = () => {
               <li>
                 <Link to="/contact" className="hover:text-foreground transition-colors relative group">
                   Contact Us
+                  <motion.span
+                    className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
+                    whileHover={{ width: "100%" }}
+                  />
+                </Link>
+              </li>
+            </ul>
+          </motion.div>
+
+          {/* Legal Column */}
+          <motion.div variants={staggerItemVariants}>
+            <h3 className="font-semibold text-lg mb-4">Legal</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>
+                <Link to="/privacy" className="hover:text-foreground transition-colors relative group">
+                  Privacy Policy
+                  <motion.span
+                    className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
+                    whileHover={{ width: "100%" }}
+                  />
+                </Link>
+              </li>
+              <li>
+                <Link to="/terms" className="hover:text-foreground transition-colors relative group">
+                  Terms of Service
                   <motion.span
                     className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300"
                     whileHover={{ width: "100%" }}

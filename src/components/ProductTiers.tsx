@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { useScrollReveal, staggerContainerVariants, staggerItemVariants } from "@/hooks/useScrollReveal";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -10,22 +10,28 @@ const products = [
     name: "ProssMind Light",
     description: "Perfect for individuals and small teams",
     features: [
-      "Basic automation features",
-      "Up to 5 processes",
-      "Community support",
-      "Basic analytics",
+      { name: "Basic automation features", included: true },
+      { name: "Up to 5 processes", included: true },
+      { name: "Community support", included: true },
+      { name: "Basic analytics", included: true },
+      { name: "Vision automation", included: false },
+      { name: "Priority support", included: false },
+      { name: "Custom integrations", included: false },
+      { name: "Custom AI models", included: false },
     ],
   },
   {
     name: "ProssMind Vision",
     description: "Advanced features for growing businesses",
     features: [
-      "All Light features",
-      "Unlimited processes",
-      "Vision automation",
-      "Priority support",
-      "Advanced analytics",
-      "Custom integrations",
+      { name: "Basic automation features", included: true },
+      { name: "Unlimited processes", included: true },
+      { name: "Vision automation", included: true },
+      { name: "Priority support", included: true },
+      { name: "Advanced analytics", included: true },
+      { name: "Custom integrations", included: true },
+      { name: "Custom AI models", included: false },
+      { name: "On-premise deployment", included: false },
     ],
     popular: true,
   },
@@ -33,12 +39,12 @@ const products = [
     name: "Custom Models",
     description: "Enterprise-grade solution",
     features: [
-      "All Vision features",
-      "Custom AI models",
-      "Dedicated support",
-      "On-premise deployment",
-      "SLA guarantee",
-      "Training & consulting",
+      { name: "All Vision features", included: true },
+      { name: "Custom AI models", included: true },
+      { name: "Dedicated support", included: true },
+      { name: "On-premise deployment", included: true },
+      { name: "SLA guarantee", included: true },
+      { name: "Training & consulting", included: true },
     ],
   },
 ];
@@ -57,18 +63,20 @@ const ProductTiers = () => {
     >
       <div className="container mx-auto px-6">
         <motion.div 
-          className="text-center mb-16"
+          className="mb-16"
           initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
           whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={prefersReducedMotion ? {} : { duration: 0.6, delay: 0.2 }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Choose Your Plan
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Select the perfect plan for your business needs
-          </p>
+          <div className="max-w-3xl">
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Choose Your Plan
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Select the perfect plan for your business needs
+            </p>
+          </div>
         </motion.div>
 
         <motion.div 
@@ -158,10 +166,22 @@ const ProductTiers = () => {
                 <ul className="space-y-4 flex-grow">
                   {product.features.map((feature, idx) => (
                     <li key={idx} className="flex items-start gap-3">
-                      <div className="rounded-full bg-primary/10 p-1 flex-shrink-0">
-                        <Check className="h-4 w-4 text-primary" />
+                      <div className={`rounded-full p-1 flex-shrink-0 ${
+                        feature.included 
+                          ? "bg-primary/10" 
+                          : "bg-muted"
+                      }`}>
+                        {feature.included ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <X className="h-4 w-4 text-muted-foreground" />
+                        )}
                       </div>
-                      <span className="text-sm leading-relaxed">{feature}</span>
+                      <span className={`text-sm leading-relaxed ${
+                        feature.included ? "" : "text-muted-foreground line-through"
+                      }`}>
+                        {feature.name}
+                      </span>
                     </li>
                   ))}
                 </ul>
