@@ -7,13 +7,7 @@ import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } fr
 import { analyzePrompt, selectModel } from "../_shared/model-selection.ts";
 import { detectLanguage, getLanguageName } from "../_shared/language-detection.ts";
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../_shared/bpmn-di-optimizer.ts";
-import {
-  analyzePromptComplexity,
-  simplifyPrompt,
-  splitPromptIntoSubPrompts,
-  fallbackAnalysis,
-  fallbackSplit,
-} from "../_shared/prompt-analyzer.ts";
+
 import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../_shared/dashboard-logger.ts";
 
 interface ValidationResult {
@@ -28,19 +22,25 @@ interface SummarizationResult {
 }
 
 /**
- * Detect if prompt requires async generation (conservative thresholds)
- * Only use async for genuinely complex prompts that risk timeout
+ * Detect if prompt requires async generation (adjusted thresholds to prevent timeouts)
+ * Routes complex prompts to background jobs to avoid 60s edge function timeout
  */
 function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
-  const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
-  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || []).length;
+  const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service|business|court|creditor|customer|manager|team|user/gi) || []).length;
+  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision|approval|review|meeting|discharge/gi) || []).length;
 
-  // Conservative thresholds - only async for truly complex prompts
+  // Enhanced detection for business processes
+  const businessProcessKeywords = (prompt.match(/filing|paperwork|submit|review|approve|attend|meeting|issue|release|complete|determine/gi) || []).length;
+  const sequentialSteps = (prompt.match(/then|after|once|when|must|will|can/gi) || []).length;
+
+  // More aggressive thresholds to prevent timeouts
   return (
-    promptLength > 1500 ||           // Very long prompts
-    actors >= 4 ||                   // 4+ swimlanes/actors  
-    complexity >= 4 ||               // Multiple complex BPMN features
-    (actors >= 3 && complexity >= 2) // Moderate actors + complexity
+    promptLength > 800 ||            // Long prompts (lowered from 1500)
+    actors >= 3 ||                   // 3+ actors/entities (lowered from 4)
+    complexity >= 3 ||               // 3+ complex features (lowered from 4)
+    businessProcessKeywords >= 5 ||  // Business process with many steps
+    sequentialSteps >= 6 ||          // Many sequential steps
+    (actors >= 2 && complexity >= 2) // Moderate actors + complexity (lowered from 3+2)
   );
 }
 
@@ -378,11 +378,8 @@ Deno.serve(async (req) => {
 
     console.log(`[Time Budget] Starting with ${TIMEOUT_LIMIT_MS}ms limit`);
 
-    // INTELLIGENT PROMPT ANALYSIS - Only for extremely long prompts (trust Gemini 2.5 Pro for normal complexity)
+    // SIMPLIFIED FLOW: Use async generation for complex prompts, direct generation for simple ones
     let finalPromptToGenerate = prompt;
-    let wasSimplified = false;
-    let wasSplit = false;
-    let subPrompts: string[] = [];
 
     // ASYNC GENERATION FOR COMPLEX PROMPTS - Bypass 60s timeout using background jobs
     if (!modelingAgentMode && shouldUseAsyncGeneration(prompt, promptLength)) {
@@ -457,146 +454,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // DISABLED FOR NORMAL USE - Only analyze extremely long prompts (>5000 chars)
-    // Trust Gemini 2.5 Pro + DI optimization to handle complex prompts (proven by Modelling Agent Mode)
-    if (!modelingAgentMode && promptLength > 5000) {
-      console.log(`[Prompt Analysis] Starting analysis for ${promptLength} char prompt (elapsed: ${getElapsedTime()}ms)...`);
-
-      // Check time budget before expensive AI analysis
-      if (!hasTimeBudget(20000)) {
-        console.warn(`[Time Budget] Insufficient time for full analysis (${getElapsedTime()}ms elapsed), using fallback`);
-        const fallbackResult = fallbackAnalysis(prompt);
-        if (fallbackResult.recommendation === 'split') {
-          subPrompts = fallbackSplit(prompt);
-          return new Response(JSON.stringify({
-            requiresSplit: true,
-            subPrompts,
-            analysis: { complexity: fallbackResult.complexity, reasoning: fallbackResult.reasoning + ' (time budget exceeded)' },
-            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts.`
-          }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-      }
-
-      const analysisStartTime = Date.now();
-
-      try {
-        const analysis = await analyzePromptComplexity(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
-        const analysisTime = Date.now() - analysisStartTime;
-        console.log(`[Prompt Analysis] Completed in ${analysisTime}ms - Recommendation: ${analysis.recommendation} (elapsed: ${getElapsedTime()}ms)`);
-
-        if (analysis.recommendation === "split") {
-          // Very complex - split into multiple sub-prompts
-          console.log(
-            `[Prompt Analysis] Splitting prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`,
-          );
-          const splitStartTime = Date.now();
-
-          // If analysis already provided sub-prompts, use them
-          if (analysis.subPrompts && analysis.subPrompts.length > 0) {
-            subPrompts = analysis.subPrompts;
-          } else {
-            subPrompts = await splitPromptIntoSubPrompts(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
-          }
-
-          const splitTime = Date.now() - splitStartTime;
-          console.log(`[Prompt Analysis] Split into ${subPrompts.length} sub-prompts in ${splitTime}ms`);
-          wasSplit = true;
-
-          // Return sub-prompts to client for multi-diagram generation
-          return new Response(
-            JSON.stringify({
-              requiresSplit: true,
-              subPrompts,
-              analysis: {
-                complexity: analysis.complexity,
-                reasoning: analysis.reasoning,
-              },
-              message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`,
-            }),
-            {
-              status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            },
-          );
-        } else if (analysis.recommendation === "simplify") {
-          // Moderately complex - simplify
-          console.log(
-            `[Prompt Analysis] Simplifying prompt (complexity: ${analysis.complexity.score}, actors: ${analysis.complexity.actors})`,
-          );
-          const simplifyStartTime = Date.now();
-
-          if (analysis.simplifiedPrompt) {
-            finalPromptToGenerate = analysis.simplifiedPrompt;
-          } else {
-            finalPromptToGenerate = await simplifyPrompt(prompt, GOOGLE_API_KEY, detectedLanguageCode, detectedLanguageName);
-          }
-
-          const simplifyTime = Date.now() - simplifyStartTime;
-          wasSimplified = true;
-          promptLength = finalPromptToGenerate.length;
-          console.log(
-            `[Prompt Analysis] Simplified in ${simplifyTime}ms: ${prompt.length} → ${finalPromptToGenerate.length} chars`,
-          );
-        } else {
-          console.log(
-            `[Prompt Analysis] Complexity acceptable (score: ${analysis.complexity.score}), generating directly`,
-          );
-        }
-      } catch (error) {
-        console.error('[Prompt Analysis] AI analysis failed, using fallback heuristics:', error);
-        // CRITICAL SAFETY CHECK: Use fallback heuristics to avoid timeout on complex prompts
-        const fallbackResult = fallbackAnalysis(prompt);
-
-        console.log(`[Prompt Analysis] Fallback result: ${fallbackResult.recommendation} (score: ${fallbackResult.complexity.score})`);
-
-        if (fallbackResult.recommendation === 'split') {
-          console.log('[Prompt Analysis] Fallback detected complex prompt, splitting...');
-          subPrompts = fallbackSplit(prompt);
-
-          return new Response(JSON.stringify({
-            requiresSplit: true,
-            subPrompts,
-            analysis: {
-              complexity: fallbackResult.complexity,
-              reasoning: fallbackResult.reasoning + ' (fallback heuristics used due to AI timeout)'
-            },
-            message: `This workflow is too complex for a single diagram. It has been split into ${subPrompts.length} sub-prompts for better results.`
-          }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        } else if (fallbackResult.recommendation === 'simplify') {
-          console.log('[Prompt Analysis] Fallback recommends simplification');
-          // Use a simple reduction strategy - keep only substantial sentences
-          finalPromptToGenerate = prompt.split('. ').filter(s => s.length > 20).join('. ');
-          wasSimplified = true;
-          promptLength = finalPromptToGenerate.length;
-        }
-        // Otherwise continue with original prompt
-      }
-    } else if (modelingAgentMode) {
-      console.log("[Prompt Analysis] Skipping analysis (modeling agent mode)");
-    } else {
-      console.log(`[Prompt Analysis] Skipping analysis (prompt length: ${promptLength} chars, threshold: 5000)`);
-    }
-
-    // Final time budget check before generation
-    if (!hasTimeBudget(25000)) {
-      console.warn(`[Time Budget] Insufficient time for generation (${getElapsedTime()}ms elapsed), forcing split`);
-      const quickSplit = fallbackSplit(finalPromptToGenerate || prompt);
-      return new Response(JSON.stringify({
-        requiresSplit: true,
-        subPrompts: quickSplit,
-        analysis: { reasoning: 'Time budget exceeded before generation - prompt split automatically' },
-        message: `Insufficient time to generate this diagram. It has been split into ${quickSplit.length} sub-prompts.`
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+    // Complex prompts are handled via async generation above
+    // Simple prompts proceed directly to generation
+    console.log(`[Generation Mode] ${modelingAgentMode ? 'Modeling Agent' : 'Standard'} - prompt length: ${promptLength} chars`);
 
     // Cache already checked above, proceed with model selection
     const criteria = analyzePrompt(finalPromptToGenerate, diagramType);
@@ -657,7 +517,6 @@ Deno.serve(async (req) => {
               bpmnXml: semanticCache.bpmnXml,
               cached: true,
               similarity: semanticCache.similarity,
-              wasSimplified,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
@@ -719,9 +578,6 @@ Deno.serve(async (req) => {
       JSON.stringify({
         bpmnXml,
         cached: false,
-        wasSimplified,
-        originalPromptLength: wasSimplified ? prompt.length : undefined,
-        simplifiedPromptLength: wasSimplified ? finalPromptToGenerate.length : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

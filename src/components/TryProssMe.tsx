@@ -33,6 +33,7 @@ import { Loader2 } from "lucide-react";
 import { isAppSubdomain } from "@/utils/subdomain";
 import { ProjectNameDialog } from "@/components/ProjectNameDialog";
 import { createProject, updateProject, type Project } from "@/utils/projects-service";
+import { featureFlags } from "@/config/featureFlags";
 
 const suggestionPrompts = [
   "Create a customer onboarding process",
@@ -802,28 +803,30 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               Try <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">ProssMind!</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-              Describe your business process, upload an image, PDF, Word doc, or text file - AI will generate a BPMN or P&ID diagram for you
+              Describe your business process, upload an image, PDF, Word doc, or text file - AI will generate a {featureFlags.enablePidDiagrams ? 'BPMN or P&ID' : 'BPMN'} diagram for you
             </p>
           </motion.div>
         )}
         
         <div className="max-w-5xl mx-auto mt-12 space-y-8">
           <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-            <AnimatedTabsList className={`grid w-full max-w-md mx-auto grid-cols-2 mb-8 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
-              <AnimatedTabsTrigger 
-                value="bpmn"
-                className={`${diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}`}
-              >
-                BPMN Diagram
-              </AnimatedTabsTrigger>
-              <AnimatedTabsTrigger 
-                value="pid"
-                className={`${diagramType === "pid" ? "data-[state=active]:bg-engineering-green data-[state=active]:text-white" : ""}`}
-              >
-                <Factory className="h-4 w-4 mr-2 flex-shrink-0" />
-                P&ID Diagram
-              </AnimatedTabsTrigger>
-            </AnimatedTabsList>
+            {featureFlags.enablePidDiagrams && (
+              <AnimatedTabsList className={`grid w-full max-w-md mx-auto mb-8 grid-cols-2 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
+                <AnimatedTabsTrigger 
+                  value="bpmn"
+                  className={`${diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}`}
+                >
+                  BPMN Diagram
+                </AnimatedTabsTrigger>
+                <AnimatedTabsTrigger 
+                  value="pid"
+                  className={`${diagramType === "pid" ? "data-[state=active]:bg-engineering-green data-[state=active]:text-white" : ""}`}
+                >
+                  <Factory className="h-4 w-4 mr-2 flex-shrink-0" />
+                  P&ID Diagram
+                </AnimatedTabsTrigger>
+              </AnimatedTabsList>
+            )}
             
             <AnimatedTabsContent value="bpmn" className="space-y-8">
               {/* Suggestion Prompts */}
