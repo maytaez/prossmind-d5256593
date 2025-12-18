@@ -5741,66 +5741,68 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               </MenubarMenu>
             </Menubar>
 
-            {/* Fullscreen and Zoom Controls */}
-            <div className="flex items-center gap-1 shrink-0 relative z-[60]" style={{ pointerEvents: 'auto' }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 relative z-[61]"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleToggleFullscreen();
-                }}
-                title={isFullscreen ? "Exit Fullscreen (F11)" : "Enter Fullscreen (F11)"}
-                style={{ pointerEvents: 'auto' }}
-              >
-                {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-              </Button>
-              <div className="h-6 w-px bg-border mx-0.5" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 relative z-[61]"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleZoomIn();
-                }}
-                title="Zoom In (⌘+)"
-                style={{ pointerEvents: 'auto' }}
-              >
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 relative z-[61]"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleZoomOut();
-                }}
-                title="Zoom Out (⌘-)"
-                style={{ pointerEvents: 'auto' }}
-              >
-                <ZoomOut className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 relative z-[61]"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleFitToScreen();
-                }}
-                title="Fit to Screen"
-                style={{ pointerEvents: 'auto' }}
-              >
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            </div>
+            {/* Fullscreen and Zoom Controls - Hidden when agent dialog is open */}
+            {!agentDialogOpen && (
+              <div className="flex items-center gap-1 shrink-0 relative z-[60]" style={{ pointerEvents: 'auto' }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 relative z-[61]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleToggleFullscreen();
+                  }}
+                  title={isFullscreen ? "Exit Fullscreen (F11)" : "Enter Fullscreen (F11)"}
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                </Button>
+                <div className="h-6 w-px bg-border mx-0.5" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 relative z-[61]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleZoomIn();
+                  }}
+                  title="Zoom In (⌘+)"
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 relative z-[61]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleZoomOut();
+                  }}
+                  title="Zoom Out (⌘-)"
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 relative z-[61]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleFitToScreen();
+                  }}
+                  title="Fit to Screen"
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
 
             {/* Center: Tabs */}
             <div className="flex-1 flex justify-center min-w-0 shrink">
