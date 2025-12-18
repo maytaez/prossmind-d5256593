@@ -75,7 +75,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [pendingXml, setPendingXml] = useState<string | null>(null);
-  
+
   // Multi-diagram support for complex workflows
   const [multipleDiagrams, setMultipleDiagrams] = useState<Array<{
     id: string;
@@ -94,7 +94,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     const storageKey = diagramType === 'bpmn' ? 'generatedBpmn' : 'generatedPid';
     const generatedDiagram = localStorage.getItem(storageKey);
     const projectId = localStorage.getItem('currentProjectId');
-    
+
     if (generatedDiagram) {
       setBpmnXml(generatedDiagram);
       setCurrentProjectId(projectId);
@@ -103,17 +103,17 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       if (projectId) {
         localStorage.removeItem('currentProjectId');
       }
-      
+
       const diagramName = diagramType === 'bpmn' ? 'BPMN' : 'P&ID';
       toast.success(`Your generated ${diagramName} diagram is ready!`, {
         description: "You can now view and edit your process diagram"
       });
-      
+
       // Scroll to the viewer
       setTimeout(() => {
-        document.getElementById('bpmn-viewer')?.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
+        document.getElementById('bpmn-viewer')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
         });
       }, 500);
     }
@@ -148,15 +148,15 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         setShowPreview(false);
         setUploadedFile(null);
         toast.success(`${diagramName} diagram generated successfully!`);
-        
+
         // Scroll to the viewer
         setTimeout(() => {
-          document.getElementById('bpmn-viewer')?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          document.getElementById('bpmn-viewer')?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         }, 500);
-        
+
         if (pollInterval) clearInterval(pollInterval);
       } else if (data.status === 'failed') {
         const errorMsg = data.error_message || "Processing failed. Please try again.";
@@ -192,31 +192,31 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           const job = payload.new as { status: string; bpmn_xml?: string; error_message?: string };
           console.log('Realtime job status update:', job.status);
 
-                    if (job.status === 'completed' && job.bpmn_xml) {
-                        const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
-                        setBpmnXml(job.bpmn_xml);
-                        setGenerationStep("idle");
-                        setIsGenerating(false);
-                        setCurrentJobId(null);
-                        setShowPreview(false);
-                        setUploadedFile(null);
-                        toast.success(`${diagramName} diagram generated successfully!`);
+          if (job.status === 'completed' && job.bpmn_xml) {
+            const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
+            setBpmnXml(job.bpmn_xml);
+            setGenerationStep("idle");
+            setIsGenerating(false);
+            setCurrentJobId(null);
+            setShowPreview(false);
+            setUploadedFile(null);
+            toast.success(`${diagramName} diagram generated successfully!`);
 
-                        // Show save project dialog if user is authenticated
-                        if (user) {
-                          setPendingXml(job.bpmn_xml);
-                          setShowSaveProjectDialog(true);
-                        }
+            // Show save project dialog if user is authenticated
+            if (user) {
+              setPendingXml(job.bpmn_xml);
+              setShowSaveProjectDialog(true);
+            }
 
-                        // Scroll to the viewer
-                        setTimeout(() => {
-                            document.getElementById('bpmn-viewer')?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'start'
-                            });
-                        }, 500);
+            // Scroll to the viewer
+            setTimeout(() => {
+              document.getElementById('bpmn-viewer')?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+              });
+            }, 500);
 
-                        if (pollInterval) clearInterval(pollInterval);
+            if (pollInterval) clearInterval(pollInterval);
           } else if (job.status === 'failed') {
             const errorMsg = job.error_message || "Processing failed. Please try again.";
             setGenerationStep("idle");
@@ -244,7 +244,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     pollInterval = window.setInterval(checkJobStatus, 3000);
     // Check immediately
     checkJobStatus();
-    
+
     // Set a timeout to stop polling after 5 minutes
     const timeoutId = window.setTimeout(() => {
       if (pollInterval) clearInterval(pollInterval);
@@ -265,7 +265,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         duration: 10000
       });
     }, 300000); // 5 minutes
-    
+
     return () => {
       clearTimeout(timeoutId);
       supabase.removeChannel(channel);
@@ -276,7 +276,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
   const handleGenerate = async (prompt: string) => {
     if (isGenerating) return; // Prevent duplicate requests
-    
+
     if (!prompt.trim()) {
       toast.error("Please enter a process description");
       return;
@@ -300,11 +300,11 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
     setIsGenerating(true);
     const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
-    
+
     // Step 1: Reading prompt
     setGenerationStep("reading");
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     // Step 2: Generating
     setGenerationStep("generating");
 
@@ -334,15 +334,15 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       if (data?.requiresPolling && data?.jobId) {
         console.log(`[Async Mode] Complex prompt detected, job created: ${data.jobId}`);
         console.log(`[Async Mode] Estimated time: ${data.estimatedTime || '60-90 seconds'}`);
-        
+
         // Set job ID to trigger polling (existing useEffect on lines 122-274)
         setCurrentJobId(data.jobId);
         setGenerationStep("generating");
-        
+
         toast.info(data.message || 'Complex prompt - generation started in background', {
           description: `Estimated time: ${data.estimatedTime || '60-90 seconds'}. We'll notify you when ready.`
         });
-        
+
         // Note: isGenerating stays true, polling will set it to false when complete
         return;
       }
@@ -375,26 +375,26 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           // Step 3: Drawing diagrams
           setGenerationStep("drawing");
           await new Promise(resolve => setTimeout(resolve, 500));
-          
+
           // Store all diagrams for navigation
           setMultipleDiagrams(multiData.diagrams);
           setCurrentDiagramIndex(0);
           setShowCombinedView(false); // Start with individual diagrams
-          
+
           // Store combined overview XML if available
           if (multiData.combinedXml) {
             setCombinedOverviewXml(multiData.combinedXml);
           }
-          
+
           // Set the first diagram as active
           const firstDiagram = multiData.diagrams[0];
           setBpmnXml(firstDiagram.xml);
-          
+
           setGenerationStep("idle");
           toast.success(`Generated ${multiData.diagrams.length} diagrams for complex workflow!`, {
             description: `Use the tabs to navigate. Click "📊 Combined Overview" to see the full structure.`
           });
-          
+
           // Show save project dialog if user is authenticated
           if (user) {
             setPendingXml(firstDiagram.xml);
@@ -416,7 +416,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
         setBpmnXml(data.bpmnXml);
         setGenerationStep("idle");
         toast.success(`${diagramName} model generated successfully!`);
-        
+
         // Show save project dialog if user is authenticated
         if (user) {
           setPendingXml(data.bpmnXml);
@@ -437,7 +437,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
   const handleSend = () => {
     handleGenerate(message);
-    setMessage("");
+    // Keep the prompt text in the input until user explicitly clears it
   };
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -476,14 +476,14 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     const reader = new FileReader();
     reader.onloadend = async () => {
       const fileBase64 = reader.result as string;
-      
+
       // Store file for preview
       setUploadedFile({
         name: file.name,
         type: file.type,
         base64: fileBase64,
       });
-      
+
       setShowPreview(true);
       setIsGenerating(false);
       toast.success(`File uploaded! Review the preview before generating ${diagramName}.`);
@@ -510,11 +510,11 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           reader.readAsDataURL(audioBlob);
           reader.onloadend = async () => {
             const base64Audio = reader.result?.toString().split(',')[1];
-            
+
             try {
               // Call speech-to-text edge function with language parameter
               const { data, error } = await supabase.functions.invoke('speech-to-text', {
-                body: { 
+                body: {
                   audio: base64Audio,
                   language: language
                 },
@@ -522,7 +522,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               });
 
               if (error) throw error;
-              
+
               if (data?.text) {
                 setMessage(data.text);
                 toast.success("Voice recorded successfully!");
@@ -532,7 +532,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
               toast.error("Failed to convert speech to text.");
             }
           };
-          
+
           // Stop all tracks after processing
           if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
@@ -553,13 +553,13 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.stop();
       }
-      
+
       // Stop all audio tracks immediately
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       }
-      
+
       setIsRecording(false);
       mediaRecorderRef.current = null;
     }
@@ -571,11 +571,11 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     setIsGenerating(true);
     setShowPreview(false);
     const diagramName = diagramType === "bpmn" ? "BPMN" : "P&ID";
-    
+
     // Step 1: Reading prompt
     setGenerationStep("reading");
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     // Step 2: Generating
     setGenerationStep("generating");
 
@@ -652,7 +652,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       // Set job ID to start listening for updates
       setCurrentJobId(data.jobId);
       setGenerationStep("generating");
-      
+
       toast.info("Processing started", {
         description: "We'll notify you when your diagram is ready (this may take 1-2 minutes)"
       });
@@ -782,7 +782,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   };
 
   return (
-    <motion.section 
+    <motion.section
       className={`${isApp ? 'py-8' : 'py-24'} bg-muted/20 relative`}
       data-section="try-prossmind"
       initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 50 }}
@@ -792,7 +792,7 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     >
       <div className="container mx-auto px-6">
         {!isApp && (
-          <motion.div 
+          <motion.div
             className="text-center mb-12"
             initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 30, scale: 0.95 }}
             whileInView={{ opacity: 1, y: 0, scale: 1 }}
@@ -807,671 +807,375 @@ const TryProssMe = ({ user }: { user: User | null }) => {
             </p>
           </motion.div>
         )}
-        
-        <div className="max-w-5xl mx-auto mt-12 space-y-8">
-          <AnimatedTabs value={diagramType} onValueChange={(v) => setDiagramType(v as "bpmn" | "pid")} className="w-full">
-            {featureFlags.enablePidDiagrams && (
-              <AnimatedTabsList className={`grid w-full max-w-md mx-auto mb-8 grid-cols-2 ${diagramType === "pid" ? 'bg-engineering-green/10' : ''}`}>
-                <AnimatedTabsTrigger 
-                  value="bpmn"
-                  className={`${diagramType === "bpmn" ? "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" : ""}`}
-                >
-                  BPMN Diagram
-                </AnimatedTabsTrigger>
-                <AnimatedTabsTrigger 
-                  value="pid"
-                  className={`${diagramType === "pid" ? "data-[state=active]:bg-engineering-green data-[state=active]:text-white" : ""}`}
-                >
-                  <Factory className="h-4 w-4 mr-2 flex-shrink-0" />
-                  P&ID Diagram
-                </AnimatedTabsTrigger>
-              </AnimatedTabsList>
-            )}
-            
-            <AnimatedTabsContent value="bpmn" className="space-y-8">
-              {/* Suggestion Prompts */}
-              <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="rounded-full bg-primary/10 p-2">
-                    <Sparkles className="h-5 w-5 text-primary" />
+      </div>
+
+      {/* Full-width side-by-side layout - breaks out of container */}
+      <div className="w-full h-[calc(100vh-4rem)] pt-6 px-6">
+        <div className="h-full flex flex-col">
+          <div className="flex-1 min-h-0">
+            <div id="bpmn-viewer" className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-4 h-full">
+              {/* Left Side: Prompt Input Area */}
+              <div className="flex flex-col h-full pt-4 pb-4">
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  <div className="h-full flex flex-col space-y-6">
+                    {/* Multi-Diagram Navigation Tabs */}
+                    {multipleDiagrams && multipleDiagrams.length > 1 && (
+                      <div className="bg-card border border-border rounded-2xl p-4 shadow-lg">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="text-sm font-semibold text-muted-foreground">
+                            Complex Workflow - {multipleDiagrams.length} Diagrams
+                          </h4>
+                          <span className="text-xs text-muted-foreground">
+                            {showCombinedView
+                              ? 'Combined Overview'
+                              : `Diagram ${currentDiagramIndex + 1} of ${multipleDiagrams.length}`}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          {multipleDiagrams.map((diagram, index) => (
+                            <Button
+                              key={diagram.id}
+                              variant={!showCombinedView && currentDiagramIndex === index ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                setShowCombinedView(false);
+                                setCurrentDiagramIndex(index);
+                                setBpmnXml(diagram.xml);
+                                toast.info(`Switched to: ${diagram.title}`);
+                              }}
+                              className="text-xs"
+                            >
+                              <span className="mr-1">{index + 1}.</span>
+                              {diagram.title.length > 50 ? diagram.title.substring(0, 50) + '...' : diagram.title}
+                            </Button>
+                          ))}
+                          {/* Combined Overview Tab */}
+                          {combinedOverviewXml && (
+                            <Button
+                              variant={showCombinedView ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                setShowCombinedView(true);
+                                setBpmnXml(combinedOverviewXml);
+                                toast.info('Switched to Combined Overview - expand subprocesses to see details');
+                              }}
+                              className="text-xs font-semibold"
+                            >
+                              Combined Overview
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Prompt Input Box */}
+                    <div className="bg-card border border-border rounded-2xl p-8 shadow-xl flex flex-col flex-1 min-h-0">
+                      <h3 className="text-xl font-semibold mb-4 flex-shrink-0">Prompt</h3>
+                      <div className="flex-1 flex flex-col min-h-0">
+                        {/* Segmented Control Style Tabs for Input Methods */}
+                        <Tabs defaultValue="prompt" className="w-full flex-1 flex flex-col min-h-0">
+                          <TabsList className="grid w-full grid-cols-3 bg-muted/50 flex-shrink-0 mb-4">
+                            <TabsTrigger value="prompt" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                              <MessageSquare className="h-4 w-4" />
+                              <span className="hidden sm:inline">Prompt</span>
+                            </TabsTrigger>
+                            <TabsTrigger value="voice" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                              <Mic className="h-4 w-4" />
+                              <span className="hidden sm:inline">Voice</span>
+                            </TabsTrigger>
+                            <TabsTrigger value="attachment" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                              <Paperclip className="h-4 w-4" />
+                              <span className="hidden sm:inline">Attachment</span>
+                            </TabsTrigger>
+                          </TabsList>
+
+                          <TabsContent value="prompt" className="flex-1 flex flex-col min-h-0 mt-0">
+                            <Textarea
+                              placeholder="Describe your process step by step..."
+                              value={message}
+                              onChange={(e) => setMessage(e.target.value)}
+                              className="flex-1 resize-none border-muted min-h-0"
+                              disabled={isGenerating}
+                            />
+                          </TabsContent>
+
+                          <TabsContent value="voice" className="mt-4">
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <Languages className="h-4 w-4 text-muted-foreground" />
+                                <Select value={language} onValueChange={setLanguage}>
+                                  <SelectTrigger className="w-[200px] h-8">
+                                    <SelectValue placeholder="Select language" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="en-US">English (US)</SelectItem>
+                                    <SelectItem value="en-GB">English (UK)</SelectItem>
+                                    <SelectItem value="es-ES">Spanish</SelectItem>
+                                    <SelectItem value="fr-FR">French</SelectItem>
+                                    <SelectItem value="de-DE">German</SelectItem>
+                                    <SelectItem value="it-IT">Italian</SelectItem>
+                                    <SelectItem value="pt-BR">Portuguese (Brazil)</SelectItem>
+                                    <SelectItem value="pt-PT">Portuguese (Portugal)</SelectItem>
+                                    <SelectItem value="ru-RU">Russian</SelectItem>
+                                    <SelectItem value="ja-JP">Japanese</SelectItem>
+                                    <SelectItem value="ko-KR">Korean</SelectItem>
+                                    <SelectItem value="zh-CN">Chinese (Simplified)</SelectItem>
+                                    <SelectItem value="zh-TW">Chinese (Traditional)</SelectItem>
+                                    <SelectItem value="ar-SA">Arabic</SelectItem>
+                                    <SelectItem value="hi-IN">Hindi</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <Button
+                                variant="outline"
+                                onClick={handleVoiceRecording}
+                                disabled={isGenerating}
+                                className={isRecording ? "text-red-500 border-red-500 w-full" : "w-full"}
+                              >
+                                {isRecording ? (
+                                  <>
+                                    <MicOff className="h-4 w-4 mr-2 animate-pulse" />
+                                    Click to Stop Recording
+                                  </>
+                                ) : (
+                                  <>
+                                    <Mic className="h-4 w-4 mr-2" />
+                                    Start Voice Recording
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </TabsContent>
+
+                          <TabsContent value="attachment" className="mt-4">
+                            <div className="space-y-4">
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*,.pdf,.doc,.docx,.txt"
+                                onChange={handleFileUpload}
+                                className="hidden"
+                              />
+                              <div
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  setIsDragOver(true);
+                                }}
+                                onDragLeave={() => setIsDragOver(false)}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  setIsDragOver(false);
+                                  handleFileUpload(e);
+                                }}
+                                className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${isDragOver
+                                  ? "border-primary bg-primary/5 scale-[1.02]"
+                                  : "border-border hover:border-primary/50"
+                                  }`}
+                              >
+                                <div className="flex justify-center gap-4 mb-4">
+                                  <div className="flex items-center gap-1 text-muted-foreground">
+                                    <Image className="h-5 w-5" aria-hidden="true" />
+                                    <span className="text-xs">PNG/JPG</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-muted-foreground">
+                                    <FileText className="h-5 w-5" aria-hidden="true" />
+                                    <span className="text-xs">PDF</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-muted-foreground">
+                                    <File className="h-5 w-5" aria-hidden="true" />
+                                    <span className="text-xs">DOCX</span>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={isGenerating}
+                                  className="w-full"
+                                  aria-label="Upload file"
+                                >
+                                  <Paperclip className="h-4 w-4 mr-2" aria-hidden="true" />
+                                  Upload File
+                                </Button>
+                                <p className="text-xs text-muted-foreground mt-3">
+                                  Drag and drop a file here or click to browse
+                                </p>
+                              </div>
+                            </div>
+                          </TabsContent>
+                        </Tabs>
+
+                        {/* 3-Step Progress Indicator */}
+                        {isGenerating && generationStep !== "idle" && (
+                          <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border">
+                            <p className="text-sm font-medium text-foreground mb-2">Processing your document...</p>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className={generationStep === "reading" ? "font-semibold" : "text-muted-foreground"}>
+                                {generationStep === "reading" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                                {generationStep !== "reading" && "✓ "}
+                                Step 1: Reading prompt...
+                              </span>
+                              {generationStep === "reading" && <Progress value={33} className="w-24" aria-label="Progress: 33%" />}
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className={generationStep === "generating" ? "font-semibold" : generationStep === "drawing" ? "text-muted-foreground" : ""}>
+                                {generationStep === "generating" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                                {generationStep !== "generating" && generationStep !== "reading" && "✓ "}
+                                Step 2: Generating...
+                              </span>
+                              {generationStep === "generating" && <Progress value={66} className="w-24" aria-label="Progress: 66%" />}
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className={generationStep === "drawing" ? "font-semibold" : "text-muted-foreground"}>
+                                {generationStep === "drawing" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
+                                {generationStep !== "drawing" && generationStep !== "generating" && generationStep !== "reading" && "✓ "}
+                                Step 3: Drawing Diagram...
+                              </span>
+                              {generationStep === "drawing" && <Progress value={100} className="w-24" aria-label="Progress: 100%" />}
+                            </div>
+                          </div>
+                        )}
+
+                        <Button
+                          onClick={handleSend}
+                          className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all w-full flex-shrink-0 mt-6"
+                          size="lg"
+                          disabled={isGenerating || !message.trim()}
+                          aria-label={`Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram`}
+                        >
+                          {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"}`}
+                          <Send className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="font-semibold text-lg">Try these BPMN examples:</h3>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {suggestionPrompts.map((suggestion, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleSuggestionClick(suggestion)}
-                      className="text-sm hover:bg-primary/10 hover:border-primary/50 transition-all whitespace-nowrap"
-                      disabled={isGenerating}
-                      style={{ minWidth: 'max-content', paddingLeft: '1.2em', paddingRight: '1.2em' }}
-                      aria-label={`Use suggestion: ${suggestion}`}
-                    >
-                      {suggestion}
-                    </Button>
-                  ))}
                 </div>
               </div>
 
-              {/* Input Area */}
-              <div className="bg-card border border-border rounded-2xl p-8 shadow-xl slide-up stagger-2">
-            <div className="space-y-6">
-              {/* Segmented Control Style Tabs for Input Methods */}
-              <Tabs defaultValue="prompt" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/50">
-                  <TabsTrigger value="prompt" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                    <MessageSquare className="h-4 w-4" />
-                    <span className="hidden sm:inline">Prompt</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="voice" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                    <Mic className="h-4 w-4" />
-                    <span className="hidden sm:inline">Voice</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="attachment" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                    <Paperclip className="h-4 w-4" />
-                    <span className="hidden sm:inline">Attachment</span>
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="prompt" className="mt-4">
-                  <div className="relative">
-                    <Textarea
-                      placeholder="Describe your process step by step..."
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      className="min-h-[120px] resize-none border-muted"
-                      style={{ paddingLeft: '1.2em', paddingRight: '1.2em' }}
-                      disabled={isGenerating}
-                    />
-                    {isGenerating && (
-                      <div className="absolute bottom-3 right-3 flex items-center gap-1">
-                        <motion.span
-                          className="w-2 h-2 bg-primary rounded-full"
-                          animate={prefersReducedMotion ? {} : {
-                            scale: [1, 1.2, 1],
-                            opacity: [0.5, 1, 0.5],
+              {/* Right Side: Canvas */}
+              <div className="flex flex-col h-full pt-4 pb-4">
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  <div className="bg-card border border-border rounded-2xl p-6 shadow-lg h-full flex flex-col">
+                    <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
+                    <div className="flex-1 min-h-0">
+                      {bpmnXml ? (
+                        <BpmnViewerComponent
+                          xml={bpmnXml}
+                          diagramType={diagramType}
+                          onSave={async (updatedXml) => {
+                            setBpmnXml(updatedXml);
+
+                            // If we have a current project, update it
+                            if (currentProjectId && user) {
+                              const { error } = await updateProject(currentProjectId, user.id, {
+                                bpmn_xml: updatedXml
+                              });
+
+                              if (error) {
+                                toast.error("Failed to update project");
+                                console.error(error);
+                              } else {
+                                toast.success("Project updated successfully");
+                              }
+                            } else if (user && updatedXml) {
+                              // If no project exists, prompt to save
+                              setPendingXml(updatedXml);
+                              setShowSaveProjectDialog(true);
+                            } else {
+                              toast.success("Diagram saved to workspace");
+                            }
                           }}
-                          transition={getReducedMotionTransition(prefersReducedMotion) || {
-                            duration: 1,
-                            repeat: Infinity,
-                            delay: 0,
-                          }}
+                          onRefine={() => setShowRefineDialog(true)}
                         />
-                        <motion.span
-                          className="w-2 h-2 bg-primary rounded-full"
-                          animate={prefersReducedMotion ? {} : {
-                            scale: [1, 1.2, 1],
-                            opacity: [0.5, 1, 0.5],
-                          }}
-                          transition={getReducedMotionTransition(prefersReducedMotion) || {
-                            duration: 1,
-                            repeat: Infinity,
-                            delay: 0.2,
-                          }}
-                        />
-                        <motion.span
-                          className="w-2 h-2 bg-primary rounded-full"
-                          animate={prefersReducedMotion ? {} : {
-                            scale: [1, 1.2, 1],
-                            opacity: [0.5, 1, 0.5],
-                          }}
-                          transition={getReducedMotionTransition(prefersReducedMotion) || {
-                            duration: 1,
-                            repeat: Infinity,
-                            delay: 0.4,
-                          }}
-                        />
-                      </div>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center border-2 border-dashed border-border rounded-lg bg-muted/20">
+                          <div className="text-center space-y-3">
+                            <div className="mx-auto w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+                              <FileText className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                            <p className="text-muted-foreground">Canvas ready for your diagram</p>
+                            <p className="text-sm text-muted-foreground">Enter a prompt on the left to generate a {diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {bpmnXml && (
+                      <p className="text-xs text-muted-foreground mt-4 text-right">
+                        Generated via Gemini 2.5 Pro · v1
+                      </p>
                     )}
                   </div>
-                </TabsContent>
-                
-                <TabsContent value="voice" className="mt-4">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Languages className="h-4 w-4 text-muted-foreground" />
-                      <Select value={language} onValueChange={setLanguage}>
-                        <SelectTrigger className="w-[200px] h-8">
-                          <SelectValue placeholder="Select language" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="en-US">English (US)</SelectItem>
-                          <SelectItem value="en-GB">English (UK)</SelectItem>
-                          <SelectItem value="es-ES">Spanish</SelectItem>
-                          <SelectItem value="fr-FR">French</SelectItem>
-                          <SelectItem value="de-DE">German</SelectItem>
-                          <SelectItem value="it-IT">Italian</SelectItem>
-                          <SelectItem value="pt-BR">Portuguese (Brazil)</SelectItem>
-                          <SelectItem value="pt-PT">Portuguese (Portugal)</SelectItem>
-                          <SelectItem value="ru-RU">Russian</SelectItem>
-                          <SelectItem value="ja-JP">Japanese</SelectItem>
-                          <SelectItem value="ko-KR">Korean</SelectItem>
-                          <SelectItem value="zh-CN">Chinese (Simplified)</SelectItem>
-                          <SelectItem value="zh-TW">Chinese (Traditional)</SelectItem>
-                          <SelectItem value="ar-SA">Arabic</SelectItem>
-                          <SelectItem value="hi-IN">Hindi</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <span className="text-xs text-muted-foreground">Voice recognition language</span>
-                    </div>
-                    <Button 
-                      variant="outline"
-                      onClick={handleVoiceRecording}
-                      disabled={isGenerating}
-                      className={isRecording ? "text-red-500 border-red-500" : "w-full"}
-                    >
-                      {isRecording ? (
-                        <>
-                          <MicOff className="h-4 w-4 mr-2 animate-pulse" />
-                          Click to Stop Recording
-                        </>
-                      ) : (
-                        <>
-                          <Mic className="h-4 w-4 mr-2" />
-                          Start Voice Recording
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="attachment" className="mt-4">
-                  <div className="space-y-4">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx,.txt"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                    <div
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setIsDragOver(true);
-                      }}
-                      onDragLeave={() => setIsDragOver(false)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setIsDragOver(false);
-                        handleFileUpload(e);
-                      }}
-                      className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
-                        isDragOver
-                          ? "border-primary bg-primary/5 scale-[1.02]"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                    >
-                      <div className="flex justify-center gap-4 mb-4">
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Image className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">PNG/JPG</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <FileText className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">PDF</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <File className="h-5 w-5" aria-hidden="true" />
-                          <span className="text-xs">DOCX</span>
-                        </div>
-                      </div>
-                      <Button 
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isGenerating}
-                        className="w-full"
-                        aria-label="Upload file"
-                      >
-                        <Paperclip className="h-4 w-4 mr-2" aria-hidden="true" />
-                        Upload File
-                      </Button>
-                      <p className="text-xs text-muted-foreground mt-3">
-                        Drag and drop a file here or click to browse
-                      </p>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-              
-              {/* 3-Step Progress Indicator */}
-              {isGenerating && generationStep !== "idle" && (
-                <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border">
-                  <p className="text-sm font-medium text-foreground mb-2">Processing your document...</p>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={generationStep === "reading" ? "font-semibold" : "text-muted-foreground"}>
-                      {generationStep === "reading" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {generationStep !== "reading" && "✓ "}
-                      Step 1: Reading prompt...
-                    </span>
-                    {generationStep === "reading" && <Progress value={33} className="w-24" aria-label="Progress: 33%" />}
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={generationStep === "generating" ? "font-semibold" : generationStep === "drawing" ? "text-muted-foreground" : ""}>
-                      {generationStep === "generating" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {generationStep !== "generating" && generationStep !== "reading" && "✓ "}
-                      Step 2: Generating...
-                    </span>
-                    {generationStep === "generating" && <Progress value={66} className="w-24" aria-label="Progress: 66%" />}
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={generationStep === "drawing" ? "font-semibold" : "text-muted-foreground"}>
-                      {generationStep === "drawing" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {generationStep !== "drawing" && generationStep !== "generating" && generationStep !== "reading" && "✓ "}
-                      Step 3: Drawing Diagram...
-                    </span>
-                    {generationStep === "drawing" && <Progress value={100} className="w-24" aria-label="Progress: 100%" />}
-                  </div>
                 </div>
-              )}
-              
-              <Button 
-                onClick={handleSend} 
-                className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all w-full"
-                size="lg"
-                disabled={isGenerating || !message.trim()}
-                aria-label="Generate BPMN diagram"
-              >
-                {isGenerating ? "Generating..." : "Generate BPMN"}
-                <Send className="h-4 w-4" aria-hidden="true" />
-              </Button>
+              </div>
             </div>
           </div>
-          </AnimatedTabsContent>
-
-          <AnimatedTabsContent value="pid" className="space-y-8">
-            {/* Suggestion Prompts for P&ID */}
-            <div className="bg-gradient-to-br from-muted/50 to-muted/30 rounded-2xl p-8 border border-border/50 slide-up stagger-1">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="rounded-full bg-primary/10 p-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                </div>
-                <h3 className="font-semibold text-lg">Try these P&ID examples:</h3>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                {["Create a chemical reactor cooling system", "Design a water treatment process flow", "Build a distillation column control loop", "Generate a pump and valve configuration", "Create a heat exchanger system"].map((suggestion, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    className="text-sm hover:bg-primary/10 hover:border-primary/50 transition-all"
-                    disabled={isGenerating}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            {/* Input Area */}
-            <div className="bg-card border border-border rounded-2xl p-8 shadow-xl slide-up stagger-2">
-              <div className="space-y-6">
-                {/* Language Selector for Voice Input */}
-                <div className="flex items-center gap-2">
-                  <Languages className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  <Select value={language} onValueChange={setLanguage}>
-                    <SelectTrigger className="w-[200px] h-8" aria-label="Select voice recognition language">
-                      <SelectValue placeholder="Select language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en-US">English (US)</SelectItem>
-                      <SelectItem value="en-GB">English (UK)</SelectItem>
-                      <SelectItem value="es-ES">Spanish</SelectItem>
-                      <SelectItem value="fr-FR">French</SelectItem>
-                      <SelectItem value="de-DE">German</SelectItem>
-                      <SelectItem value="it-IT">Italian</SelectItem>
-                      <SelectItem value="pt-BR">Portuguese (Brazil)</SelectItem>
-                      <SelectItem value="pt-PT">Portuguese (Portugal)</SelectItem>
-                      <SelectItem value="ru-RU">Russian</SelectItem>
-                      <SelectItem value="ja-JP">Japanese</SelectItem>
-                      <SelectItem value="ko-KR">Korean</SelectItem>
-                      <SelectItem value="zh-CN">Chinese (Simplified)</SelectItem>
-                      <SelectItem value="zh-TW">Chinese (Traditional)</SelectItem>
-                      <SelectItem value="ar-SA">Arabic</SelectItem>
-                      <SelectItem value="hi-IN">Hindi</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-xs text-muted-foreground">Voice recognition language</span>
-                </div>
-                
-                <Textarea
-                  placeholder="Describe your P&ID process, or upload files (images, PDFs, Word docs, text files) - I'll extract content and generate a P&ID diagram. You can preview before generation and refine using natural language after creation..."
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  className="min-h-[120px] resize-none border-muted"
-                  disabled={isGenerating}
-                  aria-label="P&ID process description input"
-                />
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx,.txt"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      aria-label="Upload file input"
-                    />
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isGenerating}
-                      title="Upload image, PDF, Word, or text file to generate P&ID"
-                      aria-label="Upload file"
-                    >
-                      <Paperclip className="h-5 w-5" aria-hidden="true" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={handleVoiceRecording}
-                      disabled={isGenerating}
-                      className={isRecording ? "text-red-500" : ""}
-                      title="Voice to text"
-                      aria-label={isRecording ? "Stop voice recording" : "Start voice recording"}
-                    >
-                      {isRecording ? <MicOff className="h-5 w-5 animate-pulse" aria-hidden="true" /> : <Mic className="h-5 w-5" aria-hidden="true" />}
-                    </Button>
-                  </div>
-                  
-                  <Button 
-                    onClick={handleSend} 
-                    className="gap-2 shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
-                    size="lg"
-                    disabled={isGenerating || !message.trim()}
-                    aria-label="Generate P&ID diagram"
-                  >
-                    {isGenerating ? "Generating..." : "Generate P&ID"}
-                    <Send className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-                
-                <div className="border border-border rounded-lg p-4 bg-muted/30">
-                  <div className="flex justify-center gap-4 mb-2">
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Image className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">PNG/JPG</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <FileText className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">PDF</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <File className="h-4 w-4" aria-hidden="true" />
-                      <span className="text-xs">DOCX</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Supported file types for upload
-                  </p>
-                </div>
-              </div>
-            </div>
-          </AnimatedTabsContent>
-          </AnimatedTabs>
-
-          {/* File Preview Modal */}
-          {showPreview && uploadedFile && (
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
-              <h3 className="text-xl font-semibold mb-4">Preview Uploaded File</h3>
-              
-              <div className="space-y-4">
-                <div className="bg-muted/30 rounded-lg p-4">
-                  <p className="text-sm font-medium mb-2">File: {uploadedFile.name}</p>
-                  
-                  {uploadedFile.type.startsWith('image/') && (
-                    <div className="mt-4 max-h-96 overflow-auto">
-                      <img 
-                        src={uploadedFile.base64} 
-                        alt="Preview" 
-                        className="max-w-full rounded border"
-                      />
-                    </div>
-                  )}
-                  
-                  {uploadedFile.extractedText && (
-                    <div className="mt-4">
-                      <p className="text-sm font-medium mb-2">Extracted Content Preview:</p>
-                      <div className="bg-background rounded p-3 max-h-48 overflow-auto text-xs">
-                        {uploadedFile.extractedText}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex gap-2">
-                  <Button 
-                    onClick={handleConfirmGeneration}
-                    className="flex-1"
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? "Generating..." : `Generate ${diagramType === "bpmn" ? "BPMN" : "P&ID"} from this file`}
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      setShowPreview(false);
-                      setUploadedFile(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* BPMN Editor with Refinement */}
-          {bpmnXml ? (
-            <div id="bpmn-viewer" className="space-y-6 relative">
-              {/* Multi-Diagram Navigation Tabs */}
-              {multipleDiagrams && multipleDiagrams.length > 1 && (
-                <div className="bg-card border border-border rounded-2xl p-4 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-sm font-semibold text-muted-foreground">
-                      Complex Workflow - {multipleDiagrams.length} Diagrams
-                    </h4>
-                    <span className="text-xs text-muted-foreground">
-                      {showCombinedView 
-                        ? 'Combined Overview' 
-                        : `Diagram ${currentDiagramIndex + 1} of ${multipleDiagrams.length}`}
-                    </span>
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {multipleDiagrams.map((diagram, index) => (
-                      <Button
-                        key={diagram.id}
-                        variant={!showCombinedView && currentDiagramIndex === index ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
-                          setShowCombinedView(false);
-                          setCurrentDiagramIndex(index);
-                          setBpmnXml(diagram.xml);
-                          toast.info(`Switched to: ${diagram.title}`);
-                        }}
-                        className="text-xs"
-                      >
-                        <span className="mr-1">{index + 1}.</span>
-                        {diagram.title.length > 50 ? diagram.title.substring(0, 50) + '...' : diagram.title}
-                      </Button>
-                    ))}
-                    {/* Combined Overview Tab */}
-                    {combinedOverviewXml && (
-                      <Button
-                        variant={showCombinedView ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
-                          setShowCombinedView(true);
-                          setBpmnXml(combinedOverviewXml);
-                          toast.info('Switched to Combined Overview - expand subprocesses to see details');
-                        }}
-                        className="text-xs font-semibold"
-                      >
-                        Combined Overview
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
-                <h3 className="text-xl font-semibold mb-4">Your {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
-                <BpmnViewerComponent 
-                  xml={bpmnXml}
-                  diagramType={diagramType}
-                  onSave={async (updatedXml) => {
-                    setBpmnXml(updatedXml);
-                    
-                    // If we have a current project, update it
-                    if (currentProjectId && user) {
-                      const { error } = await updateProject(currentProjectId, user.id, {
-                        bpmn_xml: updatedXml
-                      });
-                      
-                      if (error) {
-                        toast.error("Failed to update project");
-                        console.error(error);
-                      } else {
-                        toast.success("Project updated successfully");
-                      }
-                    } else if (user && updatedXml) {
-                      // If no project exists, prompt to save
-                      setPendingXml(updatedXml);
-                      setShowSaveProjectDialog(true);
-                    } else {
-                      toast.success("Diagram saved to workspace");
-                    }
-                  }}
-                  onRefine={() => setShowRefineDialog(true)}
-                />
-                {/* Model Feedback */}
-                <p className="text-xs text-muted-foreground mt-4 text-right">
-                  Generated via Gemini 2.5 Pro · v1
-                </p>
-              </div>
-
-              {/* Refinement Progress Indicator */}
-              {isRefining && refinementStep !== "idle" && (
-                <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border">
-                  <p className="text-sm font-medium text-foreground mb-2">Refining your {diagramType === "bpmn" ? "BPMN" : "P&ID"} diagram...</p>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={refinementStep === "analyzing" ? "font-semibold" : "text-muted-foreground"}>
-                      {refinementStep === "analyzing" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {refinementStep !== "analyzing" && "✓ "}
-                      Step 1: Analyzing instructions...
-                    </span>
-                    {refinementStep === "analyzing" && <Progress value={33} className="w-24" aria-label="Progress: 33%" />}
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={refinementStep === "refining" ? "font-semibold" : refinementStep === "applying" ? "text-muted-foreground" : ""}>
-                      {refinementStep === "refining" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {refinementStep !== "refining" && refinementStep !== "analyzing" && "✓ "}
-                      Step 2: Refining diagram...
-                    </span>
-                    {refinementStep === "refining" && <Progress value={66} className="w-24" aria-label="Progress: 66%" />}
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={refinementStep === "applying" ? "font-semibold" : "text-muted-foreground"}>
-                      {refinementStep === "applying" && <Loader2 className="h-4 w-4 inline mr-2 animate-spin" aria-hidden="true" />}
-                      {refinementStep !== "applying" && refinementStep !== "refining" && refinementStep !== "analyzing" && "✓ "}
-                      Step 3: Applying changes...
-                    </span>
-                    {refinementStep === "applying" && <Progress value={100} className="w-24" aria-label="Progress: 100%" />}
-                  </div>
-                </div>
-              )}
-
-              {/* Refinement Dialog */}
-              <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Refine Your {diagramType === "bpmn" ? "BPMN" : "P&ID"}</DialogTitle>
-                    <DialogDescription>
-                      Use natural language to modify the current diagram. The AI will update the latest version based on your instructions.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Textarea
-                      placeholder="E.g., 'add a review step after approval', 'replace manual task with automated service', 'add parallel gateway for concurrent processing'..."
-                      value={refinementPrompt}
-                      onChange={(e) => setRefinementPrompt(e.target.value)}
-                      className="min-h-[100px] resize-none"
-                      disabled={isRefining}
-                    />
-                    
-                    <Button 
-                      onClick={() => {
-                        handleRefineBpmn();
-                        setShowRefineDialog(false);
-                      }}
-                      disabled={isRefining || !refinementPrompt.trim()}
-                      className="w-full"
-                    >
-                      {isRefining ? "Refining..." : `Apply Changes to Current ${diagramType === "bpmn" ? "BPMN" : "P&ID"}`}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              {/* Save Project Dialog */}
-              {user && (
-                <ProjectNameDialog
-                  open={showSaveProjectDialog}
-                  onOpenChange={setShowSaveProjectDialog}
-                  onSave={async (name, description) => {
-                    if (!pendingXml || !user) return;
-
-                    setIsSavingProject(true);
-                    const { data, error } = await createProject({
-                      user_id: user.id,
-                      name,
-                      description: description || null,
-                      diagram_type: diagramType,
-                      bpmn_xml: pendingXml,
-                    });
-
-                    if (error) {
-                      toast.error("Failed to save project");
-                      console.error(error);
-                    } else if (data) {
-                      setCurrentProjectId(data.id);
-                      setPendingXml(null);
-                      toast.success("Project saved successfully!");
-                    }
-
-                    setIsSavingProject(false);
-                    setShowSaveProjectDialog(false);
-                  }}
-                  diagramType={diagramType}
-                  isLoading={isSavingProject}
-                />
-              )}
-            </div>
-          ) : isGenerating && generationStep === "drawing" ? (
-            <motion.div 
-              className="bg-card border border-border rounded-2xl p-6 shadow-lg"
-              initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={getReducedMotionTransition(prefersReducedMotion) || { duration: 0.3 }}
-            >
-              <h3 className="text-xl font-semibold mb-4">Generating {diagramType === "bpmn" ? "BPMN" : "P&ID"} Model</h3>
-              <div className="space-y-4">
-                {/* Skeleton loader for BPMN preview */}
-                <div className="w-full h-[400px] bg-muted/50 rounded-lg animate-pulse border border-border/50 flex items-center justify-center">
-                  <div className="text-center space-y-3">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                    <p className="text-sm text-muted-foreground">Rendering diagram...</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          ) : null}
         </div>
       </div>
+
+      {/* Refinement Dialog */}
+      <Dialog open={showRefineDialog} onOpenChange={setShowRefineDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refine Your {diagramType === "bpmn" ? "BPMN" : "P&ID"}</DialogTitle>
+            <DialogDescription>
+              Use natural language to modify the current diagram. The AI will update the latest version based on your instructions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="E.g., 'add a review step after approval', 'replace manual task with automated service', 'add parallel gateway for concurrent processing'..."
+              value={refinementPrompt}
+              onChange={(e) => setRefinementPrompt(e.target.value)}
+              className="min-h-[100px] resize-none"
+              disabled={isRefining}
+            />
+
+            <Button
+              onClick={() => {
+                handleRefineBpmn();
+                setShowRefineDialog(false);
+              }}
+              disabled={isRefining || !refinementPrompt.trim()}
+              className="w-full"
+            >
+              {isRefining ? "Refining..." : `Apply Changes to Current ${diagramType === "bpmn" ? "BPMN" : "P&ID"}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Project Dialog */}
+      {user && (
+        <ProjectNameDialog
+          open={showSaveProjectDialog}
+          onOpenChange={setShowSaveProjectDialog}
+          onSave={async (name, description) => {
+            if (!pendingXml || !user) return;
+
+            setIsSavingProject(true);
+            const { data, error } = await createProject({
+              user_id: user.id,
+              name,
+              description: description || null,
+              diagram_type: diagramType,
+              bpmn_xml: pendingXml,
+            });
+
+            if (error) {
+              toast.error("Failed to save project");
+              console.error(error);
+            } else if (data) {
+              setCurrentProjectId(data.id);
+              setPendingXml(null);
+              toast.success("Project saved successfully!");
+            }
+
+            setIsSavingProject(false);
+            setShowSaveProjectDialog(false);
+          }}
+          diagramType={diagramType}
+          isLoading={isSavingProject}
+        />
+      )}
     </motion.section>
   );
 };
