@@ -6,7 +6,7 @@ import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import PidRenderer from "@/plugins/PidRenderer";
 import { featureFlags } from "@/config/featureFlags";
 import { Button } from "@/components/ui/button";
-import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List, Eye } from "lucide-react";
+import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -68,6 +68,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Menubar,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarSeparator,
+  MenubarShortcut,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
+  MenubarTrigger,
+} from "@/components/ui/menubar";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 interface BpmnViewerProps {
@@ -406,12 +418,12 @@ const detectLanguageFromText = (text: string): string => {
   }
 
   const normalizedText = text.toLowerCase();
-  
+
   // Check for German-specific characters and common words first (more reliable)
   if (/[äöüßÄÖÜ]/.test(text)) {
     return 'de';
   }
-  
+
   // Common language patterns - expanded with more common words
   const languagePatterns: Record<string, RegExp[]> = {
     'es': [/\b(es|está|están|con|para|por|del|la|el|de|en|un|una|son|ser|hacer|tiene|tener|proceso|diagrama|crear|generar|tarea|aprobar|revisión|validación)\b/i],
@@ -431,7 +443,7 @@ const detectLanguageFromText = (text: string): string => {
 
   // Count matches for each language
   const scores: Record<string, number> = {};
-  
+
   for (const [lang, patterns] of Object.entries(languagePatterns)) {
     scores[lang] = 0;
     for (const pattern of patterns) {
@@ -445,7 +457,7 @@ const detectLanguageFromText = (text: string): string => {
   // Find language with highest score
   let maxScore = 0;
   let detectedLang = 'en';
-  
+
   for (const [lang, score] of Object.entries(scores)) {
     if (score > maxScore) {
       maxScore = score;
@@ -502,7 +514,7 @@ Do NOT include English translations or bilingual labels.`;
 const getLanguageDirectiveFromContent = (contentText: string, fallbackLanguage: LanguageOptionValue): string => {
   // Detect language from the content
   const detectedLang = detectLanguageFromText(contentText);
-  
+
   // Map detected language code to LanguageOptionValue format
   const languageMap: Record<string, LanguageOptionValue> = {
     'en': 'en',
@@ -512,12 +524,12 @@ const getLanguageDirectiveFromContent = (contentText: string, fallbackLanguage: 
     'it': 'it',
     'pt': 'pt',
   };
-  
+
   // Use detected language if available and not English, otherwise use fallback
-  const languageToUse = (detectedLang !== 'en' && languageMap[detectedLang]) 
-    ? languageMap[detectedLang] 
+  const languageToUse = (detectedLang !== 'en' && languageMap[detectedLang])
+    ? languageMap[detectedLang]
     : fallbackLanguage;
-  
+
   // If fallback is "auto" and we detected a non-English language, use detected language
   if (fallbackLanguage === "auto" && detectedLang !== 'en' && languageMap[detectedLang]) {
     const languageName = LANGUAGE_NATIVE_NAMES[languageMap[detectedLang]] ?? detectedLang.toUpperCase();
@@ -526,7 +538,7 @@ CRITICAL: The existing diagram content is in ${languageName}. Generate ALL varia
 Do NOT switch to English. Do NOT include English translations or bilingual labels.
 Every generated variant MUST match the language of the existing diagram.`;
   }
-  
+
   // Otherwise use the standard directive
   return getLanguageDirective(languageToUse);
 };
@@ -594,7 +606,7 @@ const calculateModelMetrics = (xmlString: string): {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlString, "application/xml");
-    
+
     if (doc.getElementsByTagName("parsererror").length > 0) {
       return { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, eventTypes: [], estimatedPaths: 1 };
     }
@@ -698,7 +710,7 @@ const extractProcessSummary = (xmlString: string, type: "bpmn" | "pid"): string 
     const summaryPrefix = type === "pid"
       ? "P&ID workflow covering: "
       : "Process steps include: ";
-      
+
     return `${summaryPrefix}${truncatedNames.join(", ")}${suffix}`;
 
   } catch (error) {
@@ -866,7 +878,7 @@ const calculateDiagramComplexity = (xml: string): { elementCount: number; comple
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, "application/xml");
-    
+
     if (doc.getElementsByTagName("parsererror").length > 0) {
       return { elementCount: 0, complexity: 'simple' };
     }
@@ -876,15 +888,15 @@ const calculateDiagramComplexity = (xml: string): { elementCount: number; comple
     const events = doc.querySelectorAll('startEvent, intermediateCatchEvent, intermediateThrowEvent, endEvent, boundaryEvent');
     const flows = doc.querySelectorAll('sequenceFlow, messageFlow');
     const subprocesses = doc.querySelectorAll('subProcess, callActivity');
-    
+
     const elementCount = tasks.length + gateways.length + events.length + flows.length + subprocesses.length;
-    
+
     let complexity: 'simple' | 'intermediate' | 'complex' | 'very-complex';
     if (elementCount <= 20) complexity = 'simple';
     else if (elementCount <= 50) complexity = 'intermediate';
     else if (elementCount <= 100) complexity = 'complex';
     else complexity = 'very-complex';
-    
+
     return { elementCount, complexity };
   } catch (error) {
     console.error("Failed to calculate complexity:", error);
@@ -915,7 +927,7 @@ const renderXmlToSvg = async (xml: string, timeoutMs = 5000): Promise<string> =>
   container.style.width = "1200px";
   container.style.height = "800px";
   document.body.appendChild(container);
-  
+
   try {
     const renderPromise = (async () => {
       const tmpModeler = new BpmnModeler({ container });
@@ -924,13 +936,13 @@ const renderXmlToSvg = async (xml: string, timeoutMs = 5000): Promise<string> =>
       tmpModeler.destroy();
       return svg;
     })();
-    
+
     const svg = await renderWithTimeout(
       renderPromise,
       timeoutMs,
       "SVG rendering timed out"
     );
-    
+
     document.body.removeChild(container);
     return svg;
   } catch (e) {
@@ -950,26 +962,26 @@ const renderXmlToCanvas = async (xml: string, timeoutMs = 5000): Promise<string>
   container.style.width = "2000px"; // Larger for complex diagrams
   container.style.height = "1500px";
   document.body.appendChild(container);
-  
+
   try {
     const renderPromise = (async () => {
       const tmpModeler = new BpmnModeler({ container });
       await tmpModeler.importXML(xml);
-      
+
       // Wait for complex diagrams to fully render
       await new Promise(resolve => setTimeout(resolve, 800));
-      
+
       const { svg } = await tmpModeler.saveSVG();
       tmpModeler.destroy();
       return svg;
     })();
-    
+
     const svg = await renderWithTimeout(
       renderPromise,
       timeoutMs,
       "Canvas rendering timed out"
     );
-    
+
     document.body.removeChild(container);
     return svg;
   } catch (e) {
@@ -998,22 +1010,22 @@ const generateSimplifiedPreview = (xml: string, title: string): string => {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, "application/xml");
-    
+
     if (doc.getElementsByTagName("parsererror").length > 0) {
       throw new Error("Invalid XML");
     }
-    
+
     // Extract key information
     const tasks = Array.from(doc.querySelectorAll('task, userTask, serviceTask')).slice(0, 10);
     const taskNames = tasks.map(t => t.getAttribute('name') || 'Task').filter(Boolean);
     const startEvents = doc.querySelectorAll('startEvent');
     const endEvents = doc.querySelectorAll('endEvent');
     const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway');
-    
+
     // Create a simplified SVG representation
     const width = 600;
     const height = Math.max(400, taskNames.length * 60 + 100);
-    
+
     let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" style="background: white;">
       <defs>
         <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
@@ -1027,47 +1039,47 @@ const generateSimplifiedPreview = (xml: string, title: string): string => {
           .title { font-size: 14px; font-weight: bold; fill: #1976d2; }
         </style>
       </defs>
-      <text x="${width/2}" y="25" text-anchor="middle" class="title">${title}</text>
-      <text x="${width/2}" y="45" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">Simplified Preview</text>
+      <text x="${width / 2}" y="25" text-anchor="middle" class="title">${title}</text>
+      <text x="${width / 2}" y="45" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">Simplified Preview</text>
     `;
-    
+
     // Draw start event
     if (startEvents.length > 0) {
       svg += `<circle cx="50" cy="80" r="15" class="start-end" />
               <text x="50" y="85" text-anchor="middle" class="text" style="font-size: 10px;">Start</text>`;
     }
-    
+
     // Draw tasks
     let yPos = 120;
     taskNames.forEach((name, idx) => {
       const x = 150;
       const truncatedName = name.length > 25 ? name.substring(0, 22) + '...' : name;
-      svg += `<rect x="${x-60}" y="${yPos-15}" width="120" height="30" rx="5" class="task-box" />
-              <text x="${x}" y="${yPos+2}" text-anchor="middle" class="text">${truncatedName}</text>`;
-      
+      svg += `<rect x="${x - 60}" y="${yPos - 15}" width="120" height="30" rx="5" class="task-box" />
+              <text x="${x}" y="${yPos + 2}" text-anchor="middle" class="text">${truncatedName}</text>`;
+
       if (idx < taskNames.length - 1) {
-        svg += `<line x1="${x}" y1="${yPos+15}" x2="${x}" y2="${yPos+45}" stroke="#1976d2" stroke-width="2" marker-end="url(#arrowhead)" />`;
+        svg += `<line x1="${x}" y1="${yPos + 15}" x2="${x}" y2="${yPos + 45}" stroke="#1976d2" stroke-width="2" marker-end="url(#arrowhead)" />`;
       }
       yPos += 60;
     });
-    
+
     // Draw end event
     if (endEvents.length > 0) {
       svg += `<circle cx="150" cy="${yPos}" r="15" class="start-end" />
-              <text x="150" y="${yPos+5}" text-anchor="middle" class="text" style="font-size: 10px;">End</text>`;
+              <text x="150" y="${yPos + 5}" text-anchor="middle" class="text" style="font-size: 10px;">End</text>`;
     }
-    
+
     // Add gateway indicator if present
     if (gateways.length > 0) {
-      svg += `<text x="${width-100}" y="80" class="text" style="font-size: 10px; fill: #f57c00;">${gateways.length} Gateway${gateways.length > 1 ? 's' : ''}</text>`;
+      svg += `<text x="${width - 100}" y="80" class="text" style="font-size: 10px; fill: #f57c00;">${gateways.length} Gateway${gateways.length > 1 ? 's' : ''}</text>`;
     }
-    
+
     // Add element count
     const elementCount = tasks.length + gateways.length + startEvents.length + endEvents.length;
-    svg += `<text x="${width/2}" y="${height-20}" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">${elementCount} elements total</text>`;
-    
+    svg += `<text x="${width / 2}" y="${height - 20}" text-anchor="middle" class="text" style="font-size: 10px; fill: #666;">${elementCount} elements total</text>`;
+
     svg += `</svg>`;
-    
+
     return svg;
   } catch (error) {
     // Ultimate fallback: minimal SVG
@@ -1120,13 +1132,13 @@ const generateCacheKey = (xml: string, title: string): string => {
   return btoa(hash).replace(/[^a-zA-Z0-9]/g, '');
 };
 
-const AlternativeDiagramPreview = ({ 
-  xml, 
-  title, 
+const AlternativeDiagramPreview = ({
+  xml,
+  title,
   onRetry,
-  onDownloadAvailable 
-}: { 
-  xml: string; 
+  onDownloadAvailable
+}: {
+  xml: string;
   title: string;
   onRetry?: () => void;
   onDownloadAvailable?: (available: boolean) => void;
@@ -1142,7 +1154,7 @@ const AlternativeDiagramPreview = ({
     let isMounted = true;
     const complexity = calculateDiagramComplexity(xml);
     const cacheKey = generateCacheKey(xml, title);
-    
+
     // Check cache first
     const cachedSvg = getCachedPreview(cacheKey);
     if (cachedSvg) {
@@ -1153,17 +1165,17 @@ const AlternativeDiagramPreview = ({
       }
       return;
     }
-    
+
     const generateSvg = async () => {
       setLoading(true);
       setError(null);
       setErrorType(null);
       setRenderStage('svg');
-      
+
       try {
         let renderedSvg: string | null = null;
         let lastError: Error | null = null;
-        
+
         // Layer 1: Primary SVG rendering (5s timeout)
         try {
           setRenderStage('svg');
@@ -1172,7 +1184,7 @@ const AlternativeDiagramPreview = ({
         } catch (svgError) {
           lastError = svgError as Error;
           console.warn(`✗ SVG render failed for ${title}:`, svgError);
-          
+
           // Layer 2: Canvas-based fallback (5s timeout)
           try {
             setRenderStage('canvas');
@@ -1181,7 +1193,7 @@ const AlternativeDiagramPreview = ({
           } catch (canvasError) {
             lastError = canvasError as Error;
             console.warn(`✗ Canvas render failed for ${title}:`, canvasError);
-            
+
             // Layer 3: Server-side preview (async, show loader)
             if (complexity.complexity === 'complex' || complexity.complexity === 'very-complex') {
               setRenderStage('server');
@@ -1198,7 +1210,7 @@ const AlternativeDiagramPreview = ({
                 console.warn(`✗ Server preview failed for ${title}:`, serverError);
               }
             }
-            
+
             // Layer 4: Simplified representation (ALWAYS succeeds as final fallback)
             if (!renderedSvg) {
               setRenderStage('svg'); // Reset stage for simplified view
@@ -1213,7 +1225,7 @@ const AlternativeDiagramPreview = ({
             }
           }
         }
-        
+
         // GUARANTEE: Always set a preview (never show "unavailable")
         if (isMounted) {
           if (renderedSvg) {
@@ -1509,8 +1521,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           const success = await applyLanguageToDiagram(selectedLanguage, { silent: true });
           if (!success && !cancelled) {
             toast.info(
-              `Live translation not yet available for ${
-                LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? selectedLanguage
+              `Live translation not yet available for ${LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? selectedLanguage
               }.`
             );
           }
@@ -1543,11 +1554,11 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
   const getVariantSummary = useCallback((model: AlternativeModel) => {
     const metrics = model.metrics || { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, estimatedPaths: 1 };
     const complexity = model.complexity;
-    
+
     const strengths: string[] = [];
     const weaknesses: string[] = [];
     const useCases: string[] = [];
-    
+
     if (complexity === 'basic') {
       strengths.push('Simple and easy to understand');
       strengths.push('Fast to implement and maintain');
@@ -1592,51 +1603,51 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
       useCases.push('Complex multi-system integrations');
       useCases.push('High-availability systems');
     }
-    
+
     return { strengths, weaknesses, useCases };
   }, []);
 
   const recommendedModel = useMemo(() => {
     if (!alternativeModels.length) return null;
-    
+
     // Enhanced scoring algorithm for recommendation
     const scored = alternativeModels.map(model => {
       let score = 0;
       const metrics = model.metrics || { taskCount: 0, decisionPoints: 0, parallelBranches: 0, errorHandlers: 0, estimatedPaths: 1 };
-      
+
       // Complexity scoring (prefer intermediate for standard use)
       if (model.complexity === 'intermediate') score += 15;
       else if (model.complexity === 'basic') score += 8;
       else score += 5;
-      
+
       // Task count balance (3-12 is optimal)
       if (metrics.taskCount >= 3 && metrics.taskCount <= 12) score += 8;
       else if (metrics.taskCount > 12 && metrics.taskCount <= 20) score += 5;
       else if (metrics.taskCount > 0) score += 2;
-      
+
       // Decision points (1-3 is optimal)
       if (metrics.decisionPoints >= 1 && metrics.decisionPoints <= 3) score += 8;
       else if (metrics.decisionPoints > 3) score += 4;
-      
+
       // Parallel branches (1-2 is optimal)
       if (metrics.parallelBranches > 0 && metrics.parallelBranches <= 2) score += 6;
       else if (metrics.parallelBranches > 2) score += 3;
-      
+
       // Error handling (preferred but not required)
       if (metrics.errorHandlers > 0) score += 5;
       if (metrics.errorHandlers > 1) score += 2;
-      
+
       // Path diversity (2-5 paths is optimal)
       if (metrics.estimatedPaths >= 2 && metrics.estimatedPaths <= 5) score += 4;
       else if (metrics.estimatedPaths > 5) score += 2;
-      
+
       // Penalize extremes
       if (metrics.taskCount > 25) score -= 5; // Too complex
       if (metrics.taskCount < 2) score -= 3; // Too simple
-      
+
       return { model, score };
     });
-    
+
     scored.sort((a, b) => b.score - a.score);
     return scored[0]?.model || alternativeModels[0];
   }, [alternativeModels]);
@@ -1985,9 +1996,9 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
           const basic = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'basic');
           const intermediate = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'intermediate');
           const advanced = ALTERNATIVE_VARIANTS.filter(v => v.complexity === 'advanced');
-          
+
           const result: typeof ALTERNATIVE_VARIANTS = [];
-          
+
           if (count === 3) {
             // Perfect balance: 1 BASIC, 1 INTERMEDIATE, 1 ADVANCED
             if (basic.length > 0) result.push(basic[0]);
@@ -2017,18 +2028,18 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               result.push(advanced[i]);
             }
           }
-          
+
           // If we don't have enough variants, fill with remaining ones in order
           if (result.length < count) {
             const usedIds = new Set(result.map(v => v.id));
             const remaining = ALTERNATIVE_VARIANTS.filter(v => !usedIds.has(v.id));
             result.push(...remaining.slice(0, count - result.length));
           }
-          
+
           // Ensure we return exactly the requested count
           return result.slice(0, count);
         };
-        
+
         const variantsToGenerate = getVariantsByCount(alternativeCount);
 
         if (!variantsToGenerate.length) {
@@ -2038,7 +2049,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
         // Initialize progress tracking with individual model statuses
         const totalVariants = variantsToGenerate.length;
         setAlternativeProgress({ completed: 0, total: totalVariants, current: undefined });
-        
+
         // Initialize status map for all models
         const initialStatuses = new Map<string, 'queued' | 'generating' | 'completed' | 'failed'>();
         variantsToGenerate.forEach(variant => {
@@ -2062,7 +2073,7 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
               updated.set(variant.id, 'generating');
               return updated;
             });
-            
+
             setAlternativeProgress({
               completed: completedCount,
               total: totalVariants,
@@ -2104,9 +2115,9 @@ const BpmnViewerComponent = ({ xml, onSave, diagramType = "bpmn", onRefine }: Bp
                 description: 'Complex with error handling, parallel flows, and subprocesses'
               }
             };
-            
+
             const constraints = complexityConstraints[variant.complexity] || complexityConstraints.intermediate;
-            
+
             // Create highly specific, prescriptive prompts for each variant to ensure different BPMN structures
             const getVariantSpecificPrompt = (variant: typeof variantsToGenerate[0], instructions: string) => {
               if (variant.complexity === 'basic') {
@@ -2200,7 +2211,7 @@ REQUIREMENTS:
 STRUCTURE: startEvent → [parallelGateway split] → [concurrent branches] → [parallelGateway join] → endEvent
 Focus on parallelism: maximize tasks running simultaneously.`;
                 }
-                
+
                 // Generic intermediate instructions for other variants
                 return `
 INTERMEDIATE BPMN: Include structure with decisions and parallel flows.
@@ -2237,17 +2248,17 @@ STRUCTURE: Complex routing with gateways, parallel flows, error handling, compli
             };
 
             const variantSpecificInstructions = getVariantSpecificPrompt(variant, instructions);
-            
+
             // Build concise prompt
-            const tierWarning = variant.complexity === 'basic' 
+            const tierWarning = variant.complexity === 'basic'
               ? 'BASIC: Simple sequential flow only. NO gateways, NO subprocesses, NO branching.'
               : variant.complexity === 'intermediate'
-              ? 'INTERMEDIATE: Must include 1+ gateway OR 1+ subprocess. Show structure and organization.'
-              : 'ADVANCED: Must include 2-3 gateways, 2-4 parallel branches, 1-2 subprocesses, error handling, 4+ paths.';
-            
+                ? 'INTERMEDIATE: Must include 1+ gateway OR 1+ subprocess. Show structure and organization.'
+                : 'ADVANCED: Must include 2-3 gateways, 2-4 parallel branches, 1-2 subprocesses, error handling, 4+ paths.';
+
             // For Modelling Agent Mode, detect language from processSummary to ensure variants match the diagram's language
             const contentBasedLanguageDirective = getLanguageDirectiveFromContent(processSummary || '', selectedLanguage);
-            
+
             prompt = `VARIANT: ${variant.title} (${variant.complexity.toUpperCase()})
 Description: ${variant.description}
 
@@ -2269,7 +2280,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             promptLength = prompt.length;
             const variantSpecificLength = variantSpecificInstructions.length;
             const processSummaryLength = processSummary?.length || 0;
-            
+
             console.group(`[Modelling Agent] Generating variant: ${variant.title} (${variant.complexity})`);
             console.log('Variant Details:', {
               id: variant.id,
@@ -2292,7 +2303,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               hasBaseInstructions: instructions.length > 0
             });
             console.log(`Generating ${variant.title} with skipCache=true, modelingAgentMode=true`);
-            
+
             // Increase timeout for complex variants (advanced may need more time)
             // Also account for Pro model which may take longer to process complex prompts
             // Advanced variants can take 90-120s due to retries and complex processing
@@ -2301,15 +2312,15 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             // Basic variants typically complete in 30-45s
             // Automation Lean needs extra time because it requires analyzing and transforming existing tasks
             const isTransformationVariant = variant.id === 'automation-lean';
-            const timeout = variant.complexity === 'advanced' 
-              ? 120000 
-              : variant.complexity === 'intermediate' 
+            const timeout = variant.complexity === 'advanced'
+              ? 120000
+              : variant.complexity === 'intermediate'
                 ? (isTransformationVariant ? 105000 : 90000)
                 : 45000;
             const apiStartTime = Date.now();
             const { data, error } = await invokeWithTimeout("generate-bpmn", {
-              body: { 
-                prompt, 
+              body: {
+                prompt,
                 diagramType,
                 skipCache: true, // Disable caching for modeling agent mode to ensure unique variants
                 modelingAgentMode: true // Enable variation mode for different outputs
@@ -2335,7 +2346,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 timeout: `${timeout}ms`,
                 isTimeout: error.message?.includes('timed out')
               });
-              
+
               // Provide more specific error messages
               let errorMessage = error.message;
               if (error.message?.includes('timed out')) {
@@ -2346,7 +2357,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               } else if (error.message?.includes('429')) {
                 errorMessage = 'Too many requests. Please wait a moment and try again. Consider generating variants one at a time.';
               }
-              
+
               throw new Error(errorMessage);
             }
 
@@ -2372,32 +2383,32 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             // Pre-render validation: Check complexity and validate structure
             const calculatedComplexity = calculateDiagramComplexity(data.bpmnXml);
             const metrics = calculateModelMetrics(data.bpmnXml);
-            
+
             // IMPORTANT: Use the variant's predefined complexity, NOT the calculated one
             // The calculated complexity is only for validation, not for display
             // The variant complexity (basic/intermediate/advanced) is the intended complexity level
             const modelComplexity: AlternativeComplexity = variant.complexity;
-            
+
             // Validation checks
             const validationErrors: string[] = [];
             const validationWarnings: string[] = [];
-            
+
             // Check element count constraint (max 60 elements for reliable rendering - increased for advanced variants)
             // Advanced variants may legitimately have more elements
             const maxElements = variant.complexity === 'advanced' ? 60 : variant.complexity === 'intermediate' ? 50 : 45;
             if (calculatedComplexity.elementCount > maxElements) {
               validationWarnings.push(`High element count (${calculatedComplexity.elementCount} > ${maxElements}) - may affect rendering performance`);
             }
-            
+
             // Validate structure matches complexity tier requirements
             try {
               const parser = new DOMParser();
               const doc = parser.parseFromString(data.bpmnXml, "application/xml");
-              
+
               if (doc.getElementsByTagName("parsererror").length > 0) {
                 validationErrors.push("Invalid XML structure");
               }
-              
+
               // Check for sequence flows with invalid source/target
               const flows = doc.querySelectorAll('sequenceFlow');
               flows.forEach((flow, idx) => {
@@ -2407,7 +2418,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                   validationErrors.push(`Flow ${idx} missing sourceRef or targetRef`);
                 }
               });
-              
+
               // Tier-specific structure validation
               const gateways = doc.querySelectorAll('exclusiveGateway, parallelGateway, inclusiveGateway, eventBasedGateway');
               const subprocesses = doc.querySelectorAll('subProcess, callActivity');
@@ -2422,7 +2433,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               const annotations = doc.querySelectorAll('textAnnotation');
               const groups = doc.querySelectorAll('group');
               const artifacts = doc.querySelectorAll('dataObject, dataObjectReference, textAnnotation, group');
-              
+
               if (variant.complexity === 'basic') {
                 // BEGINNER: Should have NO gateways, NO subprocesses, NO advanced elements
                 if (gateways.length > 0) {
@@ -2458,20 +2469,20 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 }
                 // Don't enforce strict counts - advanced variants can vary
                 // Only warn if completely missing error handling AND compliance AND integration
-                const hasAdvancedFeatures = boundaryEvents.length > 0 || 
-                                          artifacts.length > 0 || 
-                                          serviceTasks.length > 0 ||
-                                          pools.length > 1 || 
-                                          lanes.length > 1;
+                const hasAdvancedFeatures = boundaryEvents.length > 0 ||
+                  artifacts.length > 0 ||
+                  serviceTasks.length > 0 ||
+                  pools.length > 1 ||
+                  lanes.length > 1;
                 if (!hasAdvancedFeatures && gateways.length < 2) {
                   validationWarnings.push(`ADVANCED tier should include advanced features (error handling, artifacts, integration, or multiple pools/lanes)`);
                 }
               }
-              
+
             } catch (parseError) {
               validationErrors.push("XML parsing failed");
             }
-            
+
             // Comprehensive validation logging
             console.log('Validation Results:', {
               errors: validationErrors.length,
@@ -2486,7 +2497,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 estimatedPaths: metrics.estimatedPaths
               }
             });
-            
+
             if (validationErrors.length > 0) {
               console.error(`[Modelling Agent] Validation errors for ${variant.title}:`, validationErrors);
             }
@@ -2494,14 +2505,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               console.warn(`[Modelling Agent] Validation warnings for ${variant.title}:`, validationWarnings);
               console.warn(`Generated structure: ${metrics.decisionPoints} decision points, ${metrics.parallelBranches} parallel branches, ${metrics.taskCount} tasks`);
             }
-            
+
             // DEBUG: Log complexity assignment to verify it's correct
             console.log(`[Model Generation] ${variant.title}: Variant complexity="${variant.complexity}", Assigned complexity="${modelComplexity}", Calculated complexity="${calculatedComplexity.complexity}"`);
-            
+
             const totalDuration = Date.now() - startTime;
             console.log(`[Modelling Agent] Successfully generated ${variant.title} in ${totalDuration}ms`);
             console.groupEnd();
-            
+
             const newModel: AlternativeModel = {
               id: `${variant.id}-${Date.now()}-${index}`,
               title: variant.title,
@@ -2511,17 +2522,17 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               generatedAt: new Date().toISOString(),
               metrics,
             };
-            
+
             generated.push(newModel);
             completedCount++;
-            
+
             // Update status to completed
             setModelStatuses(prev => {
               const updated = new Map(prev);
               updated.set(variant.id, 'completed');
               return updated;
             });
-            
+
             // Update UI with the new model as it becomes available
             setAlternativeModels([...generated]);
             setAlternativeProgress({
@@ -2581,7 +2592,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           } catch (error) {
             completedCount++;
             const errorDuration = Date.now() - startTime;
-            
+
             // Comprehensive error logging
             console.error(`[Modelling Agent] Failed to generate alternative "${variant.title}":`, {
               variant: {
@@ -2598,22 +2609,22 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               promptLength: promptLength,
               timestamp: new Date().toISOString()
             });
-            
+
             // Update status to failed
             setModelStatuses(prev => {
               const updated = new Map(prev);
               updated.set(variant.id, 'failed');
               return updated;
             });
-            
+
             setAlternativeProgress({
               completed: completedCount,
               total: totalVariants,
               current: undefined,
             });
-            
+
             console.groupEnd(); // Close the console group opened at start
-            
+
             // Don't show toast for every failure - it's too noisy
             // Only show toast if this is the last variant or if it's a critical error
             if (completedCount === totalVariants || error instanceof Error && error.message.includes('rate limit')) {
@@ -2622,7 +2633,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 { description: error instanceof Error ? error.message : "An unknown error occurred. The AI model might be overloaded or the request may have timed out." }
               );
             }
-            
+
             // Don't throw error - let Promise.allSettled handle it
             // Return null to indicate failure
             return null;
@@ -2632,14 +2643,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         // Execute ALL variants in parallel - start all at the same time
         // All variants will generate simultaneously, not sequentially
         const tasks = variantsToGenerate.map((variant, index) => generateVariant(variant, index));
-        
+
         console.log(`[Modelling Agent] Starting parallel generation of ${totalVariants} variants`);
         console.log(`[Modelling Agent] All variants will start generating simultaneously:`, variantsToGenerate.map(v => `${v.title} (${v.complexity})`).join(', '));
-        
+
         // Execute ALL variants in parallel at the same time
         // Promise.allSettled ensures we wait for all to complete (success or failure)
         const results = await Promise.allSettled(tasks);
-        
+
         // Log results for debugging
         results.forEach((result, idx) => {
           const variant = variantsToGenerate[idx];
@@ -2651,7 +2662,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             console.warn(`[Parallel Processing] Variant ${variant.title} (${variant.complexity}) returned null (failed silently)`);
           }
         });
-        
+
         // Log summary of generation results
         console.log(`[Modelling Agent] Generation complete: ${generated.length} successful, ${totalVariants - generated.length} failed`);
         if (generated.length < totalVariants) {
@@ -2667,12 +2678,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           const failedCount = totalVariants - generated.length;
           const failedVariants = variantsToGenerate.filter(v => !generated.find(m => m.title === v.title));
           console.warn(`[Modelling Agent] ${failedCount} variants failed:`, failedVariants.map(v => `${v.title} (${v.complexity})`));
-          
+
           // Show a warning toast if some variants failed, but don't block if we have at least one
           if (generated.length > 0) {
             toast.warning(
               `${generated.length} of ${totalVariants} variants generated`,
-              { 
+              {
                 description: failedCount > 0 ? `${failedCount} variants failed to generate. Check console for details.` : undefined,
                 duration: 5000
               }
@@ -2691,7 +2702,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         setAlternativeModels(generated);
         setSelectedAlternativeId(generated[0]?.id ?? null);
         hasGeneratedAlternativesRef.current = true;
-        
+
         console.log(`[Modelling Agent] Successfully generated ${generated.length} variants:`, generated.map(m => m.title));
 
         // Final cache update with all successful models (update if exists, insert if not)
@@ -2778,7 +2789,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       }
       return match;
     });
-    
+
     // Fix any remaining unclosed waypoint tags without attributes
     sanitized = sanitized.replace(/<(\s*)di:waypoint\s*>/gi, '<$1di:waypoint/>');
 
@@ -2811,7 +2822,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const sanitizedXml = sanitizeBpmnXml(model.xml);
         setDiagramReady(false);
         await modelerRef.current.importXML(sanitizedXml);
-        const canvas = modelerRef.current.get("canvas") as { 
+        const canvas = modelerRef.current.get("canvas") as {
           zoom: (mode: string) => void;
           getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
         };
@@ -2822,8 +2833,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             const scale = viewbox.scale ?? 1;
             const width = viewbox.width ?? 0;
             const height = viewbox.height ?? 0;
-            if (isFinite(scale) && isFinite(width) && isFinite(height) && 
-                width > 0 && height > 0 && scale > 0) {
+            if (isFinite(scale) && isFinite(width) && isFinite(height) &&
+              width > 0 && height > 0 && scale > 0) {
               canvas.zoom("fit-viewport");
             }
           }
@@ -2867,15 +2878,15 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     try {
       setDiagramReady(false);
       await modelerRef.current.importXML(entry.generated_bpmn_xml);
-      const canvas = modelerRef.current.get("canvas") as { 
+      const canvas = modelerRef.current.get("canvas") as {
         zoom: (mode: string) => void;
         getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
       };
       // Safe zoom: validate viewbox before applying
       try {
         const viewbox = canvas.getViewbox();
-        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
-            viewbox.width > 0 && viewbox.height > 0) {
+        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
+          viewbox.width > 0 && viewbox.height > 0) {
           canvas.zoom("fit-viewport");
         }
       } catch (zoomError) {
@@ -2919,7 +2930,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Palette panel state
-  const [showPalette, setShowPalette] = useState(false);
+  const [showPalette, setShowPalette] = useState(true);
+  const [isPaletteCollapsed, setIsPaletteCollapsed] = useState(false);
   const [palettePosition, setPalettePosition] = useState({ x: 0, y: 0 });
   // Calculate default height to fit within canvas (viewport height minus headers ~8rem = 128px)
   const defaultPaletteHeight = typeof window !== 'undefined' ? Math.min(700, window.innerHeight - 300) : 600;
@@ -2938,13 +2950,13 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     artifacts: true,
   });
   const dragStartPosition = useRef({ x: 0, y: 0 });
-  const resizeStartState = useRef({ 
-    width: 0, 
-    height: 0, 
-    x: 0, 
-    y: 0, 
-    clientX: 0, 
-    clientY: 0, 
+  const resizeStartState = useRef({
+    width: 0,
+    height: 0,
+    x: 0,
+    y: 0,
+    clientX: 0,
+    clientY: 0,
     edge: '' as 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right',
     startLeft: 0,
     startTop: 0,
@@ -3149,15 +3161,15 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           try {
             setDiagramReady(false);
             await modelerRef.current.importXML(data.bpmn_xml);
-            const canvas = modelerRef.current.get("canvas") as { 
+            const canvas = modelerRef.current.get("canvas") as {
               zoom: (mode: string) => void;
               getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
             };
             // Safe zoom: validate viewbox before applying
             try {
               const viewbox = canvas.getViewbox();
-              if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
-                  viewbox.width > 0 && viewbox.height > 0) {
+              if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
+                viewbox.width > 0 && viewbox.height > 0) {
                 canvas.zoom("fit-viewport");
               }
             } catch (zoomError) {
@@ -3190,11 +3202,11 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         toast.error("Vision AI processing failed", {
           description: errorMsg
         });
-        
+
         // Reset file input
         const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
         if (fileInput) fileInput.value = "";
-        
+
         setIsProcessing(false);
         setSelectedFile(null);
         setVisionJobId(null);
@@ -3221,15 +3233,15 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             if (modelerRef.current) {
               setDiagramReady(false);
               modelerRef.current.importXML(job.bpmn_xml).then(() => {
-                const canvas = modelerRef.current!.get("canvas") as { 
+                const canvas = modelerRef.current!.get("canvas") as {
                   zoom: (mode: string) => void;
                   getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
                 };
                 // Safe zoom: validate viewbox before applying
                 try {
                   const viewbox = canvas.getViewbox();
-                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
-                      viewbox.width > 0 && viewbox.height > 0) {
+                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
+                    viewbox.width > 0 && viewbox.height > 0) {
                     canvas.zoom("fit-viewport");
                   }
                 } catch (zoomError) {
@@ -3262,11 +3274,11 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             toast.error("Vision AI processing failed", {
               description: errorMsg
             });
-            
+
             // Reset file input
             const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
             if (fileInput) fileInput.value = "";
-            
+
             setIsProcessing(false);
             setSelectedFile(null);
             setVisionJobId(null);
@@ -3287,11 +3299,11 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       toast.error("Processing timed out", {
         description: "Please try again or contact support"
       });
-      
+
       // Reset file input
       const fileInput = document.getElementById('vision-upload') as HTMLInputElement;
       if (fileInput) fileInput.value = "";
-      
+
       setIsProcessing(false);
       setSelectedFile(null);
       setVisionJobId(null);
@@ -3362,14 +3374,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Helper function to toggle subprocess expand/collapse
     const toggleSubprocessExpansion = (elementId: string) => {
       if (!modelerRef.current) return;
-      
+
       try {
-        const modeling = modelerRef.current.get('modeling') as { 
+        const modeling = modelerRef.current.get('modeling') as {
           updateProperties: (element: unknown, properties: { isExpanded?: boolean }) => void;
           toggleCollapse?: (element: unknown) => void;
         };
         const elementRegistry = modelerRef.current.get('elementRegistry') as { get: (id: string) => unknown };
-        
+
         const subprocessElement = elementRegistry.get(elementId);
         if (subprocessElement) {
           if (typeof modeling.toggleCollapse === 'function') {
@@ -3396,24 +3408,24 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       if (!target || !modelerRef.current) return;
 
       // Check if click is on a marker element (SVG circle or path that represents +/- icon)
-      const isMarkerElement = target.tagName === 'circle' || 
-                              target.tagName === 'path' ||
-                              target.classList.contains('djs-collapse-marker') ||
-                              target.classList.contains('djs-expand-marker') ||
-                              target.closest('.djs-collapse-marker') ||
-                              target.closest('.djs-expand-marker');
-      
+      const isMarkerElement = target.tagName === 'circle' ||
+        target.tagName === 'path' ||
+        target.classList.contains('djs-collapse-marker') ||
+        target.classList.contains('djs-expand-marker') ||
+        target.closest('.djs-collapse-marker') ||
+        target.closest('.djs-expand-marker');
+
       if (isMarkerElement) {
-        const elementRegistry = modelerRef.current.get('elementRegistry') as { 
+        const elementRegistry = modelerRef.current.get('elementRegistry') as {
           filter: (filterFn: (element: { type?: string; id?: string }) => boolean) => Array<{ type?: string; id?: string }>;
         };
-        const canvas = modelerRef.current.get('canvas') as { 
+        const canvas = modelerRef.current.get('canvas') as {
           getGraphics: (element: unknown) => SVGElement | null;
         };
-        
+
         // Get all subprocesses and check which one contains this marker
         const subprocesses = elementRegistry.filter((el: { type?: string }) => el.type === 'bpmn:SubProcess');
-        
+
         for (const subprocess of subprocesses) {
           if (subprocess.id) {
             const gfx = canvas.getGraphics(subprocess);
@@ -3422,13 +3434,13 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               const gfxRect = gfx.getBoundingClientRect();
               const clickX = e.clientX;
               const clickY = e.clientY;
-              
+
               // Check if click is in the bottom center area (where marker typically is)
-              const isInMarkerArea = clickX >= gfxRect.left && 
-                                     clickX <= gfxRect.right &&
-                                     clickY >= gfxRect.bottom - 30 && // Bottom 30px area
-                                     clickY <= gfxRect.bottom + 10;
-              
+              const isInMarkerArea = clickX >= gfxRect.left &&
+                clickX <= gfxRect.right &&
+                clickY >= gfxRect.bottom - 30 && // Bottom 30px area
+                clickY <= gfxRect.bottom + 10;
+
               // Also check if target is actually within the gfx element
               if (gfx.contains(target as Node) || isInMarkerArea) {
                 toggleSubprocessExpansion(subprocess.id);
@@ -3455,14 +3467,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       // Handle subprocess expand/collapse on click
       if (element.type === 'bpmn:SubProcess' && element.id && modelerRef.current) {
         try {
-          const canvas = modelerRef.current.get('canvas') as { 
+          const canvas = modelerRef.current.get('canvas') as {
             getGraphics: (element: unknown) => SVGElement | null;
           };
-          
+
           if (gfx) {
             const svgElement = gfx as SVGElement;
             const clickTarget = originalEvent.target as HTMLElement | SVGElement;
-            
+
             // Check if click is on a marker element (circle, path, or marker class)
             const isMarkerClick = clickTarget && (
               clickTarget.tagName === 'circle' ||
@@ -3472,18 +3484,18 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
               (clickTarget as HTMLElement).closest?.('.djs-collapse-marker') ||
               (clickTarget as HTMLElement).closest?.('.djs-expand-marker')
             );
-            
+
             // Also check if click is in the bottom center area of the subprocess (where marker is)
             const gfxRect = svgElement.getBoundingClientRect();
             const clickX = originalEvent.clientX;
             const clickY = originalEvent.clientY;
-            const isInMarkerArea = clickX >= gfxRect.left && 
-                                   clickX <= gfxRect.right &&
-                                   clickY >= gfxRect.bottom - 40 && // Bottom 40px area
-                                   clickY <= gfxRect.bottom + 10 &&
-                                   clickX >= gfxRect.left + (gfxRect.width * 0.4) && // Center 20% of width
-                                   clickX <= gfxRect.right - (gfxRect.width * 0.4);
-            
+            const isInMarkerArea = clickX >= gfxRect.left &&
+              clickX <= gfxRect.right &&
+              clickY >= gfxRect.bottom - 40 && // Bottom 40px area
+              clickY <= gfxRect.bottom + 10 &&
+              clickX >= gfxRect.left + (gfxRect.width * 0.4) && // Center 20% of width
+              clickX <= gfxRect.right - (gfxRect.width * 0.4);
+
             if (isMarkerClick || isInMarkerArea) {
               // Click is on the marker, toggle expansion
               toggleSubprocessExpansion(element.id);
@@ -3523,7 +3535,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Listen for double-click on subprocesses to toggle expand/collapse
     eventBus.on("element.dblclick", (event: { element: { type?: string; id?: string } }) => {
       const { element } = event;
-      
+
       if (element.type === 'bpmn:SubProcess' && element.id) {
         toggleSubprocessExpansion(element.id);
       }
@@ -3537,7 +3549,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Also listen for marker click events (alternative event name)
     eventBus.on("marker.click", (event: { element: { type?: string; id?: string } }) => {
       const { element } = event;
-      
+
       if (element.type === 'bpmn:SubProcess' && element.id) {
         toggleSubprocessExpansion(element.id);
       }
@@ -3546,7 +3558,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Listen for shape click events that might include marker clicks
     eventBus.on("shape.click", (event: { element: { type?: string; id?: string }; originalEvent?: MouseEvent }) => {
       const { element, originalEvent } = event;
-      
+
       if (element.type === 'bpmn:SubProcess' && element.id && originalEvent) {
         const target = originalEvent.target as HTMLElement;
         // Check if click is on a marker
@@ -3768,8 +3780,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       // Safe zoom: validate viewbox before applying
       try {
         const viewbox = canvas.getViewbox();
-        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
-            viewbox.width > 0 && viewbox.height > 0) {
+        if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
+          viewbox.width > 0 && viewbox.height > 0) {
           canvas.zoom("fit-viewport");
         }
       } catch (zoomError) {
@@ -3891,9 +3903,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             try {
               // Force re-import the XML to trigger fresh rendering with P&ID attributes
               // This ensures canRender is called again with the updated attributes
-              const canvas = modelerRef.current!.get("canvas") as { 
-                zoom: (mode: string) => void; 
-                getViewbox: () => { scale: number; width: number; height: number; x: number; y: number } 
+              const canvas = modelerRef.current!.get("canvas") as {
+                zoom: (mode: string) => void;
+                getViewbox: () => { scale: number; width: number; height: number; x: number; y: number }
               };
               const currentXml = finalXml;
 
@@ -3902,8 +3914,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 // Safe zoom: validate viewbox before applying
                 try {
                   const viewbox = canvas.getViewbox();
-                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
-                      viewbox.width > 0 && viewbox.height > 0) {
+                  if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
+                    viewbox.width > 0 && viewbox.height > 0) {
                     canvas.zoom("fit-viewport");
                   }
                 } catch (zoomError) {
@@ -4076,20 +4088,20 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         modelerRef.current
           .importXML(versions[versionIndex])
           .then(() => {
-          const canvas = modelerRef.current!.get("canvas") as { 
-            zoom: (mode: string) => void;
-            getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
-          };
-          // Safe zoom: validate viewbox before applying
-          try {
-            const viewbox = canvas.getViewbox();
-            if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) && 
+            const canvas = modelerRef.current!.get("canvas") as {
+              zoom: (mode: string) => void;
+              getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
+            };
+            // Safe zoom: validate viewbox before applying
+            try {
+              const viewbox = canvas.getViewbox();
+              if (viewbox && isFinite(viewbox.scale) && isFinite(viewbox.width) && isFinite(viewbox.height) &&
                 viewbox.width > 0 && viewbox.height > 0) {
-              canvas.zoom("fit-viewport");
+                canvas.zoom("fit-viewport");
+              }
+            } catch (zoomError) {
+              console.warn("Zoom error, continuing:", zoomError);
             }
-          } catch (zoomError) {
-            console.warn("Zoom error, continuing:", zoomError);
-          }
             captureCurrentLabels();
             setDiagramReady(true);
           })
@@ -4165,7 +4177,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(text, 'text/xml');
         const parseError = xmlDoc.querySelector('parsererror');
-        
+
         if (parseError) {
           toast.error("Invalid XML file");
           return;
@@ -4179,7 +4191,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
         setDiagramReady(false);
         await modelerRef.current.importXML(text);
-        const canvas = modelerRef.current.get("canvas") as { 
+        const canvas = modelerRef.current.get("canvas") as {
           zoom: (mode: string) => void;
           getViewbox: () => { scale: number; x: number; y: number; width: number; height: number } | undefined;
         };
@@ -4190,8 +4202,8 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
             const scale = viewbox.scale ?? 1;
             const width = viewbox.width ?? 0;
             const height = viewbox.height ?? 0;
-            if (isFinite(scale) && isFinite(width) && isFinite(height) && 
-                width > 0 && height > 0 && scale > 0) {
+            if (isFinite(scale) && isFinite(width) && isFinite(height) &&
+              width > 0 && height > 0 && scale > 0) {
               canvas.zoom("fit-viewport");
             }
           }
@@ -4279,7 +4291,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         zoom: (step: number | string) => void;
         getViewbox: () => { scale?: number; x?: number; y?: number; width?: number; height?: number } | undefined;
       };
-      
+
       // If zooming to a specific value, validate it's finite
       if (typeof zoomValue === 'number') {
         if (!isFinite(zoomValue) || zoomValue <= 0) {
@@ -4287,7 +4299,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           return false;
         }
       }
-      
+
       // For fit-viewport, check viewbox is valid before applying
       if (zoomValue === "fit-viewport") {
         const viewbox = canvas.getViewbox();
@@ -4296,15 +4308,15 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           const scale = viewbox.scale ?? 1;
           const width = viewbox.width ?? 0;
           const height = viewbox.height ?? 0;
-          
+
           if (!isFinite(scale) || !isFinite(width) || !isFinite(height) ||
-              width <= 0 || height <= 0 || scale <= 0) {
+            width <= 0 || height <= 0 || scale <= 0) {
             console.warn("Invalid viewbox values, skipping zoom:", viewbox);
             return false;
           }
         }
       }
-      
+
       canvas.zoom(zoomValue);
       return true;
     } catch (error) {
@@ -4358,6 +4370,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
   // Fullscreen handler
   const handleToggleFullscreen = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:4372', message: 'Toggle fullscreen called', data: { isFullscreen: !!document.fullscreenElement, showToolbar }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
+    // #endregion
     if (!document.fullscreenElement) {
       // Enter fullscreen on the entire component, not just canvas
       const rootElement = document.querySelector('.bpmn-viewer-root') as HTMLElement;
@@ -4365,6 +4380,16 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         rootElement.requestFullscreen().then(() => {
           setIsFullscreen(true);
           setShowToolbar(true); // Ensure toolbar is visible in fullscreen
+          // #region agent log
+          setTimeout(() => {
+            const toolbarEl = document.querySelector('.flex.items-center.justify-between.px-4') as HTMLElement;
+            if (toolbarEl) {
+              const rect = toolbarEl.getBoundingClientRect();
+              const styles = window.getComputedStyle(toolbarEl);
+              fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:4380', message: 'After entering fullscreen - toolbar state', data: { zIndex: styles.zIndex, position: styles.position, pointerEvents: styles.pointerEvents, display: styles.display, top: rect.top, left: rect.left, width: rect.width, height: rect.height }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
+            }
+          }, 100);
+          // #endregion
         }).catch(() => {
           toast.error("Failed to enter fullscreen mode");
         });
@@ -4384,7 +4409,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         toast.error("Failed to exit fullscreen mode");
       });
     }
-  }, []);
+  }, [showToolbar]);
 
   // Grid toggle handler
   const handleToggleGrid = useCallback(() => {
@@ -4424,45 +4449,45 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   // Validation handler
   const handleValidateModel = useCallback(() => {
     if (!modelerRef.current) return;
-    
+
     const errors: Array<{ message: string; elementId?: string }> = [];
-    
+
     try {
       const elementRegistry = modelerRef.current.get("elementRegistry") as { getAll: () => Array<{ id?: string; type?: string; businessObject?: { name?: string } }> };
       const allElements = elementRegistry.getAll();
-      
+
       // Basic validation checks
       const startEvents = allElements.filter(el => el.type?.includes('StartEvent'));
       const endEvents = allElements.filter(el => el.type?.includes('EndEvent'));
-      
+
       if (startEvents.length === 0) {
         errors.push({ message: "No start event found. A BPMN diagram must have at least one start event." });
       }
-      
+
       if (endEvents.length === 0) {
         errors.push({ message: "No end event found. A BPMN diagram should have at least one end event." });
       }
-      
+
       // Check for elements without names
       allElements.forEach(element => {
         if (element.type?.includes('Task') && !element.businessObject?.name) {
-          errors.push({ 
-            message: `Task "${element.id}" has no name`, 
-            elementId: element.id 
+          errors.push({
+            message: `Task "${element.id}" has no name`,
+            elementId: element.id
           });
         }
       });
-      
+
       // Check for orphaned elements (no incoming or outgoing flows)
       allElements.forEach(element => {
         if (element.type && !element.type.includes('Event') && !element.type.includes('Gateway')) {
           // This is a simplified check - in a real implementation, you'd check actual flows
         }
       });
-      
+
       setValidationErrors(errors);
       setShowValidationResults(true);
-      
+
       if (errors.length === 0) {
         toast.success("Validation passed! No issues found.");
       } else {
@@ -4478,13 +4503,13 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const handleTogglePanMode = useCallback(() => {
     if (!modelerRef.current) return;
     setIsPanMode(!isPanMode);
-    
+
     try {
-      const canvas = modelerRef.current.get("canvas") as { 
+      const canvas = modelerRef.current.get("canvas") as {
         toggle: (tool: string) => void;
         isActive: (tool: string) => boolean;
       };
-      
+
       if (!isPanMode) {
         // Activate pan tool
         canvas.toggle('hand-tool');
@@ -4504,26 +4529,26 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   // Search handler
   const handleSearch = useCallback((query: string) => {
     if (!modelerRef.current || !query.trim()) return;
-    
+
     try {
-      const elementRegistry = modelerRef.current.get("elementRegistry") as { 
-        getAll: () => Array<{ id?: string; type?: string; businessObject?: { name?: string } }> 
+      const elementRegistry = modelerRef.current.get("elementRegistry") as {
+        getAll: () => Array<{ id?: string; type?: string; businessObject?: { name?: string } }>
       };
-      const canvas = modelerRef.current.get("canvas") as { 
+      const canvas = modelerRef.current.get("canvas") as {
         zoom: (element: unknown) => void;
         findRoot: (element: unknown) => unknown;
       };
-      
+
       const allElements = elementRegistry.getAll();
       const queryLower = query.toLowerCase();
-      
+
       const matches = allElements.filter(element => {
         const name = element.businessObject?.name?.toLowerCase() || '';
         const id = element.id?.toLowerCase() || '';
         const type = element.type?.toLowerCase() || '';
         return name.includes(queryLower) || id.includes(queryLower) || type.includes(queryLower);
       });
-      
+
       if (matches.length > 0) {
         // Zoom to first match
         const firstMatch = matches[0];
@@ -4986,10 +5011,43 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
+      // Ensure toolbar is visible when entering fullscreen
+      if (document.fullscreenElement) {
+        setShowToolbar(true);
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // Keyboard shortcuts for fullscreen and zoom
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F11 to toggle fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        handleToggleFullscreen();
+      }
+      // Cmd/Ctrl + Plus to zoom in
+      if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        handleZoomIn();
+      }
+      // Cmd/Ctrl + Minus to zoom out
+      if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+        e.preventDefault();
+        handleZoomOut();
+      }
+      // Cmd/Ctrl + 0 to fit to screen
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault();
+        handleFitToScreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleFullscreen, handleZoomIn, handleZoomOut, handleFitToScreen]);
 
   // Update container position when scrolling or resizing
   useEffect(() => {
@@ -5006,7 +5064,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     updateContainerPosition();
     window.addEventListener('scroll', updateContainerPosition, true);
     window.addEventListener('resize', updateContainerPosition);
-    
+
     // Also listen for scroll events on the container itself
     const container = canvasContainerRef.current;
     if (container) {
@@ -5025,7 +5083,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
   // Adjust palette height based on canvas container when available
   useEffect(() => {
     if (!showPalette) return;
-    
+
     const adjustHeight = () => {
       if (canvasContainerRef.current) {
         const containerHeight = canvasContainerRef.current.offsetHeight;
@@ -5046,7 +5104,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Adjust on mount and window resize
     adjustHeight();
     window.addEventListener('resize', adjustHeight);
-    
+
     return () => {
       window.removeEventListener('resize', adjustHeight);
     };
@@ -5057,14 +5115,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     e.preventDefault();
     e.stopPropagation();
     if (!paletteRef.current || !canvasContainerRef.current) return;
-    
+
     isResizingRef.current = true;
     setIsResizing(true);
-    
+
     const container = canvasContainerRef.current;
     const containerRect = container.getBoundingClientRect();
     const paletteRect = paletteRef.current.getBoundingClientRect();
-    
+
     // Calculate initial positions relative to container
     const initialLeft = paletteRect.left - containerRect.left;
     const initialTop = paletteRect.top - containerRect.top;
@@ -5072,7 +5130,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const initialBottom = paletteRect.bottom - containerRect.top;
     const initialWidth = paletteRect.width;
     const initialHeight = paletteRect.height;
-    
+
     resizeStartState.current = {
       width: initialWidth,
       height: initialHeight,
@@ -5086,28 +5144,28 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       startRight: initialRight,
       startBottom: initialBottom,
     };
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       e.preventDefault();
       if (!canvasContainerRef.current || !paletteRef.current) return;
-      
+
       const container = canvasContainerRef.current;
       const containerRect = container.getBoundingClientRect();
       const mouseX = e.clientX - containerRect.left;
       const mouseY = e.clientY - containerRect.top;
-      
+
       const minWidth = 200;
       const minHeight = 300;
       const maxWidth = container.offsetWidth;
       const maxHeight = container.offsetHeight;
-      
+
       let newWidth = resizeStartState.current.width;
       let newHeight = resizeStartState.current.height;
       let newX = resizeStartState.current.startLeft;
       let newY = resizeStartState.current.startTop;
-      
+
       const edge = resizeStartState.current.edge;
-      
+
       // Handle horizontal resize
       if (edge === 'right' || edge === 'top-right' || edge === 'bottom-right') {
         // Resize from right edge - mouse moves right edge
@@ -5124,7 +5182,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         newWidth = resizeStartState.current.startRight - newLeft;
         newX = newLeft;
       }
-      
+
       // Handle vertical resize
       if (edge === 'bottom' || edge === 'bottom-left' || edge === 'bottom-right') {
         // Resize from bottom edge - mouse moves bottom edge
@@ -5141,7 +5199,7 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
         newHeight = resizeStartState.current.startBottom - newTop;
         newY = newTop;
       }
-      
+
       // Ensure we don't exceed container bounds
       if (newX + newWidth > maxWidth) {
         newWidth = maxWidth - newX;
@@ -5149,16 +5207,16 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       if (newY + newHeight > maxHeight) {
         newHeight = maxHeight - newY;
       }
-      
+
       // Ensure minimum sizes
       newWidth = Math.max(minWidth, newWidth);
       newHeight = Math.max(minHeight, newHeight);
-      
+
       // Update state
       setPaletteSize({ width: newWidth, height: newHeight });
       setPalettePosition({ x: newX, y: newY });
     };
-    
+
     const handleMouseUp = () => {
       isResizingRef.current = false;
       setIsResizing(false);
@@ -5167,14 +5225,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-    
+
     document.body.style.cursor = edge.includes('left') && edge.includes('top') ? 'nwse-resize' :
-                                 edge.includes('right') && edge.includes('top') ? 'nesw-resize' :
-                                 edge.includes('left') && edge.includes('bottom') ? 'nesw-resize' :
-                                 edge.includes('right') && edge.includes('bottom') ? 'nwse-resize' :
-                                 edge === 'left' || edge === 'right' ? 'ew-resize' : 'ns-resize';
+      edge.includes('right') && edge.includes('top') ? 'nesw-resize' :
+        edge.includes('left') && edge.includes('bottom') ? 'nesw-resize' :
+          edge.includes('right') && edge.includes('bottom') ? 'nwse-resize' :
+            edge === 'left' || edge === 'right' ? 'ew-resize' : 'ns-resize';
     document.body.style.userSelect = 'none';
-    
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, []);
@@ -5198,1819 +5256,1829 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
           background-color: rgba(0, 0, 0, 0.7);
         }
       `}</style>
-      <div className="bpmn-viewer-root flex flex-col h-[calc(100vh-8rem)] bg-background">
-      {/* Top Header Bar - Flowable Style */}
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
-        {/* Left: Logo/Branding */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-primary" />
-            <span className="font-bold text-lg">PROSSMIND</span>
-            <span className="text-sm text-muted-foreground font-normal">DESIGN</span>
+      <div className={`bpmn-viewer-root flex flex-col h-[calc(100vh-8rem)] bg-background ${isFullscreen ? 'h-screen fixed inset-0' : ''}`} style={{ position: isFullscreen ? 'fixed' : 'relative', top: isFullscreen ? 0 : 'auto', left: isFullscreen ? 0 : 'auto', right: isFullscreen ? 0 : 'auto', bottom: isFullscreen ? 0 : 'auto', zIndex: isFullscreen ? 9999 : 'auto' }}>
+        {/* Top Header Bar - Flowable Style */}
+        <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+          {/* Left: Logo/Branding */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              <span className="font-bold text-lg">PROSSMIND</span>
+              <span className="text-sm text-muted-foreground font-normal">DESIGN</span>
+            </div>
           </div>
-        </div>
 
-        {/* Center: Breadcrumb Navigation */}
-        <div className="flex-1 flex justify-center">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <a href="/" className="text-sm hover:text-primary">Workspaces</a>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbLink className="text-sm hover:text-primary">Generated default</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage className={`text-sm font-medium ${isPid ? "text-engineering-green" : "text-primary"}`}>
-                  {isPid ? "* P&ID" : "* BPMN"}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-        </div>
+          {/* Center: Breadcrumb Navigation */}
+          <div className="flex-1 flex justify-center">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <a href="/" className="text-sm hover:text-primary">Workspaces</a>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbLink className="text-sm hover:text-primary">Generated default</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage className={`text-sm font-medium ${isPid ? "text-engineering-green" : "text-primary"}`}>
+                    {isPid ? "* P&ID" : "* BPMN"}
+                  </BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
 
-        {/* Right: Navigation Links & User */}
-        <div className="flex items-center gap-4">
-          <a href="/" className="text-sm hover:text-primary">Overview</a>
-          <a href="/" className="text-sm hover:text-primary">Models</a>
-          <a href="/" className="text-sm hover:text-primary font-medium">Editing</a>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full">
-            <User className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Secondary Toolbar - Flowable Style */}
-      {(showToolbar || !isFullscreen) && (
-      <div className={`flex items-center gap-0.5 px-1 py-1 border-b bg-muted/30 overflow-x-auto ${isPid ? 'border-engineering-green/20' : 'border-border'}`}>
-        {/* Left: Action Icons */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSave}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Save"
-            disabled={!canEdit}
-          >
-            <Save className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUpload}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Upload/Import"
-            disabled={!canEdit}
-          >
-            <Upload className="h-3.5 w-3.5" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 shrink-0"
-                title="Download/Export"
-              >
-                <Download className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('bpmn')}>
-                <FileDown className="h-4 w-4 mr-2" />
-                Export as .bpmn
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('xml')}>
-                <FileText className="h-4 w-4 mr-2" />
-                Export as .xml
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('svg')}>
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Export as .svg
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('png')}>
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Export as .png
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('jpeg')}>
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Export as .jpeg
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownloadWithFormat('jpg')}>
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Export as .jpg
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 shrink-0"
-            title="View BPMN XML"
-            onClick={handleViewCurrentXml}
-          >
-            <Code className="h-3.5 w-3.5" />
-          </Button>
-          {featureFlags.showLanguagePreference && (
-            <div className="flex items-center gap-2 pl-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Language</span>
-              <Select
-                value={selectedLanguage}
-                onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
-              >
-                <SelectTrigger className="h-7 w-[165px] text-xs">
-                  <SelectValue placeholder="Auto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Badge variant="outline" className="text-[10px]">
-                {LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? "Auto"}
-              </Badge>
-              {isApplyingLanguage && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
-            </div>
-          )}
-          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUndo}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Undo"
-            disabled={!canUndo || !canEdit}
-          >
-            <Undo className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRedo}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Redo"
-            disabled={!canRedo || !canEdit}
-          >
-            <Redo className="h-3.5 w-3.5" />
-          </Button>
-          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 shrink-0"
-                title="Zoom Controls"
-              >
-                <ZoomIn className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={handleZoomIn}>
-                <ZoomIn className="h-4 w-4 mr-2" />
-                Zoom In
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleZoomOut}>
-                <ZoomOut className="h-4 w-4 mr-2" />
-                Zoom Out
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleFitToScreen}>
-                <Maximize2 className="h-4 w-4 mr-2" />
-                Fit to Screen
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            variant={isFullscreen ? "default" : "ghost"}
-            size="sm"
-            onClick={handleToggleFullscreen}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Fullscreen Mode"
-          >
-            {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
-          </Button>
-          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-          <Button
-            variant={showGrid ? "default" : "ghost"}
-            size="sm"
-            onClick={handleToggleGrid}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Toggle Grid"
-          >
-            <Grid3x3 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant={showRuler ? "default" : "ghost"}
-            size="sm"
-            onClick={handleToggleRuler}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Toggle Ruler"
-          >
-            <Ruler className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant={showPalette ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setShowPalette(!showPalette)}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Toggle Elements Palette"
-          >
-            <Palette className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleFitToScreen}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Fit Diagram to Screen"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleValidateModel}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Validate Model"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-          </Button>
-          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClear}
-            className="h-7 w-7 p-0 shrink-0"
-            title="Clear canvas"
-            disabled={!canEdit}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-          <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-          
-          {/* Toolbar Toggle for Fullscreen */}
-          {isFullscreen && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowToolbar(!showToolbar)}
-                className="h-7 w-7 p-0 shrink-0"
-                title={showToolbar ? "Hide Toolbar" : "Show Toolbar"}
-              >
-                {showToolbar ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5 rotate-180" />}
-              </Button>
-              <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-            </>
-          )}
-          
-          {/* Advanced Tools Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5 h-7 px-2 shrink-0">
-                <Wrench className="h-3.5 w-3.5" />
-                <span className="text-xs">Tools</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              <DropdownMenuLabel>{isPid ? "Advanced P&ID Tools" : "Advanced BPMN Tools"}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-
-              {onRefine && (
-                <>
-                  <DropdownMenuItem onClick={() => {
-                    if (!canEdit) {
-                      toast.error("Editing is locked by the Process Manager");
-                      return;
-                    }
-                    onRefine();
-                  }}>
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium">Refine Diagram</span>
-                        <span className="text-xs text-muted-foreground">AI-powered diagram refinement</span>
-                      </div>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-
-              <DropdownMenuItem onClick={() => setAgentDialogOpen(true)}>
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">Modelling Agent Mode</span>
-                    <span className="text-xs text-muted-foreground">
-                      Review 5-7 AI-generated alternatives
-                    </span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem onClick={() => setLogDialogOpen(true)}>
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4" />
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">Log Agent</span>
-                    <span className="text-xs text-muted-foreground">
-                      Review BPMN audit history
-                    </span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem onClick={() => setVisionDialogOpen(true)}>
-                <div className="flex items-center gap-2">
-                  <Upload className="h-4 w-4" />
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">Vision Modelling AI</span>
-                    <span className="text-xs text-muted-foreground">Sketch to diagram</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator />
-
-              <DropdownMenuItem onClick={() => setQrDialogOpen(true)}>
-                <div className="flex items-center gap-2">
-                  <QrCode className="h-4 w-4" />
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">Share via QR Code</span>
-                    <span className="text-xs text-muted-foreground">Invite collaborators</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Refine Button - Next to Tools */}
-          {onRefine && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-7 px-2 shrink-0"
-              onClick={() => {
-                if (!canEdit) {
-                  toast.error("Editing is locked by the Process Manager");
-                  return;
-                }
-                onRefine();
-              }}
-              title="Refine diagram with AI"
-              disabled={!canEdit}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="text-xs">Refine</span>
-            </Button>
-          )}
-
-          <Badge
-            variant={canEdit ? (isProcessManager ? "default" : "secondary") : "outline"}
-            className="ml-1 shrink-0 text-xs"
-          >
-            {isProcessManager ? "Process Manager" : canEdit ? "Editor mode" : "View only"}
-          </Badge>
-        </div>
-
-        {/* Center: Tabs */}
-        <div className="flex-1 flex justify-center min-w-0 shrink">
-          <div className="flex items-center gap-1 bg-background rounded-md border border-border p-0.5">
-            <div className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium flex items-center gap-1.5">
-              {isPid ? "P&ID" : "BPMN"}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-3.5 w-3.5 p-0 hover:bg-primary-foreground/20"
-                onClick={() => {/* Handle close tab */}}
-              >
-                <X className="h-2.5 w-2.5" />
-              </Button>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              title="New Tab"
-            >
-              <Plus className="h-3 w-3" />
+          {/* Right: Navigation Links & User */}
+          <div className="flex items-center gap-4">
+            <a href="/" className="text-sm hover:text-primary">Overview</a>
+            <a href="/" className="text-sm hover:text-primary">Models</a>
+            <a href="/" className="text-sm hover:text-primary font-medium">Editing</a>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full">
+              <User className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        {/* Right: Quick Search */}
-        <div className="flex items-center gap-1 shrink-0">
-          <div className="relative">
-            <Search className="absolute left-1.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Q Quick Search..."
-              className="pl-7 pr-7 h-7 w-40 text-xs"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSearch(e.currentTarget.value);
-                }
-              }}
-            />
-            <kbd className="absolute right-1.5 top-1/2 transform -translate-y-1/2 pointer-events-none inline-flex h-3.5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[9px] font-medium text-muted-foreground opacity-100">
-              ⌘K
-            </kbd>
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* Main Board Layout - Flowable Style */}
-      <div ref={canvasContainerRef} className="flex flex-1 relative" style={{ position: 'relative', isolation: 'isolate', overflow: 'auto' }}>
-        {/* Draggable Elements Palette */}
-        {showPalette && (
-          <motion.div
-            ref={paletteRef}
-            className="absolute z-50 bg-white border border-border rounded-lg shadow-lg flex flex-col"
+        {/* Menu Bar - File, Edit, View, Tools */}
+        {(showToolbar || !isFullscreen) && (
+          <div
+            ref={(el) => {
+              if (el && isFullscreen) {
+                const rect = el.getBoundingClientRect();
+                const styles = window.getComputedStyle(el);
+                console.log('[DEBUG] Toolbar rendered', { zIndex: styles.zIndex, position: styles.position, pointerEvents: styles.pointerEvents, top: rect.top, height: rect.height });
+                fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5294', message: 'Toolbar rendered in fullscreen', data: { isFullscreen, zIndex: styles.zIndex, position: styles.position, pointerEvents: styles.pointerEvents, top: rect.top, left: rect.left, width: rect.width, height: rect.height }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'A' }) }).catch(() => { });
+              }
+            }}
+            className={`flex items-center justify-between px-4 py-1 border-b bg-background ${isPid ? 'border-engineering-green/20' : 'border-border'} ${isFullscreen ? 'z-[100]' : ''}`}
             style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: `${paletteSize.width}px`,
-              height: `${paletteSize.height}px`,
-              minWidth: '240px',
-              minHeight: '400px',
-              maxWidth: canvasContainerRef.current ? `${canvasContainerRef.current.offsetWidth - palettePosition.x}px` : 'none',
-              maxHeight: canvasContainerRef.current ? `${canvasContainerRef.current.offsetHeight - palettePosition.y}px` : 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              willChange: 'transform',
+              pointerEvents: 'auto',
+              position: isFullscreen ? 'sticky' : 'static',
+              top: isFullscreen ? 0 : 'auto',
+              zIndex: isFullscreen ? 100 : 'auto',
+              backgroundColor: isFullscreen ? 'hsl(var(--background))' : undefined
             }}
-            drag={!isResizing}
-            dragMomentum={false}
-            dragElastic={0}
-            dragConstraints={canvasContainerRef}
-            dragPropagation={false}
-            dragListener={true}
-            onDragStart={(e, info) => {
-              // Don't start drag if clicking on resize handles or if already resizing
-              if (isResizingRef.current) {
-                return false;
-              }
+            onMouseDown={(e) => {
+              // #region agent log
               const target = e.target as HTMLElement;
-              if (target.closest('.resize-handle')) {
-                return false;
-              }
-              // Also check if the event originated from a resize handle
-              const originalTarget = (e as any).originalEvent?.target as HTMLElement;
-              if (originalTarget?.closest('.resize-handle')) {
-                return false;
-              }
-              dragStartPosition.current = { ...palettePosition };
+              console.log('[DEBUG] Toolbar mousedown', { target: target?.tagName, isFullscreen });
+              fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5324', message: 'Toolbar mousedown event', data: { target: target?.tagName, currentTarget: e.currentTarget?.tagName, isFullscreen }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'B' }) }).catch(() => { });
+              // #endregion
             }}
-            onDrag={(event, info) => {
-              // Constrain during drag in real-time
-              if (!canvasContainerRef.current || !paletteRef.current) return;
-              
-              const container = canvasContainerRef.current;
-              const palette = paletteRef.current;
-              const paletteWidth = palette.offsetWidth;
-              const paletteHeight = palette.offsetHeight;
-              
-              const maxX = Math.max(0, container.offsetWidth - paletteWidth);
-              const maxY = Math.max(0, container.offsetHeight - paletteHeight);
-              
-              const constrainedX = Math.max(0, Math.min(maxX, dragStartPosition.current.x + info.offset.x));
-              const constrainedY = Math.max(0, Math.min(maxY, dragStartPosition.current.y + info.offset.y));
-              
-              // Update position immediately during drag
-              setPalettePosition({ x: constrainedX, y: constrainedY });
-            }}
-            onDragEnd={(event, info) => {
-              if (!canvasContainerRef.current || !paletteRef.current) return;
-              
-              const container = canvasContainerRef.current;
-              const palette = paletteRef.current;
-              const paletteWidth = palette.offsetWidth;
-              const paletteHeight = palette.offsetHeight;
-              
-              // Calculate constrained position relative to container
-              const maxX = Math.max(0, container.offsetWidth - paletteWidth);
-              const maxY = Math.max(0, container.offsetHeight - paletteHeight);
-              
-              // Final constrained position
-              const newX = Math.max(0, Math.min(maxX, dragStartPosition.current.x + info.offset.x));
-              const newY = Math.max(0, Math.min(maxY, dragStartPosition.current.y + info.offset.y));
-              
-              setPalettePosition({ x: newX, y: newY });
-            }}
-            initial={false}
-            animate={{ 
-              x: palettePosition.x, 
-              y: palettePosition.y 
+            onClick={(e) => {
+              // #region agent log
+              const target = e.target as HTMLElement;
+              console.log('[DEBUG] Toolbar click', { target: target?.tagName, isFullscreen });
+              fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5332', message: 'Toolbar click event', data: { target: target?.tagName, currentTarget: e.currentTarget?.tagName, isFullscreen }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'B' }) }).catch(() => { });
+              // #endregion
             }}
           >
-            {/* Header */}
-            <div className="p-3 border-b border-border bg-white rounded-t-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-sm text-foreground">Shape repository</span>
+            {/* Left: Menu Bar */}
+            <Menubar className={`border-0 bg-transparent p-0 h-auto ${isFullscreen ? 'relative z-[101]' : ''}`} style={{ pointerEvents: 'auto' }}>
+              {/* File Menu */}
+              <MenubarMenu>
+                <MenubarTrigger
+                  className="text-sm font-medium"
+                  style={{ pointerEvents: 'auto', zIndex: isFullscreen ? 102 : 'auto' }}
+                  onMouseDown={(e) => {
+                    // #region agent log
+                    const target = e.currentTarget as HTMLElement;
+                    const rect = target.getBoundingClientRect();
+                    const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+                    const styles = window.getComputedStyle(target);
+                    console.log('[DEBUG] File trigger mousedown', { isFullscreen, zIndex: styles.zIndex, pointerEvents: styles.pointerEvents, elementAtPoint: elementAtPoint?.tagName });
+                    fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5340', message: 'File trigger mousedown', data: { isFullscreen, zIndex: styles.zIndex, pointerEvents: styles.pointerEvents, elementAtPoint: elementAtPoint?.tagName, clientX: e.clientX, clientY: e.clientY }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'C' }) }).catch(() => { });
+                    // #endregion
+                  }}
+                  onClick={(e) => {
+                    // #region agent log
+                    console.log('[DEBUG] File trigger clicked', { isFullscreen });
+                    fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5348', message: 'File menu trigger clicked', data: { isFullscreen }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'C' }) }).catch(() => { });
+                    // #endregion
+                  }}
+                >File</MenubarTrigger>
+                <MenubarContent>
+                  <MenubarItem onClick={handleSave} disabled={!canEdit}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save
+                    <MenubarShortcut>⌘S</MenubarShortcut>
+                  </MenubarItem>
+                  <MenubarItem onClick={handleUpload} disabled={!canEdit}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload/Import
+                  </MenubarItem>
+                  <MenubarSeparator />
+                  <MenubarSub>
+                    <MenubarSubTrigger>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </MenubarSubTrigger>
+                    <MenubarSubContent>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('bpmn')}>
+                        <FileDown className="h-4 w-4 mr-2" />
+                        Export as .bpmn
+                      </MenubarItem>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('xml')}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Export as .xml
+                      </MenubarItem>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('svg')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Export as .svg
+                      </MenubarItem>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('png')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Export as .png
+                      </MenubarItem>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('jpeg')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Export as .jpeg
+                      </MenubarItem>
+                      <MenubarItem onClick={() => handleDownloadWithFormat('jpg')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Export as .jpg
+                      </MenubarItem>
+                    </MenubarSubContent>
+                  </MenubarSub>
+                  <MenubarItem onClick={handleViewCurrentXml}>
+                    <Code className="h-4 w-4 mr-2" />
+                    View XML
+                  </MenubarItem>
+                  {featureFlags.showLanguagePreference && (
+                    <>
+                      <MenubarSeparator />
+                      <MenubarItem disabled className="opacity-100">
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="text-xs uppercase text-muted-foreground">Language</span>
+                          <Select
+                            value={selectedLanguage}
+                            onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+                          >
+                            <SelectTrigger className="h-7 w-[165px] text-xs">
+                              <SelectValue placeholder="Auto" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {LANGUAGE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Badge variant="outline" className="text-[10px]">
+                            {LANGUAGE_NATIVE_NAMES[selectedLanguage] ?? "Auto"}
+                          </Badge>
+                          {isApplyingLanguage && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                        </div>
+                      </MenubarItem>
+                    </>
+                  )}
+                </MenubarContent>
+              </MenubarMenu>
+
+              {/* Edit Menu */}
+              <MenubarMenu>
+                <MenubarTrigger className="text-sm font-medium" style={{ pointerEvents: 'auto', zIndex: isFullscreen ? 102 : 'auto' }}>Edit</MenubarTrigger>
+                <MenubarContent>
+                  <MenubarItem onClick={handleUndo} disabled={!canUndo || !canEdit}>
+                    <Undo className="h-4 w-4 mr-2" />
+                    Undo
+                    <MenubarShortcut>⌘Z</MenubarShortcut>
+                  </MenubarItem>
+                  <MenubarItem onClick={handleRedo} disabled={!canRedo || !canEdit}>
+                    <Redo className="h-4 w-4 mr-2" />
+                    Redo
+                    <MenubarShortcut>⌘⇧Z</MenubarShortcut>
+                  </MenubarItem>
+                  <MenubarSeparator />
+                  <MenubarItem onClick={handleClear} disabled={!canEdit}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Clear Canvas
+                  </MenubarItem>
+                </MenubarContent>
+              </MenubarMenu>
+
+              {/* View Menu */}
+              <MenubarMenu>
+                <MenubarTrigger className="text-sm font-medium">View</MenubarTrigger>
+                <MenubarContent>
+                  <MenubarSub>
+                    <MenubarSubTrigger>
+                      <ZoomIn className="h-4 w-4 mr-2" />
+                      Zoom
+                    </MenubarSubTrigger>
+                    <MenubarSubContent>
+                      <MenubarItem onClick={handleZoomIn}>
+                        <ZoomIn className="h-4 w-4 mr-2" />
+                        Zoom In
+                        <MenubarShortcut>⌘+</MenubarShortcut>
+                      </MenubarItem>
+                      <MenubarItem onClick={handleZoomOut}>
+                        <ZoomOut className="h-4 w-4 mr-2" />
+                        Zoom Out
+                        <MenubarShortcut>⌘-</MenubarShortcut>
+                      </MenubarItem>
+                      <MenubarItem onClick={handleFitToScreen}>
+                        <Maximize2 className="h-4 w-4 mr-2" />
+                        Fit to Screen
+                      </MenubarItem>
+                    </MenubarSubContent>
+                  </MenubarSub>
+                  <MenubarItem onClick={handleToggleFullscreen}>
+                    {isFullscreen ? <Minimize className="h-4 w-4 mr-2" /> : <Maximize className="h-4 w-4 mr-2" />}
+                    {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                    <MenubarShortcut>F11</MenubarShortcut>
+                  </MenubarItem>
+                  <MenubarSeparator />
+                  <MenubarItem onClick={handleToggleGrid}>
+                    <Grid3x3 className="h-4 w-4 mr-2" />
+                    Toggle Grid
+                    {showGrid && <Check className="h-4 w-4 ml-auto" />}
+                  </MenubarItem>
+                  <MenubarItem onClick={handleToggleRuler}>
+                    <Ruler className="h-4 w-4 mr-2" />
+                    Toggle Ruler
+                    {showRuler && <Check className="h-4 w-4 ml-auto" />}
+                  </MenubarItem>
+                  <MenubarSeparator />
+                  {/* Add BPMN Elements */}
+                  <MenubarSub>
+                    <MenubarSubTrigger>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Elements
+                    </MenubarSubTrigger>
+                    <MenubarSubContent className="w-64">
+                      {/* Start Events */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Start Events</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('start-event')} disabled={!canEdit}>
+                            Start Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('start-timer-event')} disabled={!canEdit}>
+                            Timer Start Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('start-message-event')} disabled={!canEdit}>
+                            Message Start Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('start-signal-event')} disabled={!canEdit}>
+                            Signal Start Event
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Activities */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Activities</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('user-task')} disabled={!canEdit}>
+                            User Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('service-task')} disabled={!canEdit}>
+                            Service Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('script-task')} disabled={!canEdit}>
+                            Script Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('business-rule-task')} disabled={!canEdit}>
+                            Business Rule Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('manual-task')} disabled={!canEdit}>
+                            Manual Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('receive-task')} disabled={!canEdit}>
+                            Receive Task
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('send-task')} disabled={!canEdit}>
+                            Send Task
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Gateways */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Gateways</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('xor-gateway')} disabled={!canEdit}>
+                            Exclusive Gateway
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('and-gateway')} disabled={!canEdit}>
+                            Parallel Gateway
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('or-gateway')} disabled={!canEdit}>
+                            Inclusive Gateway
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('event-gateway')} disabled={!canEdit}>
+                            Event-Based Gateway
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('complex-gateway')} disabled={!canEdit}>
+                            Complex Gateway
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Intermediate Events */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Intermediate Events</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('intermediate-event')} disabled={!canEdit}>
+                            Intermediate Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('intermediate-timer-event')} disabled={!canEdit}>
+                            Timer Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('intermediate-message-event')} disabled={!canEdit}>
+                            Message Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('intermediate-signal-event')} disabled={!canEdit}>
+                            Signal Event
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* End Events */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>End Events</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('end-event')} disabled={!canEdit}>
+                            End Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('end-message-event')} disabled={!canEdit}>
+                            Message End Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('end-error-event')} disabled={!canEdit}>
+                            Error End Event
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('end-terminate-event')} disabled={!canEdit}>
+                            Terminate End Event
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Subprocesses */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Subprocesses</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('subprocess')} disabled={!canEdit}>
+                            Subprocess
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('collapsed-subprocess')} disabled={!canEdit}>
+                            Collapsed Subprocess
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('event-subprocess')} disabled={!canEdit}>
+                            Event Subprocess
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('transaction')} disabled={!canEdit}>
+                            Transaction
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('call-activity')} disabled={!canEdit}>
+                            Call Activity
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Pools & Lanes */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Pools & Lanes</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('participant')} disabled={!canEdit}>
+                            Pool
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('participant')} disabled={!canEdit}>
+                            Lane
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Data Objects */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Data Objects</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('data-object')} disabled={!canEdit}>
+                            Data Object
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('data-store')} disabled={!canEdit}>
+                            Data Store
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('data-input')} disabled={!canEdit}>
+                            Data Input
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('data-output')} disabled={!canEdit}>
+                            Data Output
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      {/* Artifacts */}
+                      <MenubarSub>
+                        <MenubarSubTrigger>Artifacts</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={() => addBpmnElement('text-annotation')} disabled={!canEdit}>
+                            Text Annotation
+                          </MenubarItem>
+                          <MenubarItem onClick={() => addBpmnElement('group')} disabled={!canEdit}>
+                            Group
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                    </MenubarSubContent>
+                  </MenubarSub>
+                  <MenubarSeparator />
+                  <MenubarItem onClick={handleValidateModel}>
+                    <AlertTriangle className="h-4 w-4 mr-2" />
+                    Validate Model
+                  </MenubarItem>
+                </MenubarContent>
+              </MenubarMenu>
+
+              {/* Tools Menu */}
+              <MenubarMenu>
+                <MenubarTrigger className="text-sm font-medium" style={{ pointerEvents: 'auto', zIndex: isFullscreen ? 102 : 'auto' }}>Tools</MenubarTrigger>
+                <MenubarContent className="w-64">
+                  {onRefine && (
+                    <>
+                      <MenubarItem onClick={() => {
+                        if (!canEdit) {
+                          toast.error("Editing is locked by the Process Manager");
+                          return;
+                        }
+                        onRefine();
+                      }} disabled={!canEdit}>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium">Refine Diagram</span>
+                          <span className="text-xs text-muted-foreground">AI-powered diagram refinement</span>
+                        </div>
+                      </MenubarItem>
+                      <MenubarSeparator />
+                    </>
+                  )}
+                  <MenubarItem onClick={() => setAgentDialogOpen(true)}>
+                    <Bot className="h-4 w-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Modelling Agent Mode</span>
+                      <span className="text-xs text-muted-foreground">Review 5-7 AI-generated alternatives</span>
+                    </div>
+                  </MenubarItem>
+                  <MenubarItem onClick={() => setLogDialogOpen(true)}>
+                    <History className="h-4 w-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Log Agent</span>
+                      <span className="text-xs text-muted-foreground">Review BPMN audit history</span>
+                    </div>
+                  </MenubarItem>
+                  <MenubarItem onClick={() => setVisionDialogOpen(true)}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Vision Modelling AI</span>
+                      <span className="text-xs text-muted-foreground">Sketch to diagram</span>
+                    </div>
+                  </MenubarItem>
+                  <MenubarSeparator />
+                  <MenubarItem onClick={() => setQrDialogOpen(true)}>
+                    <QrCode className="h-4 w-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Share via QR Code</span>
+                      <span className="text-xs text-muted-foreground">Invite collaborators</span>
+                    </div>
+                  </MenubarItem>
+                </MenubarContent>
+              </MenubarMenu>
+            </Menubar>
+
+            {/* Fullscreen and Zoom Controls */}
+            <div className="flex items-center gap-1 shrink-0 relative z-[60]" style={{ pointerEvents: 'auto' }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 relative z-[61]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleToggleFullscreen();
+                }}
+                title={isFullscreen ? "Exit Fullscreen (F11)" : "Enter Fullscreen (F11)"}
+                style={{ pointerEvents: 'auto' }}
+              >
+                {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              </Button>
+              <div className="h-6 w-px bg-border mx-0.5" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 relative z-[61]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleZoomIn();
+                }}
+                title="Zoom In (⌘+)"
+                style={{ pointerEvents: 'auto' }}
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 relative z-[61]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleZoomOut();
+                }}
+                title="Zoom Out (⌘-)"
+                style={{ pointerEvents: 'auto' }}
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 relative z-[61]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleFitToScreen();
+                }}
+                title="Fit to Screen"
+                style={{ pointerEvents: 'auto' }}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Center: Tabs */}
+            <div className="flex-1 flex justify-center min-w-0 shrink">
+              <div className="flex items-center gap-1 bg-background rounded-md border border-border p-0.5">
+                <div className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium flex items-center gap-1.5">
+                  {isPid ? "P&ID" : "BPMN"}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-3.5 w-3.5 p-0 hover:bg-primary-foreground/20"
+                    onClick={() => {/* Handle close tab */ }}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </Button>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0"
-                  onClick={() => setShowPalette(false)}
+                  title="New Tab"
                 >
-                  <X className="h-4 w-4" />
+                  <Plus className="h-3 w-3" />
                 </Button>
               </div>
-              {/* Search Bar */}
+            </div>
+
+            {/* Right: Quick Search and Mode Badge */}
+            <div className="flex items-center gap-2 shrink-0">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Search className="absolute left-1.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Enter text to filter"
-                  value={paletteSearch}
-                  onChange={(e) => setPaletteSearch(e.target.value)}
-                  className="pl-8 pr-8 h-8 text-xs"
+                  placeholder="Q Quick Search..."
+                  className="pl-7 pr-7 h-7 w-40 text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearch(e.currentTarget.value);
+                    }
+                  }}
                 />
-                <List className="absolute right-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <kbd className="absolute right-1.5 top-1/2 transform -translate-y-1/2 pointer-events-none inline-flex h-3.5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[9px] font-medium text-muted-foreground opacity-100">
+                  ⌘K
+                </kbd>
               </div>
+              <Badge
+                variant={canEdit ? (isProcessManager ? "default" : "secondary") : "outline"}
+                className="shrink-0 text-xs"
+              >
+                {isProcessManager ? "Process Manager" : canEdit ? "Editor mode" : "View only"}
+              </Badge>
             </div>
-            <div 
-              className="flex-1 bg-white overflow-y-auto shape-repository-scroll" 
-              style={{ 
-                minHeight: 0,
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(0, 0, 0, 0.5) transparent'
-              }}
-            >
-              <div className="p-2 space-y-1">
-                {/* Quick Draw Section */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, quickDraw: !expandedSections.quickDraw })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Quick draw</span>
-                    {expandedSections.quickDraw ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.quickDraw && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start event">
-                        <div className="w-8 h-8 rounded-full border-2 border-green-600" />
-                        <span className="text-[10px] text-center leading-tight">Start event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="User task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">👤</div>
-                        <span className="text-[10px] text-center leading-tight">User task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Case task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">💼</div>
-                        <span className="text-[10px] text-center leading-tight">Case task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('service-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Service task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">⚙️</div>
-                        <span className="text-[10px] text-center leading-tight">Service task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('collapsed-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Subprocess">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center">
-                          <div className="w-3 h-0.5 bg-foreground" />
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Subpro...</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('call-activity')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Call activity">
-                        <div className="w-8 h-8 border-4 border-foreground rounded" />
-                        <span className="text-[10px] text-center leading-tight">Call activity</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('xor-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Exclusive gateway">
-                        <div className="w-8 h-8 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs font-bold">X</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Exclusive gateway</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('intermediate-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer boundary event">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">⏱️</div>
-                        <span className="text-[10px] text-center leading-tight">Timer boundary event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('end-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="End event">
-                        <div className="w-8 h-8 rounded-full border-4 border-red-600" />
-                        <span className="text-[10px] text-center leading-tight">End event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Pool">
-                        <div className="w-10 h-8 border-2 border-foreground rounded">
-                          <div className="w-1 h-full bg-foreground" />
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Pool</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Lane">
-                        <div className="w-10 h-8 border-2 border-foreground rounded" />
-                        <span className="text-[10px] text-center leading-tight">Lane</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Start Events Section */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, startEvents: !expandedSections.startEvents })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Start events</span>
-                    {expandedSections.startEvents ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.startEvents && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('start-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Start event">
-                        <div className="w-8 h-8 rounded-full border-2 border-green-600" />
-                        <span className="text-[10px] text-center leading-tight">Start event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('start-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer start event">
-                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">⏱️</div>
-                        <span className="text-[10px] text-center leading-tight">Timer start event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('start-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message start event">
-                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">✉️</div>
-                        <span className="text-[10px] text-center leading-tight">Message start event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('start-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal start event">
-                        <div className="w-8 h-8 rounded-full border-2 border-green-600 flex items-center justify-center text-xs">📡</div>
-                        <span className="text-[10px] text-center leading-tight">Signal start event</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Activities Section */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, activities: !expandedSections.activities })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Activities</span>
-                    {expandedSections.activities ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.activities && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="User task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">👤</div>
-                        <span className="text-[10px] text-center leading-tight">User task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('user-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Case task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">💼</div>
-                        <span className="text-[10px] text-center leading-tight">Case task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('service-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Service task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">⚙️</div>
-                        <span className="text-[10px] text-center leading-tight">Service task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('script-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Script task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📜</div>
-                        <span className="text-[10px] text-center leading-tight">Script task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('business-rule-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Business rule task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📋</div>
-                        <span className="text-[10px] text-center leading-tight">Business rule task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('receive-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Receive task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📥</div>
-                        <span className="text-[10px] text-center leading-tight">Receive task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('manual-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Manual task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">✋</div>
-                        <span className="text-[10px] text-center leading-tight">Manual task</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('send-task')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Email task">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">📧</div>
-                        <span className="text-[10px] text-center leading-tight">Email task</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Gateways Section - Collapsed by default like in image */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, gateways: !expandedSections.gateways })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Gateways</span>
-                    {expandedSections.gateways ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.gateways && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('xor-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Exclusive gateway">
-                        <div className="w-8 h-8 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs font-bold">X</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Exclusive gateway</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('and-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Parallel gateway">
-                        <div className="w-8 h-8 border-2 border-purple-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs font-bold">+</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Parallel gateway</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('or-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Inclusive gateway">
-                        <div className="w-8 h-8 border-2 border-indigo-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs font-bold">O</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Inclusive gateway</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('event-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event-based gateway">
-                        <div className="w-8 h-8 border-2 border-cyan-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs">⬡</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Event-based gateway</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('complex-gateway')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Complex gateway">
-                        <div className="w-8 h-8 border-2 border-pink-600 transform rotate-45 flex items-center justify-center">
-                          <span className="transform -rotate-45 text-xs font-bold">*</span>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Complex gateway</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Intermediate Events */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, intermediateEvents: !expandedSections.intermediateEvents })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Intermediate events</span>
-                    {expandedSections.intermediateEvents ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.intermediateEvents && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('intermediate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Intermediate event">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-600" />
-                        <span className="text-[10px] text-center leading-tight">Intermediate event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('intermediate-timer-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Timer event">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">⏱️</div>
-                        <span className="text-[10px] text-center leading-tight">Timer event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('intermediate-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message event">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">✉️</div>
-                        <span className="text-[10px] text-center leading-tight">Message event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('intermediate-signal-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Signal event">
-                        <div className="w-8 h-8 rounded-full border-2 border-blue-600 flex items-center justify-center text-xs">📡</div>
-                        <span className="text-[10px] text-center leading-tight">Signal event</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* End Events */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, endEvents: !expandedSections.endEvents })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>End events</span>
-                    {expandedSections.endEvents ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.endEvents && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('end-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="End event">
-                        <div className="w-8 h-8 rounded-full border-4 border-red-600" />
-                        <span className="text-[10px] text-center leading-tight">End event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('end-message-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Message end event">
-                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">✉️</div>
-                        <span className="text-[10px] text-center leading-tight">Message end event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('end-error-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Error end event">
-                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">⚠️</div>
-                        <span className="text-[10px] text-center leading-tight">Error end event</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('end-terminate-event')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Terminate end event">
-                        <div className="w-8 h-8 rounded-full border-4 border-red-600 flex items-center justify-center text-xs">⬛</div>
-                        <span className="text-[10px] text-center leading-tight">Terminate end event</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Subprocesses */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, subprocesses: !expandedSections.subprocesses })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Subprocesses</span>
-                    {expandedSections.subprocesses ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.subprocesses && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Subprocess">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center text-xs">+</div>
-                        <span className="text-[10px] text-center leading-tight">Subprocess</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('collapsed-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Collapsed subprocess">
-                        <div className="w-8 h-8 border-2 border-foreground rounded flex items-center justify-center">
-                          <div className="w-3 h-0.5 bg-foreground" />
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Collapsed subprocess</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('event-subprocess')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Event subprocess">
-                        <div className="w-8 h-8 border-2 border-dashed border-foreground rounded flex items-center justify-center text-xs">+</div>
-                        <span className="text-[10px] text-center leading-tight">Event subprocess</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('transaction')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Transaction">
-                        <div className="w-8 h-8 border-4 border-double border-foreground rounded" />
-                        <span className="text-[10px] text-center leading-tight">Transaction</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Pools & Lanes */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, pools: !expandedSections.pools })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Pools & Lanes</span>
-                    {expandedSections.pools ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.pools && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Pool">
-                        <div className="w-10 h-8 border-2 border-foreground rounded">
-                          <div className="w-1 h-full bg-foreground" />
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Pool</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('participant')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Lane">
-                        <div className="w-10 h-8 border-2 border-foreground rounded" />
-                        <span className="text-[10px] text-center leading-tight">Lane</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Data Objects */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, dataObjects: !expandedSections.dataObjects })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Data Objects</span>
-                    {expandedSections.dataObjects ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.dataObjects && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('data-object')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data object">
-                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }} />
-                        <span className="text-[10px] text-center leading-tight">Data object</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('data-store')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data store">
-                        <div className="w-8 h-7 border-2 border-foreground rounded-sm" />
-                        <span className="text-[10px] text-center leading-tight">Data store</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('data-input')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data input">
-                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
-                          <div className="text-[8px] mt-2 ml-1">→</div>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Data input</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('data-output')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Data output">
-                        <div className="w-7 h-8 border-2 border-foreground" style={{ clipPath: 'polygon(0 10%, 70% 10%, 100% 0, 100% 100%, 0 100%)' }}>
-                          <div className="text-[8px] mt-2 ml-1">←</div>
-                        </div>
-                        <span className="text-[10px] text-center leading-tight">Data output</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Artifacts */}
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setExpandedSections({ ...expandedSections, artifacts: !expandedSections.artifacts })}
-                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-accent rounded transition-colors"
-                  >
-                    <span>Artifacts</span>
-                    {expandedSections.artifacts ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  {expandedSections.artifacts && (
-                    <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
-                      <div onClick={() => addBpmnElement('text-annotation')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Text annotation">
-                        <div className="w-8 h-7 border-l-2 border-t-2 border-b-2 border-foreground" />
-                        <span className="text-[10px] text-center leading-tight">Text annotation</span>
-                      </div>
-                      <div onClick={() => addBpmnElement('group')} className="flex flex-col items-center gap-1 p-2 hover:bg-accent rounded cursor-pointer transition-colors" title="Group">
-                        <div className="w-8 h-8 border-2 border-dashed border-foreground rounded" />
-                        <span className="text-[10px] text-center leading-tight">Group</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {/* Zoom Controls at Bottom - Flowable Style */}
-            <div className="border-t border-border p-2 flex items-center justify-center gap-1 bg-white rounded-b-lg">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={handleZoomIn}
-                title="Zoom In"
-              >
-                <ZoomIn className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={handleZoomOut}
-                title="Zoom Out"
-              >
-                <ZoomOut className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={handleFitToScreen}
-                title="Fit to Screen"
-              >
-                <Maximize2 className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => setShowSettingsPanel(true)}
-                title="Settings"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            
-            {/* Resize Handles - More visible and easier to grab */}
-            {/* Left edge */}
-            <div
-              className="resize-handle absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('left', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from left"
-            />
-            
-            {/* Right edge */}
-            <div
-              className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('right', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from right"
-            />
-            
-            {/* Top edge */}
-            <div
-              className="resize-handle absolute top-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('top', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from top"
-            />
-            
-            {/* Bottom edge */}
-            <div
-              className="resize-handle absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-primary/70 active:bg-primary z-[60] transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('bottom', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from bottom"
-            />
-            
-            {/* Corner handles for diagonal resize */}
-            {/* Top-left */}
-            <div
-              className="resize-handle absolute top-0 left-0 w-8 h-8 cursor-nwse-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-tl-lg transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('top-left', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from top-left"
-            />
-            
-            {/* Top-right */}
-            <div
-              className="resize-handle absolute top-0 right-0 w-8 h-8 cursor-nesw-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-tr-lg transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('top-right', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from top-right"
-            />
-            
-            {/* Bottom-left */}
-            <div
-              className="resize-handle absolute bottom-0 left-0 w-8 h-8 cursor-nesw-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-bl-lg transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('bottom-left', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from bottom-left"
-            />
-            
-            {/* Bottom-right */}
-            <div
-              className="resize-handle absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize hover:bg-primary/70 active:bg-primary z-[60] rounded-br-lg transition-colors"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleResizeStart('bottom-right', e);
-              }}
-              style={{ touchAction: 'none', pointerEvents: 'auto' }}
-              title="Resize from bottom-right"
-            />
-          </motion.div>
+          </div>
         )}
 
-        {/* Main Canvas Area */}
-        <div className="flex-1 relative flex flex-col overflow-hidden">
-          {/* Floating Toolbar Toggle Button (when toolbar is hidden in fullscreen) */}
-          {isFullscreen && !showToolbar && (
-            <div className="absolute top-4 left-4 z-40">
+        {/* Main Board Layout - Flowable Style */}
+        <div
+          ref={(el) => {
+            canvasContainerRef.current = el;
+            if (el && isFullscreen) {
+              const rect = el.getBoundingClientRect();
+              const styles = window.getComputedStyle(el);
+              console.log('[DEBUG] Canvas container rendered', { zIndex: styles.zIndex, position: styles.position, isolation: styles.isolation, top: rect.top, paddingTop: styles.paddingTop });
+              fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5858', message: 'Canvas container rendered in fullscreen', data: { isFullscreen, zIndex: styles.zIndex, position: styles.position, isolation: styles.isolation, top: rect.top, left: rect.left, width: rect.width, height: rect.height, paddingTop: styles.paddingTop }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run3', hypothesisId: 'A' }) }).catch(() => { });
+            }
+          }}
+          className="flex flex-1 relative"
+          style={{ 
+            position: 'relative', 
+            isolation: isFullscreen ? 'auto' : 'isolate', 
+            overflow: 'auto', 
+            zIndex: isFullscreen ? 1 : 'auto',
+            paddingTop: isFullscreen ? '112px' : '0px' // Header (56px) + Toolbar (~56px)
+          }}
+          onMouseDown={(e) => {
+            // #region agent log
+            const target = e.target as HTMLElement;
+            const toolbarEl = target.closest('.flex.items-center.justify-between.px-4');
+            const isToolbarClick = toolbarEl || target.closest('[data-radix-menubar-trigger]') || target.closest('[data-radix-menubar-content]') || target.closest('[role="menubar"]');
+            console.log('[DEBUG] Canvas container mousedown', { target: target.tagName, isToolbarClick: !!isToolbarClick, isFullscreen, clientY: e.clientY });
+            fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5805', message: 'Canvas container mousedown', data: { target: target.tagName, isToolbarClick: !!isToolbarClick, isFullscreen, clientX: e.clientX, clientY: e.clientY }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'D' }) }).catch(() => { });
+            // #endregion
+            // Don't interfere with toolbar clicks - let them propagate
+            if (isToolbarClick) {
+              return; // Don't stop propagation, let it reach the toolbar
+            }
+          }}
+        >
+          {/* Main Canvas Area */}
+          <div className="flex-1 relative flex flex-col overflow-hidden">
+            {/* Floating Toolbar Toggle Button (when toolbar is hidden in fullscreen) */}
+            {isFullscreen && !showToolbar && (
+              <div className="absolute top-4 left-4 z-40">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setShowToolbar(true)}
+                  className="h-8 w-8 p-0 shadow-lg"
+                  title="Show Toolbar"
+                >
+                  <ChevronLeft className="h-4 w-4 rotate-180" />
+                </Button>
+              </div>
+            )}
+
+            {/* Floating Undo/Redo Toolbar */}
+            <div className="absolute top-4 right-4 z-40 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-2">
               <Button
-                variant="default"
+                variant="ghost"
                 size="sm"
-                onClick={() => setShowToolbar(true)}
-                className="h-8 w-8 p-0 shadow-lg"
-                title="Show Toolbar"
+                onClick={handleUndo}
+                disabled={!canEdit || !canUndo}
+                title="Undo (Ctrl+Z)"
+                className="h-8 w-8 p-0"
+              >
+                <Undo className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRedo}
+                disabled={!canEdit || !canRedo}
+                title="Redo (Ctrl+Y)"
+                className="h-8 w-8 p-0"
+              >
+                <Redo className="h-4 w-4" />
+              </Button>
+              <div className="h-6 w-px bg-border mx-1" />
+              <span className="text-xs text-muted-foreground px-2">
+                v{version}
+                {versions.length > 1 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="ml-1 text-primary hover:underline">
+                        · v{versions.length}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {versions.map((_, idx) => (
+                        <DropdownMenuItem key={idx} onClick={() => handleVersionChange(idx)}>
+                          Version {idx + 1}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </span>
+            </div>
+
+            {/* Error State Fallback */}
+            {errorState && (
+              <div className="w-full h-full bg-muted/50 border border-destructive/20 rounded-lg flex flex-col items-center justify-center p-8">
+                <div className="text-center space-y-4 max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+                    <X className="h-8 w-8 text-destructive" />
+                  </div>
+                  <h3 className="text-lg font-semibold">Generation Failed</h3>
+                  <p className="text-sm text-muted-foreground">{errorState}</p>
+                  <Button onClick={() => setErrorState(null)} variant="outline">
+                    Retry with Simplified Prompt
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* BPMN Canvas */}
+            <div
+              ref={(el) => {
+                containerRef.current = el;
+                if (el && isFullscreen) {
+                  const rect = el.getBoundingClientRect();
+                  const styles = window.getComputedStyle(el);
+                  console.log('[DEBUG] BPMN canvas rendered', { zIndex: styles.zIndex, position: styles.position, top: rect.top });
+                  fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5963', message: 'BPMN canvas rendered in fullscreen', data: { isFullscreen, zIndex: styles.zIndex, position: styles.position, top: rect.top, left: rect.left, width: rect.width, height: rect.height }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'A' }) }).catch(() => { });
+                }
+              }}
+              style={{
+                backgroundColor: '#ffffff',
+                width: '100%',
+                height: '100%',
+                position: 'relative',
+                zIndex: isFullscreen ? 1 : 'auto',
+                pointerEvents: isFullscreen ? 'auto' : 'auto'
+              }}
+              className={`w-full h-full border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
+              onMouseDown={(e) => {
+                // #region agent log
+                const target = e.target as HTMLElement;
+                const toolbarEl = target.closest('.flex.items-center.justify-between.px-4');
+                const isToolbarClick = toolbarEl || target.closest('[data-radix-menubar-trigger]') || target.closest('[data-radix-menubar-content]') || target.closest('[role="menubar"]');
+                console.log('[DEBUG] BPMN canvas mousedown', { target: target.tagName, isToolbarClick: !!isToolbarClick, isFullscreen, clientY: e.clientY });
+                fetch('http://127.0.0.1:7242/ingest/18d381d8-c36b-4c93-96dd-ac136b1e5e3a', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'BpmnViewer.tsx:5978', message: 'BPMN canvas mousedown', data: { target: target.tagName, isToolbarClick: !!isToolbarClick, isFullscreen, clientY: e.clientY }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'D' }) }).catch(() => { });
+                // #endregion
+                // Don't interfere with toolbar clicks - let them propagate
+                if (isToolbarClick) {
+                  return; // Don't stop propagation
+                }
+              }}
+            />
+
+            {/* P&ID Legend Panel */}
+            {isPid && showLegend && (
+              <div className="absolute top-16 right-4 w-80 bg-background border border-engineering-green/20 rounded-lg shadow-lg z-40 max-h-[600px] overflow-y-auto">
+                <div className="p-4 border-b border-border flex items-center justify-between">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-engineering-green" />
+                    ISA S5.1 Symbols
+                  </h4>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => setShowLegend(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="p-4 space-y-4">
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="equipment">
+                      <AccordionTrigger className="text-sm">Equipment</AccordionTrigger>
+                      <AccordionContent className="text-xs space-y-2">
+                        <div><strong>TK-xxx:</strong> Storage Tank</div>
+                        <div><strong>P-xxx:</strong> Pump</div>
+                        <div><strong>V-xxx:</strong> Pressure Vessel</div>
+                        <div><strong>E-xxx:</strong> Heat Exchanger</div>
+                        <div><strong>R-xxx:</strong> Reactor</div>
+                      </AccordionContent>
+                    </AccordionItem>
+                    <AccordionItem value="valves">
+                      <AccordionTrigger className="text-sm">Valves</AccordionTrigger>
+                      <AccordionContent className="text-xs space-y-2">
+                        <div><strong>FCV-xxx:</strong> Flow Control Valve</div>
+                        <div><strong>TCV-xxx:</strong> Temperature Control Valve</div>
+                        <div><strong>PCV-xxx:</strong> Pressure Control Valve</div>
+                        <div><strong>PSV-xxx:</strong> Pressure Safety Valve</div>
+                      </AccordionContent>
+                    </AccordionItem>
+                    <AccordionItem value="instruments">
+                      <AccordionTrigger className="text-sm">Instruments</AccordionTrigger>
+                      <AccordionContent className="text-xs space-y-2">
+                        <div><strong>FI:</strong> Flow Indicator</div>
+                        <div><strong>TI:</strong> Temperature Indicator</div>
+                        <div><strong>PI:</strong> Pressure Indicator</div>
+                        <div><strong>LI:</strong> Level Indicator</div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="advanced">
+                      <AccordionTrigger
+                        className="text-sm"
+                        onClick={() => setShowAdvancedSymbols(!showAdvancedSymbols)}
+                      >
+                        Show Advanced Symbols
+                      </AccordionTrigger>
+                      {showAdvancedSymbols && (
+                        <AccordionContent className="text-xs space-y-2">
+                          <div><strong>FIC:</strong> Flow Indicating Controller</div>
+                          <div><strong>TIC:</strong> Temperature Indicating Controller</div>
+                          <div><strong>PIC:</strong> Pressure Indicating Controller</div>
+                          <div><strong>LIC:</strong> Level Indicating Controller</div>
+                          <div><strong>Line Ratings:</strong> 150# = ASME B16.5 Class 150</div>
+                          <div><strong>Line Ratings:</strong> 300# = ASME B16.5 Class 300</div>
+                        </AccordionContent>
+                      )}
+                    </AccordionItem>
+                  </Accordion>
+                </div>
+              </div>
+            )}
+
+            {/* P&ID Export Button (Fixed Position) */}
+            {isPid && !errorState && (
+              <div className="absolute bottom-8 right-8 z-30">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="shadow-lg hover:shadow-xl bg-engineering-green hover:bg-engineering-green/90">
+                      Export →
+                      <FileDown className="ml-2 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExportPid("svg")}>
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExportPid("pdf")}>
+                      Export as PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExportPid("dwg")}>
+                      Export as DWG
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
+            {/* Show Legend Button for P&ID */}
+            {isPid && !showLegend && !errorState && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="absolute top-16 right-4 z-30 bg-background/95 backdrop-blur-sm border-engineering-green/20 hover:bg-engineering-green/10"
+                onClick={() => setShowLegend(true)}
+              >
+                <Layers className="h-4 w-4 mr-2 text-engineering-green" />
+                Show Legend
+              </Button>
+            )}
+          </div>
+
+          {/* Right Sidebar - Utility Icons - Flowable Style */}
+          {showRightSidebar && (
+            <div className="w-12 border-l border-border bg-muted/30 flex flex-col items-center py-2 gap-2">
+              <Button
+                variant={showPropertiesPanel ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Diagram Overview"
+                onClick={() => setShowPropertiesPanel(!showPropertiesPanel)}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={showParticipantsPanel ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Participants / Pools & Lanes"
+                onClick={() => setShowParticipantsPanel(!showParticipantsPanel)}
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={showSettingsPanel ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Execution Settings"
+                onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={showValidationResults ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Check Model / Validate"
+                onClick={handleValidateModel}
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="User / Role Panel"
+                onClick={() => toast.info("User/Role panel - coming soon")}
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={showDocumentationPanel ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Element Documentation"
+                onClick={() => setShowDocumentationPanel(!showDocumentationPanel)}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={isPanMode ? "default" : "ghost"}
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Pan / Navigate Tool"
+                onClick={handleTogglePanMode}
+              >
+                <Hand className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 p-0"
+                title="Search"
+                onClick={() => {
+                  const searchInput = document.querySelector('input[placeholder*="Quick Search"]') as HTMLInputElement;
+                  if (searchInput) {
+                    searchInput.focus();
+                  }
+                }}
+              >
+                <FileSearch className="h-4 w-4" />
+              </Button>
+              <div className="flex-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 p-0"
+                onClick={() => setShowRightSidebar(false)}
+                title="Collapse Sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Right Sidebar Collapse Button - When Hidden */}
+          {!showRightSidebar && (
+            <div className="w-8 border-l border-border bg-muted/30 flex items-center justify-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setShowRightSidebar(true)}
+                title="Expand Sidebar"
               >
                 <ChevronLeft className="h-4 w-4 rotate-180" />
               </Button>
             </div>
           )}
-          
-          {/* Floating Undo/Redo Toolbar */}
-          <div className="absolute top-4 right-4 z-40 flex items-center gap-2 bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleUndo}
-              disabled={!canEdit || !canUndo}
-              title="Undo (Ctrl+Z)"
-              className="h-8 w-8 p-0"
-            >
-              <Undo className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRedo}
-              disabled={!canEdit || !canRedo}
-              title="Redo (Ctrl+Y)"
-              className="h-8 w-8 p-0"
-            >
-              <Redo className="h-4 w-4" />
-            </Button>
-            <div className="h-6 w-px bg-border mx-1" />
-            <span className="text-xs text-muted-foreground px-2">
-              v{version}
-              {versions.length > 1 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="ml-1 text-primary hover:underline">
-                      · v{versions.length}
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    {versions.map((_, idx) => (
-                      <DropdownMenuItem key={idx} onClick={() => handleVersionChange(idx)}>
-                        Version {idx + 1}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </span>
-          </div>
-
-          {/* Error State Fallback */}
-          {errorState && (
-            <div className="w-full h-full bg-muted/50 border border-destructive/20 rounded-lg flex flex-col items-center justify-center p-8">
-              <div className="text-center space-y-4 max-w-md">
-                <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-                  <X className="h-8 w-8 text-destructive" />
-                </div>
-                <h3 className="text-lg font-semibold">Generation Failed</h3>
-                <p className="text-sm text-muted-foreground">{errorState}</p>
-                <Button onClick={() => setErrorState(null)} variant="outline">
-                  Retry with Simplified Prompt
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* BPMN Canvas */}
-          <div
-            ref={containerRef}
-            style={{ 
-              backgroundColor: '#ffffff',
-              width: '100%',
-              height: '100%',
-              position: 'relative'
-            }}
-            className={`w-full h-full border rounded-lg shadow-sm ${errorState ? 'hidden' : ''} ${isPid ? 'border-engineering-green/30' : 'border-border'}`}
-          />
-
-          {/* P&ID Legend Panel */}
-          {isPid && showLegend && (
-            <div className="absolute top-16 right-4 w-80 bg-background border border-engineering-green/20 rounded-lg shadow-lg z-40 max-h-[600px] overflow-y-auto">
-              <div className="p-4 border-b border-border flex items-center justify-between">
-                <h4 className="font-semibold text-sm flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-engineering-green" />
-                  ISA S5.1 Symbols
-                </h4>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0"
-                  onClick={() => setShowLegend(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="p-4 space-y-4">
-                <Accordion type="single" collapsible>
-                  <AccordionItem value="equipment">
-                    <AccordionTrigger className="text-sm">Equipment</AccordionTrigger>
-                    <AccordionContent className="text-xs space-y-2">
-                      <div><strong>TK-xxx:</strong> Storage Tank</div>
-                      <div><strong>P-xxx:</strong> Pump</div>
-                      <div><strong>V-xxx:</strong> Pressure Vessel</div>
-                      <div><strong>E-xxx:</strong> Heat Exchanger</div>
-                      <div><strong>R-xxx:</strong> Reactor</div>
-                    </AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="valves">
-                    <AccordionTrigger className="text-sm">Valves</AccordionTrigger>
-                    <AccordionContent className="text-xs space-y-2">
-                      <div><strong>FCV-xxx:</strong> Flow Control Valve</div>
-                      <div><strong>TCV-xxx:</strong> Temperature Control Valve</div>
-                      <div><strong>PCV-xxx:</strong> Pressure Control Valve</div>
-                      <div><strong>PSV-xxx:</strong> Pressure Safety Valve</div>
-                    </AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="instruments">
-                    <AccordionTrigger className="text-sm">Instruments</AccordionTrigger>
-                    <AccordionContent className="text-xs space-y-2">
-                      <div><strong>FI:</strong> Flow Indicator</div>
-                      <div><strong>TI:</strong> Temperature Indicator</div>
-                      <div><strong>PI:</strong> Pressure Indicator</div>
-                      <div><strong>LI:</strong> Level Indicator</div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-
-                <Accordion type="single" collapsible>
-                  <AccordionItem value="advanced">
-                    <AccordionTrigger
-                      className="text-sm"
-                      onClick={() => setShowAdvancedSymbols(!showAdvancedSymbols)}
-                    >
-                      Show Advanced Symbols
-                    </AccordionTrigger>
-                    {showAdvancedSymbols && (
-                      <AccordionContent className="text-xs space-y-2">
-                        <div><strong>FIC:</strong> Flow Indicating Controller</div>
-                        <div><strong>TIC:</strong> Temperature Indicating Controller</div>
-                        <div><strong>PIC:</strong> Pressure Indicating Controller</div>
-                        <div><strong>LIC:</strong> Level Indicating Controller</div>
-                        <div><strong>Line Ratings:</strong> 150# = ASME B16.5 Class 150</div>
-                        <div><strong>Line Ratings:</strong> 300# = ASME B16.5 Class 300</div>
-                      </AccordionContent>
-                    )}
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            </div>
-          )}
-
-          {/* P&ID Export Button (Fixed Position) */}
-          {isPid && !errorState && (
-            <div className="absolute bottom-8 right-8 z-30">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button className="shadow-lg hover:shadow-xl bg-engineering-green hover:bg-engineering-green/90">
-                    Export →
-                    <FileDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleExportPid("svg")}>
-                    Export as SVG
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExportPid("pdf")}>
-                    Export as PDF
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleExportPid("dwg")}>
-                    Export as DWG
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-
-          {/* Show Legend Button for P&ID */}
-          {isPid && !showLegend && !errorState && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="absolute top-16 right-4 z-30 bg-background/95 backdrop-blur-sm border-engineering-green/20 hover:bg-engineering-green/10"
-              onClick={() => setShowLegend(true)}
-            >
-              <Layers className="h-4 w-4 mr-2 text-engineering-green" />
-              Show Legend
-            </Button>
-          )}
         </div>
 
-        {/* Right Sidebar - Utility Icons - Flowable Style */}
-        {showRightSidebar && (
-          <div className="w-12 border-l border-border bg-muted/30 flex flex-col items-center py-2 gap-2">
-            <Button
-              variant={showPropertiesPanel ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Diagram Overview"
-              onClick={() => setShowPropertiesPanel(!showPropertiesPanel)}
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={showParticipantsPanel ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Participants / Pools & Lanes"
-              onClick={() => setShowParticipantsPanel(!showParticipantsPanel)}
-            >
-              <Users className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={showSettingsPanel ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Execution Settings"
-              onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={showValidationResults ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Check Model / Validate"
-              onClick={handleValidateModel}
-            >
-              <Check className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="User / Role Panel"
-              onClick={() => toast.info("User/Role panel - coming soon")}
-            >
-              <Users className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={showDocumentationPanel ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Element Documentation"
-              onClick={() => setShowDocumentationPanel(!showDocumentationPanel)}
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={isPanMode ? "default" : "ghost"}
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Pan / Navigate Tool"
-              onClick={handleTogglePanMode}
-            >
-              <Hand className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              title="Search"
-              onClick={() => {
-                const searchInput = document.querySelector('input[placeholder*="Quick Search"]') as HTMLInputElement;
-                if (searchInput) {
-                  searchInput.focus();
-                }
-              }}
-            >
-              <FileSearch className="h-4 w-4" />
-            </Button>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              onClick={() => setShowRightSidebar(false)}
-              title="Collapse Sidebar"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+        {/* Element Change Context Menu */}
+        {showContextMenu && selectedElement && (
+          <div
+            className="context-menu absolute bg-background border border-border rounded-lg shadow-lg z-50 p-3"
+            style={{
+              left: `${contextMenuPosition.x}px`,
+              top: `${contextMenuPosition.y}px`,
+              maxWidth: '280px',
+            }}
+          >
+            <div className="flex items-center justify-between mb-2 pb-2 border-b">
+              <span className="text-xs font-semibold">Change to:</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0"
+                onClick={() => setShowContextMenu(false)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
 
-        {/* Right Sidebar Collapse Button - When Hidden */}
-        {!showRightSidebar && (
-          <div className="w-8 border-l border-border bg-muted/30 flex items-center justify-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setShowRightSidebar(true)}
-              title="Expand Sidebar"
-            >
-              <ChevronLeft className="h-4 w-4 rotate-180" />
-            </Button>
-          </div>
-        )}
-      </div>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {/* Show events if current is an event */}
+              {(selectedElement.type?.includes('Event') || selectedElement.type === 'bpmn:StartEvent' || selectedElement.type === 'bpmn:EndEvent') && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground">EVENTS</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    <button onClick={() => changeElementType('start-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="Start Event">
+                      <div className="w-6 h-6 rounded-full border-2 border-green-600" />
+                      <span className="text-[8px]">Start</span>
+                    </button>
+                    <button onClick={() => changeElementType('intermediate-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="Intermediate">
+                      <div className="w-6 h-6 rounded-full border-2 border-blue-600" />
+                      <span className="text-[8px]">Inter.</span>
+                    </button>
+                    <button onClick={() => changeElementType('end-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="End Event">
+                      <div className="w-6 h-6 rounded-full border-4 border-red-600" />
+                      <span className="text-[8px]">End</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
-      {/* Element Change Context Menu */}
-      {showContextMenu && selectedElement && (
-        <div
-          className="context-menu absolute bg-background border border-border rounded-lg shadow-lg z-50 p-3"
-          style={{
-            left: `${contextMenuPosition.x}px`,
-            top: `${contextMenuPosition.y}px`,
-            maxWidth: '280px',
-          }}
-        >
-          <div className="flex items-center justify-between mb-2 pb-2 border-b">
-            <span className="text-xs font-semibold">Change to:</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-5 w-5 p-0"
-              onClick={() => setShowContextMenu(false)}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
+              {/* Show tasks if current is a task */}
+              {selectedElement.type?.includes('Task') && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground">TASKS</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    <button onClick={() => changeElementType('task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Task">
+                      <div className="w-6 h-6 border-2 border-foreground rounded" />
+                      <span className="text-[8px]">Task</span>
+                    </button>
+                    <button onClick={() => changeElementType('user-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="User Task">
+                      <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">👤</div>
+                      <span className="text-[8px]">User</span>
+                    </button>
+                    <button onClick={() => changeElementType('service-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Service">
+                      <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">⚙️</div>
+                      <span className="text-[8px]">Service</span>
+                    </button>
+                    <button onClick={() => changeElementType('manual-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Manual">
+                      <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">✋</div>
+                      <span className="text-[8px]">Manual</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {/* Show events if current is an event */}
-            {(selectedElement.type?.includes('Event') || selectedElement.type === 'bpmn:StartEvent' || selectedElement.type === 'bpmn:EndEvent') && (
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-muted-foreground">EVENTS</p>
+              {/* Show gateways if current is a gateway */}
+              {selectedElement.type?.includes('Gateway') && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground">GATEWAYS</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    <button onClick={() => changeElementType('xor-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="XOR">
+                      <div className="w-6 h-6 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
+                        <span className="transform -rotate-45 text-[10px] font-bold">X</span>
+                      </div>
+                      <span className="text-[8px]">XOR</span>
+                    </button>
+                    <button onClick={() => changeElementType('and-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="AND">
+                      <div className="w-6 h-6 border-2 border-purple-600 transform rotate-45 flex items-center justify-center">
+                        <span className="transform -rotate-45 text-[10px] font-bold">+</span>
+                      </div>
+                      <span className="text-[8px]">AND</span>
+                    </button>
+                    <button onClick={() => changeElementType('or-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="OR">
+                      <div className="w-6 h-6 border-2 border-indigo-600 transform rotate-45 flex items-center justify-center">
+                        <span className="transform -rotate-45 text-[10px] font-bold">O</span>
+                      </div>
+                      <span className="text-[8px]">OR</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Camunda Color Palette */}
+              <div className="pt-2 border-t space-y-1">
+                <p className="text-[10px] font-bold text-muted-foreground">CAMUNDA COLORS</p>
                 <div className="grid grid-cols-3 gap-1">
-                  <button onClick={() => changeElementType('start-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="Start Event">
-                    <div className="w-6 h-6 rounded-full border-2 border-green-600" />
-                    <span className="text-[8px]">Start</span>
-                  </button>
-                  <button onClick={() => changeElementType('intermediate-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="Intermediate">
-                    <div className="w-6 h-6 rounded-full border-2 border-blue-600" />
-                    <span className="text-[8px]">Inter.</span>
-                  </button>
-                  <button onClick={() => changeElementType('end-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded text-xs" title="End Event">
-                    <div className="w-6 h-6 rounded-full border-4 border-red-600" />
-                    <span className="text-[8px]">End</span>
-                  </button>
+                  {camundaColors.map((colorOption) => (
+                    <button
+                      key={colorOption.name}
+                      onClick={() => {
+                        if (colorOption.color === 'none') {
+                          // Remove color
+                          try {
+                            const modeling = modelerRef.current?.get('modeling') as {
+                              setColor: (elements: unknown[], options: { fill?: string; stroke?: string }) => void;
+                            } | undefined;
+                            if (modeling && selectedElement) {
+                              modeling.setColor([selectedElement], {
+                                fill: undefined,
+                                stroke: undefined
+                              });
+                              toast.success('Color removed');
+                              setShowContextMenu(false);
+                            }
+                          } catch (error) {
+                            console.error('Error removing color:', error);
+                            toast.error('Failed to remove color');
+                          }
+                        } else {
+                          applyColor(colorOption.color, colorOption.label);
+                        }
+                      }}
+                      className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded transition-colors"
+                      title={colorOption.label}
+                    >
+                      {colorOption.color === 'none' ? (
+                        <div className="w-6 h-6 border-2 border-dashed border-foreground rounded flex items-center justify-center">
+                          <X className="h-3 w-3" />
+                        </div>
+                      ) : (
+                        <div
+                          className="w-6 h-6 rounded border-2 border-border"
+                          style={{ backgroundColor: colorOption.color }}
+                        />
+                      )}
+                      <span className="text-[8px] text-center leading-tight">{colorOption.name}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
 
-            {/* Show tasks if current is a task */}
-            {selectedElement.type?.includes('Task') && (
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-muted-foreground">TASKS</p>
+              {/* Always show option to change to any category */}
+              <div className="pt-2 border-t space-y-1">
+                <p className="text-[10px] font-bold text-muted-foreground">CHANGE TO</p>
                 <div className="grid grid-cols-3 gap-1">
                   <button onClick={() => changeElementType('task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Task">
                     <div className="w-6 h-6 border-2 border-foreground rounded" />
                     <span className="text-[8px]">Task</span>
                   </button>
-                  <button onClick={() => changeElementType('user-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="User Task">
-                    <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">👤</div>
-                    <span className="text-[8px]">User</span>
+                  <button onClick={() => changeElementType('start-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Event">
+                    <div className="w-6 h-6 rounded-full border-2 border-green-600" />
+                    <span className="text-[8px]">Event</span>
                   </button>
-                  <button onClick={() => changeElementType('service-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Service">
-                    <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">⚙️</div>
-                    <span className="text-[8px]">Service</span>
-                  </button>
-                  <button onClick={() => changeElementType('manual-task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Manual">
-                    <div className="w-6 h-6 border-2 border-foreground rounded flex items-center justify-center text-[10px]">✋</div>
-                    <span className="text-[8px]">Manual</span>
+                  <button onClick={() => changeElementType('xor-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Gateway">
+                    <div className="w-6 h-6 border-2 border-amber-600 transform rotate-45" />
+                    <span className="text-[8px]">Gateway</span>
                   </button>
                 </div>
               </div>
-            )}
+            </div>
+          </div>
+        )}
 
-            {/* Show gateways if current is a gateway */}
-            {selectedElement.type?.includes('Gateway') && (
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-muted-foreground">GATEWAYS</p>
-                <div className="grid grid-cols-3 gap-1">
-                  <button onClick={() => changeElementType('xor-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="XOR">
-                    <div className="w-6 h-6 border-2 border-amber-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">X</span>
-                    </div>
-                    <span className="text-[8px]">XOR</span>
-                  </button>
-                  <button onClick={() => changeElementType('and-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="AND">
-                    <div className="w-6 h-6 border-2 border-purple-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">+</span>
-                    </div>
-                    <span className="text-[8px]">AND</span>
-                  </button>
-                  <button onClick={() => changeElementType('or-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="OR">
-                    <div className="w-6 h-6 border-2 border-indigo-600 transform rotate-45 flex items-center justify-center">
-                      <span className="transform -rotate-45 text-[10px] font-bold">O</span>
-                    </div>
-                    <span className="text-[8px]">OR</span>
-                  </button>
-                </div>
+        {/* Vision Modelling AI Dialog */}
+        <Dialog open={visionDialogOpen} onOpenChange={setVisionDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Vision Modelling AI - Process from Images</DialogTitle>
+              <DialogDescription>
+                Upload images containing process information:
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li><strong>Handwritten notes</strong> - sketches and text</li>
+                  <li><strong>Whiteboard diagrams</strong> - flow drawings and ideas</li>
+                  <li><strong>Process sketches</strong> - rough workflow designs</li>
+                  <li><strong>Meeting notes</strong> - captured process discussions</li>
+                </ul>
+                <p className="mt-2 text-sm">AI will extract text, analyze the content, and generate a professional BPMN diagram.</p>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <Label htmlFor="vision-upload" className="cursor-pointer">
+                  <span className="text-sm font-medium">Click to upload image</span>
+                  <p className="text-xs text-muted-foreground mt-1">PNG, JPG - handwritten or printed content</p>
+                </Label>
+                <Input
+                  id="vision-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleVisionUpload}
+                  disabled={isProcessing}
+                />
               </div>
-            )}
+              {selectedFile && (
+                <div className="text-center text-sm">
+                  <p className="text-foreground">Selected: <strong>{selectedFile.name}</strong></p>
+                </div>
+              )}
+              {isProcessing && (
+                <div className="text-center space-y-2">
+                  <div className="text-sm text-muted-foreground">
+                    <p className="font-medium">Processing your image with AI...</p>
+                    <p className="text-xs mt-1">📝 Extracting text and analyzing content</p>
+                    <p className="text-xs">🔍 Understanding process flow</p>
+                    <p className="text-xs">⚙️ Generating BPMN diagram</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-            {/* Camunda Color Palette */}
-            <div className="pt-2 border-t space-y-1">
-              <p className="text-[10px] font-bold text-muted-foreground">CAMUNDA COLORS</p>
-              <div className="grid grid-cols-3 gap-1">
-                {camundaColors.map((colorOption) => (
-                  <button
-                    key={colorOption.name}
-                    onClick={() => {
-                      if (colorOption.color === 'none') {
-                        // Remove color
-                        try {
-                          const modeling = modelerRef.current?.get('modeling') as {
-                            setColor: (elements: unknown[], options: { fill?: string; stroke?: string }) => void;
-                          } | undefined;
-                          if (modeling && selectedElement) {
-                            modeling.setColor([selectedElement], {
-                              fill: undefined,
-                              stroke: undefined
-                            });
-                            toast.success('Color removed');
-                            setShowContextMenu(false);
-                          }
-                        } catch (error) {
-                          console.error('Error removing color:', error);
-                          toast.error('Failed to remove color');
-                        }
-                      } else {
-                        applyColor(colorOption.color, colorOption.label);
-                      }
-                    }}
-                    className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded transition-colors"
-                    title={colorOption.label}
-                  >
-                    {colorOption.color === 'none' ? (
-                      <div className="w-6 h-6 border-2 border-dashed border-foreground rounded flex items-center justify-center">
-                        <X className="h-3 w-3" />
+        <AlertDialog
+          open={confirmAlternativeDialogOpen}
+          onOpenChange={(open) => {
+            setConfirmAlternativeDialogOpen(open);
+            if (!open) {
+              setConfirmAlternative(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Apply this alternative diagram?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The current canvas will be replaced with the selected alternative. You can always undo or regenerate additional options.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {confirmAlternative ? (
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">{confirmAlternative.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {confirmAlternative.description}
+                    </p>
+                  </div>
+                  <Badge variant={confirmAlternative.complexity === "advanced" ? "default" : "secondary"}>
+                    {confirmAlternative.complexity.toUpperCase()}
+                  </Badge>
+                </div>
+                <ScrollArea className="h-40 border rounded-md bg-muted/30">
+                  <pre className="text-[11px] leading-4 p-3 whitespace-pre-wrap">
+                    {confirmAlternative.xml.slice(0, 1600)}
+                    {confirmAlternative.xml.length > 1600 ? "...\n\n(Preview truncated)" : ""}
+                  </pre>
+                </ScrollArea>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Select an alternative to preview and apply it.
+              </p>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel>Not now</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={!confirmAlternative}
+                onClick={async () => {
+                  if (confirmAlternative) {
+                    await applyAlternativeModel(confirmAlternative);
+                    setConfirmAlternative(null);
+                    setConfirmAlternativeDialogOpen(false);
+                  }
+                }}
+              >
+                Apply diagram
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* QR Code Dialog */}
+        <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share via QR Code</DialogTitle>
+              <DialogDescription>
+                Generate a QR code to invite collaborators with view or edit permissions
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="border rounded-lg p-8 text-center bg-muted/30">
+                <QrCode className="h-32 w-32 mx-auto mb-4" />
+                <p className="text-sm text-muted-foreground">QR Code will appear here</p>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={generateQRCode} className="flex-1">
+                  Generate QR Code
+                </Button>
+                <Button variant="outline" className="flex-1">
+                  Set Permissions
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Log Agent Dialog */}
+        <Dialog
+          open={logDialogOpen}
+          onOpenChange={(open) => {
+            setLogDialogOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Log Agent</DialogTitle>
+              <DialogDescription>
+                Store and audit BPMN diagram history for compliance, recovery, and review
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center bg-muted/30">
+                <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <Label htmlFor="log-upload" className="cursor-pointer flex flex-col gap-1">
+                  <span className="text-sm font-medium">Click to upload log file</span>
+                  <p className="text-xs text-muted-foreground">CSV, JSON, TXT, or LOG format</p>
+                </Label>
+                <Input
+                  id="log-upload"
+                  type="file"
+                  accept=".csv,.json,.txt,.log"
+                  className="hidden"
+                  onChange={handleLogUpload}
+                  disabled={isProcessing}
+                />
+              </div>
+              {isProcessing && (
+                <div className="text-center text-sm text-muted-foreground">
+                  Analyzing log file...
+                </div>
+              )}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-medium">Audit trail</p>
+                  </div>
+                  <Badge variant="outline">
+                    {logHistory.length} snapshots
+                  </Badge>
+                </div>
+                <ScrollArea className="max-h-64 border rounded-md">
+                  <div className="divide-y">
+                    {isLoadingLogs ? (
+                      <div className="p-4 text-sm text-muted-foreground">
+                        Loading audit trail...
                       </div>
-                    ) : (
-                      <div
-                        className="w-6 h-6 rounded border-2 border-border"
-                        style={{ backgroundColor: colorOption.color }}
-                      />
-                    )}
-                    <span className="text-[8px] text-center leading-tight">{colorOption.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Always show option to change to any category */}
-            <div className="pt-2 border-t space-y-1">
-              <p className="text-[10px] font-bold text-muted-foreground">CHANGE TO</p>
-              <div className="grid grid-cols-3 gap-1">
-                <button onClick={() => changeElementType('task')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Task">
-                  <div className="w-6 h-6 border-2 border-foreground rounded" />
-                  <span className="text-[8px]">Task</span>
-                </button>
-                <button onClick={() => changeElementType('start-event')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Event">
-                  <div className="w-6 h-6 rounded-full border-2 border-green-600" />
-                  <span className="text-[8px]">Event</span>
-                </button>
-                <button onClick={() => changeElementType('xor-gateway')} className="flex flex-col items-center gap-1 p-1.5 hover:bg-accent rounded" title="Gateway">
-                  <div className="w-6 h-6 border-2 border-amber-600 transform rotate-45" />
-                  <span className="text-[8px]">Gateway</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Vision Modelling AI Dialog */}
-      <Dialog open={visionDialogOpen} onOpenChange={setVisionDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Vision Modelling AI - Process from Images</DialogTitle>
-            <DialogDescription>
-              Upload images containing process information:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li><strong>Handwritten notes</strong> - sketches and text</li>
-                <li><strong>Whiteboard diagrams</strong> - flow drawings and ideas</li>
-                <li><strong>Process sketches</strong> - rough workflow designs</li>
-                <li><strong>Meeting notes</strong> - captured process discussions</li>
-              </ul>
-              <p className="mt-2 text-sm">AI will extract text, analyze the content, and generate a professional BPMN diagram.</p>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
-              <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <Label htmlFor="vision-upload" className="cursor-pointer">
-                <span className="text-sm font-medium">Click to upload image</span>
-                <p className="text-xs text-muted-foreground mt-1">PNG, JPG - handwritten or printed content</p>
-              </Label>
-              <Input
-                id="vision-upload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleVisionUpload}
-                disabled={isProcessing}
-              />
-            </div>
-            {selectedFile && (
-              <div className="text-center text-sm">
-                <p className="text-foreground">Selected: <strong>{selectedFile.name}</strong></p>
-              </div>
-            )}
-            {isProcessing && (
-              <div className="text-center space-y-2">
-                <div className="text-sm text-muted-foreground">
-                  <p className="font-medium">Processing your image with AI...</p>
-                  <p className="text-xs mt-1">📝 Extracting text and analyzing content</p>
-                  <p className="text-xs">🔍 Understanding process flow</p>
-                  <p className="text-xs">⚙️ Generating BPMN diagram</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={confirmAlternativeDialogOpen}
-        onOpenChange={(open) => {
-          setConfirmAlternativeDialogOpen(open);
-          if (!open) {
-            setConfirmAlternative(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Apply this alternative diagram?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The current canvas will be replaced with the selected alternative. You can always undo or regenerate additional options.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {confirmAlternative ? (
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium">{confirmAlternative.title}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {confirmAlternative.description}
-                  </p>
-                </div>
-                <Badge variant={confirmAlternative.complexity === "advanced" ? "default" : "secondary"}>
-                  {confirmAlternative.complexity.toUpperCase()}
-                </Badge>
-              </div>
-              <ScrollArea className="h-40 border rounded-md bg-muted/30">
-                <pre className="text-[11px] leading-4 p-3 whitespace-pre-wrap">
-                  {confirmAlternative.xml.slice(0, 1600)}
-                  {confirmAlternative.xml.length > 1600 ? "...\n\n(Preview truncated)" : ""}
-                </pre>
-              </ScrollArea>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Select an alternative to preview and apply it.
-            </p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Not now</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={!confirmAlternative}
-              onClick={async () => {
-                if (confirmAlternative) {
-                  await applyAlternativeModel(confirmAlternative);
-                  setConfirmAlternative(null);
-                  setConfirmAlternativeDialogOpen(false);
-                }
-              }}
-            >
-              Apply diagram
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* QR Code Dialog */}
-      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Share via QR Code</DialogTitle>
-            <DialogDescription>
-              Generate a QR code to invite collaborators with view or edit permissions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="border rounded-lg p-8 text-center bg-muted/30">
-              <QrCode className="h-32 w-32 mx-auto mb-4" />
-              <p className="text-sm text-muted-foreground">QR Code will appear here</p>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={generateQRCode} className="flex-1">
-                Generate QR Code
-              </Button>
-              <Button variant="outline" className="flex-1">
-                Set Permissions
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Log Agent Dialog */}
-      <Dialog
-        open={logDialogOpen}
-        onOpenChange={(open) => {
-          setLogDialogOpen(open);
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Log Agent</DialogTitle>
-            <DialogDescription>
-              Store and audit BPMN diagram history for compliance, recovery, and review
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6">
-            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center bg-muted/30">
-              <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <Label htmlFor="log-upload" className="cursor-pointer flex flex-col gap-1">
-                <span className="text-sm font-medium">Click to upload log file</span>
-                <p className="text-xs text-muted-foreground">CSV, JSON, TXT, or LOG format</p>
-              </Label>
-              <Input
-                id="log-upload"
-                type="file"
-                accept=".csv,.json,.txt,.log"
-                className="hidden"
-                onChange={handleLogUpload}
-                disabled={isProcessing}
-              />
-            </div>
-            {isProcessing && (
-              <div className="text-center text-sm text-muted-foreground">
-                Analyzing log file...
-              </div>
-            )}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">Audit trail</p>
-                </div>
-                <Badge variant="outline">
-                  {logHistory.length} snapshots
-                </Badge>
-              </div>
-              <ScrollArea className="max-h-64 border rounded-md">
-                <div className="divide-y">
-                  {isLoadingLogs ? (
-                    <div className="p-4 text-sm text-muted-foreground">
-                      Loading audit trail...
-                    </div>
-                  ) : logHistory.length ? (
-                    logHistory.map((entry) => {
-                      const notes = Array.isArray(entry.alternative_models)
-                        ? (entry.alternative_models as Array<Record<string, unknown>>)[0]
-                        : undefined;
-                      const preview = 
-                        notes && typeof notes === "object" && typeof notes.preview === "string"
-                          ? notes.preview
+                    ) : logHistory.length ? (
+                      logHistory.map((entry) => {
+                        const notes = Array.isArray(entry.alternative_models)
+                          ? (entry.alternative_models as Array<Record<string, unknown>>)[0]
                           : undefined;
+                        const preview =
+                          notes && typeof notes === "object" && typeof notes.preview === "string"
+                            ? notes.preview
+                            : undefined;
 
-                      return (
-                        <div key={entry.id} className="p-4 flex flex-col gap-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-medium">
-                                {entry.input_description ?? "Manual save"}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {entry.created_at
-                                  ? new Date(entry.created_at).toLocaleString()
-                                  : "Timestamp unavailable"}
-                              </p>
-                              {entry.input_type && (
-                                <Badge variant="secondary" className="mt-1 uppercase tracking-wide">
-                                  {entry.input_type.replace(/[_-]/g, " ")}
-                                </Badge>
-                              )}
+                        return (
+                          <div key={entry.id} className="p-4 flex flex-col gap-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {entry.input_description ?? "Manual save"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.created_at
+                                    ? new Date(entry.created_at).toLocaleString()
+                                    : "Timestamp unavailable"}
+                                </p>
+                                {entry.input_type && (
+                                  <Badge variant="secondary" className="mt-1 uppercase tracking-wide">
+                                    {entry.input_type.replace(/[_-]/g, " ")}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button size="sm" variant="outline">Download as</Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44">
+                                    <DropdownMenuLabel>Choose format</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        downloadXmlSnapshot(
+                                          entry.generated_bpmn_xml,
+                                          entry.input_description ?? "diagram-log"
+                                        )
+                                      }
+                                    >
+                                      BPMN (.bpmn)
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={async () => {
+                                        try {
+                                          const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                          const blob = new Blob([svg], { type: "image/svg+xml" });
+                                          downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.svg`);
+                                        } catch {
+                                          toast.error("Failed to export SVG");
+                                        }
+                                      }}
+                                    >
+                                      SVG (.svg)
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={async () => {
+                                        try {
+                                          const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                          const blob = await exportSvgStringToImage(svg, "image/png");
+                                          downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.png`);
+                                        } catch {
+                                          toast.error("Failed to export PNG");
+                                        }
+                                      }}
+                                    >
+                                      PNG (.png)
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={async () => {
+                                        try {
+                                          const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                          const blob = await exportSvgStringToImage(svg, "image/jpeg", "#ffffff");
+                                          downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.jpg`);
+                                        } catch {
+                                          toast.error("Failed to export JPG");
+                                        }
+                                      }}
+                                    >
+                                      JPG (.jpg)
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={async () => {
+                                        try {
+                                          const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                          const pngBlob = await exportSvgStringToImage(svg, "image/png", "#ffffff");
+                                          const url = URL.createObjectURL(pngBlob);
+                                          const newWindow = window.open("", "_blank");
+                                          if (newWindow) {
+                                            newWindow.document.write(`<html><head><title>${entry.input_description ?? "diagram-log"}</title></head><body style="margin:0"><img src="${url}" style="width:100%;height:auto"/></body></html>`);
+                                            newWindow.document.close();
+                                            setTimeout(() => { try { newWindow.focus(); newWindow.print(); } catch (_) { } }, 300);
+                                          } else {
+                                            toast.info("Popup blocked. Enable popups to save as PDF.");
+                                          }
+                                        } catch {
+                                          toast.error("Failed to prepare PDF. Use 'Print to PDF' from the opened image.");
+                                        }
+                                      }}
+                                    >
+                                      PDF (via Print)
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                <Button
+                                  size="sm"
+                                  onClick={() => applyHistoricalDiagram(entry)}
+                                >
+                                  Load
+                                </Button>
+                              </div>
                             </div>
+                            {preview && (
+                              <pre className="text-xs bg-muted/60 border rounded-md p-3 whitespace-pre-wrap max-h-32 overflow-auto">
+                                {preview}
+                              </pre>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-4 text-sm text-muted-foreground">
+                        No historical logs archived yet.
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modelling Agent Dialog */}
+        <Dialog
+          open={agentDialogOpen}
+          onOpenChange={(open) => {
+            setAgentDialogOpen(open);
+            if (!open) {
+              setAlternativeError(null);
+            }
+          }}
+        >
+          <DialogContent
+            className="max-w-[95vw] max-h-[95vh] w-[90vw] h-[90vh] overflow-hidden flex flex-col p-0"
+            style={{
+              maxWidth: '1400px',
+              maxHeight: '900px',
+              width: '90vw',
+              height: '90vh',
+              minWidth: '900px',
+              minHeight: '650px'
+            }}
+          >
+            <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
+              <DialogTitle>Modelling Agent Mode</DialogTitle>
+              <DialogDescription>
+                Compare 5-7 AI-generated BPMN variations, from streamlined to advanced, and apply the best fit
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-6" style={{ minHeight: 0, scrollBehavior: 'smooth' }}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-foreground">
+                    How many alternative diagrams would you like to generate?
+                  </label>
+                  <div className="flex gap-4">
+                    {[3, 5, 7].map((countOption) => (
+                      <label
+                        key={countOption}
+                        className={`flex items-center gap-2 cursor-pointer ${isLoadingAlternatives ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                      >
+                        <input
+                          type="radio"
+                          name="alternativeCount"
+                          value={countOption}
+                          checked={alternativeCount === countOption}
+                          onChange={() => {
+                            if (!isLoadingAlternatives) {
+                              setAlternativeCount(countOption);
+                            }
+                          }}
+                          disabled={isLoadingAlternatives}
+                          className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                          aria-label={`Generate ${countOption} alternatives`}
+                        />
+                        <span className="text-sm font-medium">{countOption}</span>
+                        {countOption === 5 && (
+                          <Badge variant="secondary" className="text-[10px]">Recommended</Badge>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                    <p>• <strong>3 alternatives:</strong> Quick comparison (fastest)</p>
+                    <p>• <strong>5 alternatives:</strong> Comprehensive options (recommended)</p>
+                    <p>• <strong>7 alternatives:</strong> Maximum variety (slowest)</p>
+                  </div>
+                </div>
+                {featureFlags.showLanguagePreference && (
+                  <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+                    <label className="text-sm font-medium text-foreground">
+                      Language preference
+                    </label>
+                    <Select
+                      value={selectedLanguage}
+                      onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
+                      disabled={isApplyingLanguage}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Auto (match prompt)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LANGUAGE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <p>
+                        {selectedLanguage === "auto"
+                          ? "We detect the language from your prompt and existing canvas labels."
+                          : `All variants will be generated in ${LANGUAGE_NATIVE_NAMES[selectedLanguage]}.`}
+                      </p>
+                      {isApplyingLanguage && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {isLoadingAlternatives ? (
+                <div className="flex flex-col items-center justify-center gap-4 py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <div className="space-y-4 text-center w-full max-w-md">
+                    <p className="text-sm font-medium">
+                      Generating {alternativeProgress.total || alternativeCount} alternative {diagramType === "pid" ? "P&ID" : "BPMN"} models in parallel...
+                    </p>
+                    {alternativeProgress.total > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Progress: {alternativeProgress.completed} / {alternativeProgress.total}</span>
+                          <span>
+                            {alternativeProgress.total
+                              ? Math.round((alternativeProgress.completed / alternativeProgress.total) * 100)
+                              : 0}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-300"
+                            style={{
+                              width: `${alternativeProgress.total
+                                ? Math.min(
+                                  100,
+                                  (alternativeProgress.completed / alternativeProgress.total) * 100
+                                )
+                                : 0
+                                }%`,
+                            }}
+                          />
+                        </div>
+                        {/* Individual model status list */}
+                        <div className="space-y-1.5 text-left border rounded-lg p-3 bg-muted/30 max-h-64 overflow-y-auto">
+                          {ALTERNATIVE_VARIANTS.slice(0, alternativeProgress.total).map((variant) => {
+                            const status = modelStatuses.get(variant.id) || 'queued';
+                            const isCurrent = alternativeProgress.current === variant.title;
+                            return (
+                              <div key={variant.id} className="flex items-center gap-2 text-xs">
+                                {status === 'completed' && <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />}
+                                {status === 'generating' && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />}
+                                {status === 'failed' && <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />}
+                                {status === 'queued' && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />}
+                                <span className={`flex-1 ${isCurrent ? 'font-medium text-primary' : ''} ${status === 'failed' ? 'text-destructive' : ''}`}>
+                                  {variant.title}
+                                  {status === 'failed' && ' (generation failed)'}
+                                  {status === 'completed' && alternativeModels.find(m => m.title === variant.title)?.previewFailed && ' (preview unavailable)'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {alternativeModels.length > 0 && (
+                      <p className="text-xs text-green-600 dark:text-green-400">
+                        ✓ {alternativeModels.length} model{alternativeModels.length !== 1 ? "s" : ""} ready
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : alternativeError ? (
+                <div className="border border-destructive/30 bg-destructive/10 rounded-lg p-4 space-y-3">
+                  <p className="text-sm text-destructive font-medium">Unable to prepare alternatives</p>
+                  <p className="text-xs text-destructive/80">{alternativeError}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => generateAlternativeModels(true)}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : alternativeModels.length ? (
+                <>
+                  <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                    <div className="space-y-4">
+                      {selectedAlternative ? (
+                        <div className="border rounded-lg p-5 space-y-4 bg-muted/40">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Bot className="h-4 w-4 text-primary" />
+                                <h4 className="text-base font-semibold">{selectedAlternative.title}</h4>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {selectedAlternative.description}
+                              </p>
+                            </div>
+                            <Badge variant={selectedAlternative.complexity === "advanced" ? "default" : "secondary"}>
+                              {selectedAlternative.complexity.toUpperCase()}
+                            </Badge>
+                          </div>
+                          {selectedAlternative.generatedAt && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Generated {new Date(selectedAlternative.generatedAt).toLocaleString()}
+                            </p>
+                          )}
+                          {/* Recommendation badge */}
+                          {recommendedModel && recommendedModel.id === selectedAlternative.id && (
+                            <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-primary/10 to-primary/5 border-2 border-primary/30 rounded-lg shadow-sm">
+                              <span className="text-2xl">🏆</span>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-primary">Recommended Variant</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Best balance of complexity, clarity, and functionality
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {/* Enhanced KPIs display */}
+                          {selectedAlternative.metrics && (
+                            <div className="space-y-3">
+                              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Key Performance Indicators</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                  <span className="text-xs text-muted-foreground mb-1">Number of Tasks</span>
+                                  <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.taskCount}</span>
+                                </div>
+                                <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                  <span className="text-xs text-muted-foreground mb-1">Decision Points</span>
+                                  <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.decisionPoints}</span>
+                                </div>
+                                <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                  <span className="text-xs text-muted-foreground mb-1">Parallel Branches</span>
+                                  <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.parallelBranches}</span>
+                                </div>
+                                <div className="flex flex-col p-3 bg-background border rounded-lg">
+                                  <span className="text-xs text-muted-foreground mb-1">Error Handlers</span>
+                                  <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.errorHandlers}</span>
+                                </div>
+                                <div className="col-span-2 flex flex-col p-3 bg-background border rounded-lg">
+                                  <span className="text-xs text-muted-foreground mb-1">Estimated Execution Paths</span>
+                                  <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.estimatedPaths}</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* Variant Summary */}
+                          {(() => {
+                            const summary = getVariantSummary(selectedAlternative);
+                            return (
+                              <div className="space-y-3 border-t pt-4">
+                                <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variant Analysis</p>
+                                <div className="grid md:grid-cols-3 gap-3 text-xs">
+                                  <div>
+                                    <p className="font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1">
+                                      <span>✓</span> Strengths
+                                    </p>
+                                    <ul className="space-y-1 text-muted-foreground">
+                                      {summary.strengths.map((s, i) => (
+                                        <li key={i} className="flex items-start gap-1">
+                                          <span className="text-green-500 mt-0.5">•</span>
+                                          <span>{s}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1">
+                                      <span>⚠</span> Weaknesses
+                                    </p>
+                                    <ul className="space-y-1 text-muted-foreground">
+                                      {summary.weaknesses.map((w, i) => (
+                                        <li key={i} className="flex items-start gap-1">
+                                          <span className="text-amber-500 mt-0.5">•</span>
+                                          <span>{w}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
+                                      <span>🎯</span> Best Use Cases
+                                    </p>
+                                    <ul className="space-y-1 text-muted-foreground">
+                                      {summary.useCases.map((u, i) => (
+                                        <li key={i} className="flex items-start gap-1">
+                                          <span className="text-blue-500 mt-0.5">•</span>
+                                          <span>{u}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground uppercase">
+                              Diagram Preview
+                            </p>
+                            <div
+                              className="h-64 border rounded-md"
+                              style={{ backgroundColor: '#ffffff' }}
+                              data-preview-container
+                            >
+                              <AlternativeDiagramPreview
+                                xml={selectedAlternative.xml}
+                                title={selectedAlternative.title}
+                                onRetry={() => {
+                                  // Force re-render by updating a state
+                                  setSelectedAlternativeId(selectedAlternative.id);
+                                }}
+                                onDownloadAvailable={(available) => {
+                                  // Track preview failure
+                                  if (!available) {
+                                    setAlternativeModels(prev => prev.map(m =>
+                                      m.id === selectedAlternative.id ? { ...m, previewFailed: true } : m
+                                    ));
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center gap-2 pt-2 border-t">
                             <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  if (!selectedAlternative && alternativeModels.length) {
+                                    setSelectedAlternativeId(alternativeModels[0].id);
+                                  }
+                                  setPreviewDialogOpen(true);
+                                }}
+                                className="flex items-center gap-2"
+                              >
+                                <Eye className="h-4 w-4" />
+                                Preview
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setXmlViewerData({
+                                    title: selectedAlternative.title,
+                                    xml: selectedAlternative.xml,
+                                    generatedAt: selectedAlternative.generatedAt,
+                                    complexity: selectedAlternative.complexity,
+                                    source: "alternative",
+                                  })
+                                }
+                                className="flex items-center gap-2"
+                              >
+                                <Code className="h-4 w-4" />
+                                View XML
+                              </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button size="sm" variant="outline">Download as</Button>
+                                  <Button size="sm" variant="outline" className="flex items-center gap-2">
+                                    <Download className="h-4 w-4" />
+                                    Download
+                                  </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-44">
                                   <DropdownMenuLabel>Choose format</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      downloadXmlSnapshot(
-                                        entry.generated_bpmn_xml,
-                                        entry.input_description ?? "diagram-log"
-                                      )
-                                    }
-                                  >
+                                  <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative)}>
                                     BPMN (.bpmn)
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative, "xml")}>
+                                    XML (.xml)
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onClick={async () => {
                                       try {
-                                        const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                        const svg = await renderXmlToSvg(selectedAlternative.xml);
                                         const blob = new Blob([svg], { type: "image/svg+xml" });
-                                        downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.svg`);
+                                        downloadBlob(blob, `${selectedAlternative.title}.svg`);
                                       } catch {
                                         toast.error("Failed to export SVG");
                                       }
@@ -7021,9 +7089,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                                   <DropdownMenuItem
                                     onClick={async () => {
                                       try {
-                                        const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                        const svg = await renderXmlToSvg(selectedAlternative.xml);
                                         const blob = await exportSvgStringToImage(svg, "image/png");
-                                        downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.png`);
+                                        downloadBlob(blob, `${selectedAlternative.title}.png`);
                                       } catch {
                                         toast.error("Failed to export PNG");
                                       }
@@ -7034,9 +7102,9 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                                   <DropdownMenuItem
                                     onClick={async () => {
                                       try {
-                                        const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                        const svg = await renderXmlToSvg(selectedAlternative.xml);
                                         const blob = await exportSvgStringToImage(svg, "image/jpeg", "#ffffff");
-                                        downloadBlob(blob, `${(entry.input_description ?? "diagram-log")}.jpg`);
+                                        downloadBlob(blob, `${selectedAlternative.title}.jpg`);
                                       } catch {
                                         toast.error("Failed to export JPG");
                                       }
@@ -7047,12 +7115,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                                   <DropdownMenuItem
                                     onClick={async () => {
                                       try {
-                                        const svg = await renderXmlToSvg(entry.generated_bpmn_xml);
+                                        const svg = await renderXmlToSvg(selectedAlternative.xml);
                                         const pngBlob = await exportSvgStringToImage(svg, "image/png", "#ffffff");
                                         const url = URL.createObjectURL(pngBlob);
                                         const newWindow = window.open("", "_blank");
                                         if (newWindow) {
-                                          newWindow.document.write(`<html><head><title>${entry.input_description ?? "diagram-log"}</title></head><body style="margin:0"><img src="${url}" style="width:100%;height:auto"/></body></html>`);
+                                          newWindow.document.write(`<html><head><title>${selectedAlternative.title}</title></head><body style="margin:0"><img src="${url}" style="width:100%;height:auto"/></body></html>`);
                                           newWindow.document.close();
                                           setTimeout(() => { try { newWindow.focus(); newWindow.print(); } catch (_) { } }, 300);
                                         } else {
@@ -7069,518 +7137,64 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                               </DropdownMenu>
                               <Button
                                 size="sm"
-                                onClick={() => applyHistoricalDiagram(entry)}
+                                onClick={() => {
+                                  if (selectedAlternative) {
+                                    applyAlternativeModel(selectedAlternative);
+                                  }
+                                }}
+                                className="flex items-center gap-2"
                               >
-                                Load
+                                <Check className="h-4 w-4" />
+                                Apply
                               </Button>
                             </div>
                           </div>
-                          {preview && (
-                            <pre className="text-xs bg-muted/60 border rounded-md p-3 whitespace-pre-wrap max-h-32 overflow-auto">
-                              {preview}
-                            </pre>
-                          )}
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-4 text-sm text-muted-foreground">
-                      No historical logs archived yet.
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modelling Agent Dialog */}
-      <Dialog
-        open={agentDialogOpen}
-        onOpenChange={(open) => {
-          setAgentDialogOpen(open);
-          if (!open) {
-            setAlternativeError(null);
-          }
-        }}
-      >
-        <DialogContent 
-          className="max-w-[95vw] max-h-[95vh] w-[90vw] h-[90vh] overflow-hidden flex flex-col p-0"
-          style={{ 
-            maxWidth: '1400px',
-            maxHeight: '900px',
-            width: '90vw',
-            height: '90vh',
-            minWidth: '900px',
-            minHeight: '650px'
-          }}
-        >
-          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
-            <DialogTitle>Modelling Agent Mode</DialogTitle>
-            <DialogDescription>
-              Compare 5-7 AI-generated BPMN variations, from streamlined to advanced, and apply the best fit
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-6" style={{ minHeight: 0, scrollBehavior: 'smooth' }}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-foreground">
-                  How many alternative diagrams would you like to generate?
-                </label>
-                <div className="flex gap-4">
-                  {[3, 5, 7].map((countOption) => (
-                    <label
-                      key={countOption}
-                      className={`flex items-center gap-2 cursor-pointer ${
-                        isLoadingAlternatives ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="alternativeCount"
-                        value={countOption}
-                        checked={alternativeCount === countOption}
-                        onChange={() => {
-                          if (!isLoadingAlternatives) {
-                            setAlternativeCount(countOption);
-                          }
-                        }}
-                        disabled={isLoadingAlternatives}
-                        className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                        aria-label={`Generate ${countOption} alternatives`}
-                      />
-                      <span className="text-sm font-medium">{countOption}</span>
-                      {countOption === 5 && (
-                        <Badge variant="secondary" className="text-[10px]">Recommended</Badge>
+                      ) : (
+                        <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground bg-muted/30">
+                          Select an alternative from the list to preview and apply it.
+                        </div>
                       )}
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
-                  <p>• <strong>3 alternatives:</strong> Quick comparison (fastest)</p>
-                  <p>• <strong>5 alternatives:</strong> Comprehensive options (recommended)</p>
-                  <p>• <strong>7 alternatives:</strong> Maximum variety (slowest)</p>
-                </div>
-              </div>
-              {featureFlags.showLanguagePreference && (
-                <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
-                  <label className="text-sm font-medium text-foreground">
-                    Language preference
-                  </label>
-                  <Select
-                    value={selectedLanguage}
-                    onValueChange={(value) => handleLanguageChange(value as LanguageOptionValue)}
-                    disabled={isApplyingLanguage}
-                  >
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Auto (match prompt)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LANGUAGE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <p>
-                      {selectedLanguage === "auto"
-                        ? "We detect the language from your prompt and existing canvas labels."
-                        : `All variants will be generated in ${LANGUAGE_NATIVE_NAMES[selectedLanguage]}.`}
-                    </p>
-                    {isApplyingLanguage && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
-                  </div>
-                </div>
-              )}
-            </div>
-            {isLoadingAlternatives ? (
-              <div className="flex flex-col items-center justify-center gap-4 py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <div className="space-y-4 text-center w-full max-w-md">
-                  <p className="text-sm font-medium">
-                    Generating {alternativeProgress.total || alternativeCount} alternative {diagramType === "pid" ? "P&ID" : "BPMN"} models in parallel...
-                  </p>
-                  {alternativeProgress.total > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Progress: {alternativeProgress.completed} / {alternativeProgress.total}</span>
-                        <span>
-                          {alternativeProgress.total
-                            ? Math.round((alternativeProgress.completed / alternativeProgress.total) * 100)
-                            : 0}
-                          %
-                        </span>
-                      </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all duration-300"
-                          style={{
-                            width: `${alternativeProgress.total
-                              ? Math.min(
-                                100,
-                                (alternativeProgress.completed / alternativeProgress.total) * 100
-                              )
-                              : 0
-                              }%`,
-                          }}
-                        />
-                      </div>
-                      {/* Individual model status list */}
-                      <div className="space-y-1.5 text-left border rounded-lg p-3 bg-muted/30 max-h-64 overflow-y-auto">
-                        {ALTERNATIVE_VARIANTS.slice(0, alternativeProgress.total).map((variant) => {
-                          const status = modelStatuses.get(variant.id) || 'queued';
-                          const isCurrent = alternativeProgress.current === variant.title;
-                          return (
-                            <div key={variant.id} className="flex items-center gap-2 text-xs">
-                              {status === 'completed' && <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />}
-                              {status === 'generating' && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />}
-                              {status === 'failed' && <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />}
-                              {status === 'queued' && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />}
-                              <span className={`flex-1 ${isCurrent ? 'font-medium text-primary' : ''} ${status === 'failed' ? 'text-destructive' : ''}`}>
-                                {variant.title}
-                                {status === 'failed' && ' (generation failed)'}
-                                {status === 'completed' && alternativeModels.find(m => m.title === variant.title)?.previewFailed && ' (preview unavailable)'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
-                  )}
-                  {alternativeModels.length > 0 && (
-                    <p className="text-xs text-green-600 dark:text-green-400">
-                      ✓ {alternativeModels.length} model{alternativeModels.length !== 1 ? "s" : ""} ready
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : alternativeError ? (
-              <div className="border border-destructive/30 bg-destructive/10 rounded-lg p-4 space-y-3">
-                <p className="text-sm text-destructive font-medium">Unable to prepare alternatives</p>
-                <p className="text-xs text-destructive/80">{alternativeError}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => generateAlternativeModels(true)}
-                >
-                  Retry
-                </Button>
-              </div>
-            ) : alternativeModels.length ? (
-              <>
-                <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                  <div className="space-y-4">
-                    {selectedAlternative ? (
-                      <div className="border rounded-lg p-5 space-y-4 bg-muted/40">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Bot className="h-4 w-4 text-primary" />
-                              <h4 className="text-base font-semibold">{selectedAlternative.title}</h4>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {selectedAlternative.description}
-                            </p>
-                          </div>
-                          <Badge variant={selectedAlternative.complexity === "advanced" ? "default" : "secondary"}>
-                            {selectedAlternative.complexity.toUpperCase()}
-                          </Badge>
-                        </div>
-                        {selectedAlternative.generatedAt && (
-                          <p className="text-[11px] text-muted-foreground">
-                            Generated {new Date(selectedAlternative.generatedAt).toLocaleString()}
-                          </p>
-                        )}
-                        {/* Recommendation badge */}
-                        {recommendedModel && recommendedModel.id === selectedAlternative.id && (
-                          <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-primary/10 to-primary/5 border-2 border-primary/30 rounded-lg shadow-sm">
-                            <span className="text-2xl">🏆</span>
-                            <div className="flex-1">
-                              <p className="text-sm font-semibold text-primary">Recommended Variant</p>
-                              <p className="text-xs text-muted-foreground">
-                                Best balance of complexity, clarity, and functionality
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {/* Enhanced KPIs display */}
-                        {selectedAlternative.metrics && (
-                          <div className="space-y-3">
-                            <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Key Performance Indicators</p>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="flex flex-col p-3 bg-background border rounded-lg">
-                                <span className="text-xs text-muted-foreground mb-1">Number of Tasks</span>
-                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.taskCount}</span>
-                              </div>
-                              <div className="flex flex-col p-3 bg-background border rounded-lg">
-                                <span className="text-xs text-muted-foreground mb-1">Decision Points</span>
-                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.decisionPoints}</span>
-                              </div>
-                              <div className="flex flex-col p-3 bg-background border rounded-lg">
-                                <span className="text-xs text-muted-foreground mb-1">Parallel Branches</span>
-                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.parallelBranches}</span>
-                              </div>
-                              <div className="flex flex-col p-3 bg-background border rounded-lg">
-                                <span className="text-xs text-muted-foreground mb-1">Error Handlers</span>
-                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.errorHandlers}</span>
-                              </div>
-                              <div className="col-span-2 flex flex-col p-3 bg-background border rounded-lg">
-                                <span className="text-xs text-muted-foreground mb-1">Estimated Execution Paths</span>
-                                <span className="text-lg font-bold text-foreground">{selectedAlternative.metrics.estimatedPaths}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        {/* Variant Summary */}
-                        {(() => {
-                          const summary = getVariantSummary(selectedAlternative);
-                          return (
-                            <div className="space-y-3 border-t pt-4">
-                              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variant Analysis</p>
-                              <div className="grid md:grid-cols-3 gap-3 text-xs">
-                                <div>
-                                  <p className="font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1">
-                                    <span>✓</span> Strengths
-                                  </p>
-                                  <ul className="space-y-1 text-muted-foreground">
-                                    {summary.strengths.map((s, i) => (
-                                      <li key={i} className="flex items-start gap-1">
-                                        <span className="text-green-500 mt-0.5">•</span>
-                                        <span>{s}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1">
-                                    <span>⚠</span> Weaknesses
-                                  </p>
-                                  <ul className="space-y-1 text-muted-foreground">
-                                    {summary.weaknesses.map((w, i) => (
-                                      <li key={i} className="flex items-start gap-1">
-                                        <span className="text-amber-500 mt-0.5">•</span>
-                                        <span>{w}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
-                                    <span>🎯</span> Best Use Cases
-                                  </p>
-                                  <ul className="space-y-1 text-muted-foreground">
-                                    {summary.useCases.map((u, i) => (
-                                      <li key={i} className="flex items-start gap-1">
-                                        <span className="text-blue-500 mt-0.5">•</span>
-                                        <span>{u}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium text-muted-foreground uppercase">
-                            Diagram Preview
-                          </p>
-                          <div 
-                            className="h-64 border rounded-md" 
-                            style={{ backgroundColor: '#ffffff' }}
-                            data-preview-container
-                          >
-                            <AlternativeDiagramPreview 
-                              xml={selectedAlternative.xml} 
-                              title={selectedAlternative.title}
-                              onRetry={() => {
-                                // Force re-render by updating a state
-                                setSelectedAlternativeId(selectedAlternative.id);
-                              }}
-                              onDownloadAvailable={(available) => {
-                                // Track preview failure
-                                if (!available) {
-                                  setAlternativeModels(prev => prev.map(m => 
-                                    m.id === selectedAlternative.id ? { ...m, previewFailed: true } : m
-                                  ));
-                                }
-                              }}
+                    <div className="border rounded-lg p-3 bg-background/70 flex flex-col" style={{ minHeight: '300px', maxHeight: 'calc(100vh - 250px)' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Alternatives ({alternativeModels.length})
+                        </p>
+                        <span className="text-[11px] text-muted-foreground">Click to preview & confirm</span>
+                      </div>
+                      {/* Scroll Position Indicator */}
+                      {alternativeModels.length > 3 && (
+                        <div className="mb-2 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-200"
+                              style={{ width: `${scrollPosition}%` }}
                             />
                           </div>
+                          <span className="text-[10px] text-muted-foreground min-w-[35px] text-right">
+                            {Math.round(scrollPosition)}%
+                          </span>
                         </div>
-                        <div className="flex justify-between items-center gap-2 pt-2 border-t">
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (!selectedAlternative && alternativeModels.length) {
-                                  setSelectedAlternativeId(alternativeModels[0].id);
-                                }
-                                setPreviewDialogOpen(true);
-                              }}
-                              className="flex items-center gap-2"
-                            >
-                              <Eye className="h-4 w-4" />
-                              Preview
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                setXmlViewerData({
-                                  title: selectedAlternative.title,
-                                  xml: selectedAlternative.xml,
-                                  generatedAt: selectedAlternative.generatedAt,
-                                  complexity: selectedAlternative.complexity,
-                                  source: "alternative",
-                                })
-                              }
-                              className="flex items-center gap-2"
-                            >
-                              <Code className="h-4 w-4" />
-                              View XML
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="sm" variant="outline" className="flex items-center gap-2">
-                                  <Download className="h-4 w-4" />
-                                  Download
-                                </Button>
-                              </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuLabel>Choose format</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative)}>
-                                BPMN (.bpmn)
-                              </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => downloadAlternativeModel(selectedAlternative, "xml")}>
-                                  XML (.xml)
-                                </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  try {
-                                    const svg = await renderXmlToSvg(selectedAlternative.xml);
-                                    const blob = new Blob([svg], { type: "image/svg+xml" });
-                                    downloadBlob(blob, `${selectedAlternative.title}.svg`);
-                                  } catch {
-                                    toast.error("Failed to export SVG");
-                                  }
-                                }}
-                              >
-                                SVG (.svg)
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  try {
-                                    const svg = await renderXmlToSvg(selectedAlternative.xml);
-                                    const blob = await exportSvgStringToImage(svg, "image/png");
-                                    downloadBlob(blob, `${selectedAlternative.title}.png`);
-                                  } catch {
-                                    toast.error("Failed to export PNG");
-                                  }
-                                }}
-                              >
-                                PNG (.png)
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  try {
-                                    const svg = await renderXmlToSvg(selectedAlternative.xml);
-                                    const blob = await exportSvgStringToImage(svg, "image/jpeg", "#ffffff");
-                                    downloadBlob(blob, `${selectedAlternative.title}.jpg`);
-                                  } catch {
-                                    toast.error("Failed to export JPG");
-                                  }
-                                }}
-                              >
-                                JPG (.jpg)
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  try {
-                                    const svg = await renderXmlToSvg(selectedAlternative.xml);
-                                    const pngBlob = await exportSvgStringToImage(svg, "image/png", "#ffffff");
-                                    const url = URL.createObjectURL(pngBlob);
-                                    const newWindow = window.open("", "_blank");
-                                    if (newWindow) {
-                                      newWindow.document.write(`<html><head><title>${selectedAlternative.title}</title></head><body style="margin:0"><img src="${url}" style="width:100%;height:auto"/></body></html>`);
-                                      newWindow.document.close();
-                                      setTimeout(() => { try { newWindow.focus(); newWindow.print(); } catch (_) { } }, 300);
-                                    } else {
-                                      toast.info("Popup blocked. Enable popups to save as PDF.");
-                                    }
-                                  } catch {
-                                    toast.error("Failed to prepare PDF. Use 'Print to PDF' from the opened image.");
-                                  }
-                                }}
-                              >
-                                PDF (via Print)
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              if (selectedAlternative) {
-                                applyAlternativeModel(selectedAlternative);
-                              }
-                            }}
-                            className="flex items-center gap-2"
-                          >
-                            <Check className="h-4 w-4" />
-                            Apply
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    ) : (
-                      <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground bg-muted/30">
-                        Select an alternative from the list to preview and apply it.
-                      </div>
-                    )}
-                  </div>
-                  <div className="border rounded-lg p-3 bg-background/70 flex flex-col" style={{ minHeight: '300px', maxHeight: 'calc(100vh - 250px)' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Alternatives ({alternativeModels.length})
-                      </p>
-                      <span className="text-[11px] text-muted-foreground">Click to preview & confirm</span>
-                    </div>
-                    {/* Scroll Position Indicator */}
-                    {alternativeModels.length > 3 && (
-                      <div className="mb-2 flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary transition-all duration-200"
-                            style={{ width: `${scrollPosition}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground min-w-[35px] text-right">
-                          {Math.round(scrollPosition)}%
-                        </span>
-                      </div>
-                    )}
-                    <ScrollArea 
-                      className="flex-1 pr-2 alternatives-panel-scroll"
-                      style={{
-                        scrollbarWidth: 'thin',
-                        scrollbarColor: 'rgba(52, 152, 219, 0.6) rgba(255, 255, 255, 0.05)',
-                        minHeight: '300px',
-                        maxHeight: 'calc(100vh - 350px)'
-                      }}
-                      onScroll={(e) => {
-                        const target = e.target as HTMLElement;
-                        const { scrollTop, scrollHeight, clientHeight } = target;
-                        const scrollPercent = scrollHeight > clientHeight 
-                          ? (scrollTop / (scrollHeight - clientHeight)) * 100 
-                          : 0;
-                        setScrollPosition(Math.min(100, Math.max(0, scrollPercent)));
-                      }}
-                    >
-                      <style>{`
+                      )}
+                      <ScrollArea
+                        className="flex-1 pr-2 alternatives-panel-scroll"
+                        style={{
+                          scrollbarWidth: 'thin',
+                          scrollbarColor: 'rgba(52, 152, 219, 0.6) rgba(255, 255, 255, 0.05)',
+                          minHeight: '300px',
+                          maxHeight: 'calc(100vh - 350px)'
+                        }}
+                        onScroll={(e) => {
+                          const target = e.target as HTMLElement;
+                          const { scrollTop, scrollHeight, clientHeight } = target;
+                          const scrollPercent = scrollHeight > clientHeight
+                            ? (scrollTop / (scrollHeight - clientHeight)) * 100
+                            : 0;
+                          setScrollPosition(Math.min(100, Math.max(0, scrollPercent)));
+                        }}
+                      >
+                        <style>{`
                         .alternatives-panel-scroll::-webkit-scrollbar {
                           width: 10px;
                           height: 10px;
@@ -7611,717 +7225,716 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                           }
                         }
                       `}</style>
-                      <div 
-                        ref={alternativesScrollRef}
-                        className="space-y-3" 
-                        style={{ scrollBehavior: 'smooth' }}
-                      >
-                        {alternativeModels.map((model, index) => {
-                          const isSelected = model.id === selectedAlternativeId;
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              onClick={() => setSelectedAlternativeId(model.id)}
-                              className={`w-full text-left border rounded-lg p-3 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex-shrink-0 ${isSelected
+                        <div
+                          ref={alternativesScrollRef}
+                          className="space-y-3"
+                          style={{ scrollBehavior: 'smooth' }}
+                        >
+                          {alternativeModels.map((model, index) => {
+                            const isSelected = model.id === selectedAlternativeId;
+                            return (
+                              <button
+                                key={model.id}
+                                type="button"
+                                onClick={() => setSelectedAlternativeId(model.id)}
+                                className={`w-full text-left border rounded-lg p-3 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 flex-shrink-0 ${isSelected
                                   ? "border-primary bg-primary/10 shadow-lg"
                                   : "border-border hover:shadow-md"
-                                }`}
-                              style={{ 
-                                minHeight: '280px',
-                                maxHeight: 'none',
-                                display: 'flex',
-                                flexDirection: 'column'
-                              }}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="space-y-1 flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{model.title}</p>
-                                  <Badge 
-                                    variant={model.complexity === "advanced" ? "default" : model.complexity === "intermediate" ? "secondary" : "outline"}
-                                    className="text-[10px] mt-1"
-                                  >
-                                    {model.complexity === "basic" ? "BASIC" : model.complexity === "intermediate" ? "INTERMEDIATE" : "ADVANCED"}
-                                  </Badge>
-                                </div>
-                                {isSelected && <Check className="h-5 w-5 text-primary flex-shrink-0" />}
-                              </div>
-                              <div 
-                                className="mt-2 rounded-md border overflow-hidden" 
-                                style={{ 
-                                  backgroundColor: '#ffffff',
-                                  minHeight: '128px',
-                                  maxHeight: '200px',
-                                  height: 'auto'
+                                  }`}
+                                style={{
+                                  minHeight: '280px',
+                                  maxHeight: 'none',
+                                  display: 'flex',
+                                  flexDirection: 'column'
                                 }}
                               >
-                                <AlternativeDiagramPreview 
-                                  xml={model.xml} 
-                                  title={model.title}
-                                  onDownloadAvailable={(available) => {
-                                    if (!available) {
-                                      setAlternativeModels(prev => prev.map(m => 
-                                        m.id === model.id ? { ...m, previewFailed: true } : m
-                                      ));
-                                    }
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="space-y-1 flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate">{model.title}</p>
+                                    <Badge
+                                      variant={model.complexity === "advanced" ? "default" : model.complexity === "intermediate" ? "secondary" : "outline"}
+                                      className="text-[10px] mt-1"
+                                    >
+                                      {model.complexity === "basic" ? "BASIC" : model.complexity === "intermediate" ? "INTERMEDIATE" : "ADVANCED"}
+                                    </Badge>
+                                  </div>
+                                  {isSelected && <Check className="h-5 w-5 text-primary flex-shrink-0" />}
+                                </div>
+                                <div
+                                  className="mt-2 rounded-md border overflow-hidden"
+                                  style={{
+                                    backgroundColor: '#ffffff',
+                                    minHeight: '128px',
+                                    maxHeight: '200px',
+                                    height: 'auto'
                                   }}
-                                />
-                              </div>
-                              {/* KPIs Display */}
-                              {model.metrics && (
-                                <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
-                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
-                                    <span className="text-muted-foreground">Tasks:</span>
-                                    <span className="font-semibold">{model.metrics.taskCount}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
-                                    <span className="text-muted-foreground">Decisions:</span>
-                                    <span className="font-semibold">{model.metrics.decisionPoints}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
-                                    <span className="text-muted-foreground">Parallel:</span>
-                                    <span className="font-semibold">{model.metrics.parallelBranches}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
-                                    <span className="text-muted-foreground">Errors:</span>
-                                    <span className="font-semibold">{model.metrics.errorHandlers}</span>
-                                  </div>
+                                >
+                                  <AlternativeDiagramPreview
+                                    xml={model.xml}
+                                    title={model.title}
+                                    onDownloadAvailable={(available) => {
+                                      if (!available) {
+                                        setAlternativeModels(prev => prev.map(m =>
+                                          m.id === model.id ? { ...m, previewFailed: true } : m
+                                        ));
+                                      }
+                                    }}
+                                  />
                                 </div>
-                              )}
-                              {/* Show recommendation indicator */}
-                              {recommendedModel && recommendedModel.id === model.id && (
-                                <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-primary/10 border border-primary/20 rounded text-[10px] text-primary">
-                                  <span>🏆</span>
-                                  <span className="font-semibold">Recommended</span>
-                                </div>
-                              )}
-                              {/* Show preview failure indicator */}
-                              {model.previewFailed && (
-                                <div className="mt-1 flex items-center gap-1 text-[10px] text-yellow-600 dark:text-yellow-500">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  <span>Preview unavailable</span>
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                    {/* Scroll Controls */}
-                    {alternativeModels.length > 3 && (
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            alternativesScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          disabled={scrollPosition === 0}
-                        >
-                          ↑ Top
-                        </Button>
-                        <span className="text-[10px] text-muted-foreground">
-                          {alternativeModels.length} alternative{alternativeModels.length !== 1 ? 's' : ''}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            if (alternativesScrollRef.current) {
-                              alternativesScrollRef.current.scrollTo({ 
-                                top: alternativesScrollRef.current.scrollHeight, 
-                                behavior: 'smooth' 
-                              });
-                            }
-                          }}
-                          disabled={scrollPosition >= 99}
-                        >
-                          Bottom ↓
-                        </Button>
-                      </div>
-                    )}
+                                {/* KPIs Display */}
+                                {model.metrics && (
+                                  <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+                                    <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                      <span className="text-muted-foreground">Tasks:</span>
+                                      <span className="font-semibold">{model.metrics.taskCount}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                      <span className="text-muted-foreground">Decisions:</span>
+                                      <span className="font-semibold">{model.metrics.decisionPoints}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                      <span className="text-muted-foreground">Parallel:</span>
+                                      <span className="font-semibold">{model.metrics.parallelBranches}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-1.5 bg-muted/50 rounded">
+                                      <span className="text-muted-foreground">Errors:</span>
+                                      <span className="font-semibold">{model.metrics.errorHandlers}</span>
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Show recommendation indicator */}
+                                {recommendedModel && recommendedModel.id === model.id && (
+                                  <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-primary/10 border border-primary/20 rounded text-[10px] text-primary">
+                                    <span>🏆</span>
+                                    <span className="font-semibold">Recommended</span>
+                                  </div>
+                                )}
+                                {/* Show preview failure indicator */}
+                                {model.previewFailed && (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-yellow-600 dark:text-yellow-500">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    <span>Preview unavailable</span>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
+                      {/* Scroll Controls */}
+                      {alternativeModels.length > 3 && (
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              alternativesScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            disabled={scrollPosition === 0}
+                          >
+                            ↑ Top
+                          </Button>
+                          <span className="text-[10px] text-muted-foreground">
+                            {alternativeModels.length} alternative{alternativeModels.length !== 1 ? 's' : ''}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              if (alternativesScrollRef.current) {
+                                alternativesScrollRef.current.scrollTo({
+                                  top: alternativesScrollRef.current.scrollHeight,
+                                  behavior: 'smooth'
+                                });
+                              }
+                            }}
+                            disabled={scrollPosition >= 99}
+                          >
+                            Bottom ↓
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      Compare variants side by side, then apply the one that fits your requirements.
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          // Refresh all previews by clearing cache and forcing re-render
+                          previewCache.clear();
+                          setAlternativeModels(prev => prev.map(m => ({ ...m })));
+                          toast.info("Refreshing all previews...");
+                        }}
+                        disabled={isLoadingAlternatives}
+                        title="Refresh all alternative previews"
+                      >
+                        Refresh All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (confirm("This will replace current alternatives with a new set. Continue?")) {
+                            generateAlternativeModels(true);
+                          }
+                        }}
+                        disabled={isLoadingAlternatives}
+                        title="Generate a new set of alternative BPMN models with the same input"
+                      >
+                        Regenerate all variations
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="border rounded-lg p-6 text-center bg-muted/40">
+                  <Bot className="h-16 w-16 mx-auto mb-4 text-primary" />
+                  <p className="text-sm font-medium mb-2">Preparing alternatives</p>
+                  <p className="text-xs text-muted-foreground">
+                    We will analyze the current diagram and assemble 5-7 tailored variations, from core flow to advanced designs.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    onClick={() => generateAlternativeModels(true)}
+                    disabled={isLoadingAlternatives}
+                  >
+                    Generate alternatives
+                  </Button>
                 </div>
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Compare variants side by side, then apply the one that fits your requirements.
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Alternative Preview Dialog */}
+        <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+          <DialogContent className="max-w-5xl">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedAlternative ? `Preview — ${selectedAlternative.title}` : "Preview alternative"}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedAlternative
+                  ? `Complexity: ${selectedAlternative.complexity.toUpperCase()}`
+                  : "Select an alternative to preview it."}
+              </DialogDescription>
+            </DialogHeader>
+            {selectedAlternative ? (
+              <div className="space-y-3">
+                <div className="border rounded-lg bg-muted/30 h-[420px]" data-preview-container>
+                  <AlternativeDiagramPreview
+                    xml={selectedAlternative.xml}
+                    title={selectedAlternative.title}
+                    onRetry={() => setSelectedAlternativeId(selectedAlternative.id)}
+                    onDownloadAvailable={() => { }}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPreviewDialogOpen(false);
+                      setXmlViewerData({
+                        title: selectedAlternative.title,
+                        xml: selectedAlternative.xml,
+                        generatedAt: selectedAlternative.generatedAt,
+                        complexity: selectedAlternative.complexity,
+                        source: "alternative",
+                      });
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Code className="h-4 w-4" />
+                    View XML
+                  </Button>
+                  <Button onClick={() => downloadAlternativeModel(selectedAlternative)}>
+                    Download .bpmn
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Pick an alternative model to preview it.
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* XML Viewer Dialog */}
+        <Dialog
+          open={!!xmlViewerData}
+          onOpenChange={(open) => {
+            if (!open) {
+              setXmlViewerData(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>BPMN XML</DialogTitle>
+              <DialogDescription>
+                {xmlViewerData
+                  ? `${xmlViewerData.title}${xmlViewerData.complexity
+                    ? ` (${xmlViewerData.complexity.toUpperCase()})`
+                    : ""
+                  }`
+                  : "Inspect the generated BPMN XML."}
+              </DialogDescription>
+            </DialogHeader>
+            {xmlViewerData && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    Generated{" "}
+                    {xmlViewerData.generatedAt
+                      ? new Date(xmlViewerData.generatedAt).toLocaleString()
+                      : xmlViewerData.source === "canvas"
+                        ? new Date().toLocaleString()
+                        : "just now"}
                   </span>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        // Refresh all previews by clearing cache and forcing re-render
-                        previewCache.clear();
-                        setAlternativeModels(prev => prev.map(m => ({ ...m })));
-                        toast.info("Refreshing all previews...");
+                      onClick={async () => {
+                        try {
+                          if (typeof navigator === "undefined" || !navigator.clipboard) {
+                            throw new Error("Clipboard API unavailable");
+                          }
+                          await navigator.clipboard.writeText(xmlViewerData.xml);
+                          toast.success("XML copied to clipboard");
+                        } catch (error) {
+                          console.error("Failed to copy XML:", error);
+                          toast.error("Unable to copy XML");
+                        }
                       }}
-                      disabled={isLoadingAlternatives}
-                      title="Refresh all alternative previews"
                     >
-                      Refresh All
+                      Copy XML
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
                       onClick={() => {
-                        if (confirm("This will replace current alternatives with a new set. Continue?")) {
-                          generateAlternativeModels(true);
-                        }
+                        const blob = new Blob([xmlViewerData.xml], { type: "application/xml" });
+                        const filename = `${(xmlViewerData.title || "diagram")
+                          .replace(/\s+/g, "_")
+                          .toLowerCase()}.xml`;
+                        downloadBlob(blob, filename);
                       }}
-                      disabled={isLoadingAlternatives}
-                      title="Generate a new set of alternative BPMN models with the same input"
                     >
-                      Regenerate all variations
+                      Download XML
                     </Button>
                   </div>
                 </div>
-              </>
-            ) : (
-              <div className="border rounded-lg p-6 text-center bg-muted/40">
-                <Bot className="h-16 w-16 mx-auto mb-4 text-primary" />
-                <p className="text-sm font-medium mb-2">Preparing alternatives</p>
-                <p className="text-xs text-muted-foreground">
-                  We will analyze the current diagram and assemble 5-7 tailored variations, from core flow to advanced designs.
-                </p>
-                <Button
-                  className="mt-4"
-                  onClick={() => generateAlternativeModels(true)}
-                  disabled={isLoadingAlternatives}
-                >
-                  Generate alternatives
-                </Button>
+                <ScrollArea className="max-h-[60vh] border rounded-md bg-muted/30">
+                  <pre className="text-[11px] leading-5 p-4 whitespace-pre-wrap">
+                    {xmlViewerData.xml}
+                  </pre>
+                  <ScrollBar orientation="vertical" />
+                </ScrollArea>
               </div>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      {/* Alternative Preview Dialog */}
-      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedAlternative ? `Preview — ${selectedAlternative.title}` : "Preview alternative"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedAlternative
-                ? `Complexity: ${selectedAlternative.complexity.toUpperCase()}`
-                : "Select an alternative to preview it."}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedAlternative ? (
-            <div className="space-y-3">
-              <div className="border rounded-lg bg-muted/30 h-[420px]" data-preview-container>
-                <AlternativeDiagramPreview
-                  xml={selectedAlternative.xml}
-                  title={selectedAlternative.title}
-                  onRetry={() => setSelectedAlternativeId(selectedAlternative.id)}
-                  onDownloadAvailable={() => {}}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPreviewDialogOpen(false);
-                    setXmlViewerData({
-                      title: selectedAlternative.title,
-                      xml: selectedAlternative.xml,
-                      generatedAt: selectedAlternative.generatedAt,
-                      complexity: selectedAlternative.complexity,
-                      source: "alternative",
-                    });
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Code className="h-4 w-4" />
-                  View XML
-                </Button>
-                <Button onClick={() => downloadAlternativeModel(selectedAlternative)}>
-                  Download .bpmn
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Pick an alternative model to preview it.
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* XML Viewer Dialog */}
-      <Dialog
-        open={!!xmlViewerData}
-        onOpenChange={(open) => {
-          if (!open) {
-            setXmlViewerData(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>BPMN XML</DialogTitle>
-            <DialogDescription>
-              {xmlViewerData
-                ? `${xmlViewerData.title}${
-                    xmlViewerData.complexity
-                      ? ` (${xmlViewerData.complexity.toUpperCase()})`
-                      : ""
-                  }`
-                : "Inspect the generated BPMN XML."}
-            </DialogDescription>
-          </DialogHeader>
-          {xmlViewerData && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>
-                  Generated{" "}
-                  {xmlViewerData.generatedAt
-                    ? new Date(xmlViewerData.generatedAt).toLocaleString()
-                    : xmlViewerData.source === "canvas"
-                      ? new Date().toLocaleString()
-                      : "just now"}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        if (typeof navigator === "undefined" || !navigator.clipboard) {
-                          throw new Error("Clipboard API unavailable");
-                        }
-                        await navigator.clipboard.writeText(xmlViewerData.xml);
-                        toast.success("XML copied to clipboard");
-                      } catch (error) {
-                        console.error("Failed to copy XML:", error);
-                        toast.error("Unable to copy XML");
-                      }
-                    }}
-                  >
-                    Copy XML
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      const blob = new Blob([xmlViewerData.xml], { type: "application/xml" });
-                      const filename = `${(xmlViewerData.title || "diagram")
-                        .replace(/\s+/g, "_")
-                        .toLowerCase()}.xml`;
-                      downloadBlob(blob, filename);
-                    }}
-                  >
-                    Download XML
-                  </Button>
-                </div>
-              </div>
-              <ScrollArea className="max-h-[60vh] border rounded-md bg-muted/30">
-                <pre className="text-[11px] leading-5 p-4 whitespace-pre-wrap">
-                  {xmlViewerData.xml}
-                </pre>
-                <ScrollBar orientation="vertical" />
-              </ScrollArea>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* System Use Modelling Dialog */}
-      <Dialog
-        open={systemDialogOpen}
-        onOpenChange={(open) => {
-          setSystemDialogOpen(open);
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>System Use Modelling</DialogTitle>
-            <DialogDescription>
-              Capture visits, clicks, and on-page context to generate BPMN models from real usage
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6">
-            <div className="border rounded-lg p-4 bg-muted/40 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Activity className="h-10 w-10 text-primary" />
-                <div>
-                  <p className="text-sm font-semibold">Detailed Behavior Tracking</p>
-                  <p className="text-xs text-muted-foreground">
-                    Log page visits, clicked elements, and page copy for downstream mining.
-                  </p>
-                </div>
-              </div>
-              <Badge variant={systemTrackingEnabled ? "default" : "outline"}>
-                {systemTrackingEnabled ? "Active" : "Paused"}
-              </Badge>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {systemTrackingEnabled ? (
-                <>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => void stopSystemTracking()}
-                  >
-                    Stop Tracking
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => void flushSystemActivities()}
-                    disabled={systemActivities.length === 0}
-                  >
-                    Save Snapshot
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  className="flex-1"
-                  onClick={() => {
-                    if (!currentUser) {
-                      toast.error("Please sign in to enable tracking");
-                      return;
-                    }
-                    setSystemTrackingEnabled(true);
-                    startSystemTracking();
-                    toast.success(
-                      "System tracking enabled — capturing visits, clicks, and page context."
-                    );
-                  }}
-                >
-                  Enable Tracking
-                </Button>
-              )}
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">
-                Tracked activity ({systemActivities.length})
-              </p>
-              <ScrollArea className="max-h-60 border rounded-md">
-                <div className="divide-y">
-                  {systemActivities.length ? (
-                    systemActivities.map((activity) => (
-                      <div key={activity.id} className="flex items-start gap-3 p-3">
-                        {activity.type === "visit" ? (
-                          <Globe className="h-4 w-4 mt-1 text-primary" />
-                        ) : (
-                          <MousePointerClick className="h-4 w-4 mt-1 text-primary" />
-                        )}
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium">
-                            {activity.type === "visit" ? "Visited page" : "User click"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(activity.timestamp).toLocaleString()}
-                          </p>
-                          {activity.details.url && (
-                            <p className="text-xs break-all">{activity.details.url}</p>
-                          )}
-                          {activity.details.title && (
-                            <p className="text-xs text-muted-foreground">
-                              Title: {activity.details.title}
-                            </p>
-                          )}
-                          {activity.details.text && (
-                            <p className="text-xs text-muted-foreground">
-                              "{activity.details.text}"
-                            </p>
-                          )}
-                          {activity.details.contentPreview && (
-                            <p className="text-xs text-muted-foreground">
-                              Preview: {activity.details.contentPreview}
-                            </p>
-                          )}
-                          {activity.details.tag && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Element: {activity.details.tag}
-                              {activity.details.xpath ? ` · ${activity.details.xpath}` : ""}
-                            </p>
-                          )}
-                          {activity.details.referrer && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Referrer: {activity.details.referrer}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-4 text-sm text-muted-foreground">
-                      No activity captured yet. Enable tracking to begin logging interactions.
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Process Manager Dialog */}
-      <Dialog
-        open={processDialogOpen}
-        onOpenChange={(open) => {
-          if (open && !isProcessManager) {
-            toast.error("Process Manager rights required");
-            return;
-          }
-          setProcessDialogOpen(open);
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Process Manager Console</DialogTitle>
-            <DialogDescription>
-              Exercise full editing control, lock or unlock the canvas, and grant or revoke collaborator rights.
-            </DialogDescription>
-          </DialogHeader>
-          {isProcessManager ? (
+        {/* System Use Modelling Dialog */}
+        <Dialog
+          open={systemDialogOpen}
+          onOpenChange={(open) => {
+            setSystemDialogOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>System Use Modelling</DialogTitle>
+              <DialogDescription>
+                Capture visits, clicks, and on-page context to generate BPMN models from real usage
+              </DialogDescription>
+            </DialogHeader>
             <div className="space-y-6">
-              <div className="border rounded-lg p-4 flex items-center justify-between bg-muted/40">
-                <div>
-                  <p className="text-sm font-medium">Editing lock</p>
-                  <p className="text-xs text-muted-foreground">
-                    When locked, collaborators can only view the diagram.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={editingLocked ? "default" : "outline"}>
-                    {editingLocked ? "Locked" : "Unlocked"}
-                  </Badge>
-                  <Switch
-                    id="editing-lock"
-                    checked={editingLocked}
-                    onCheckedChange={(checked) => handleToggleEditingLock(checked)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
-                    <p className="text-sm font-medium">Collaborators</p>
+              <div className="border rounded-lg p-4 bg-muted/40 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Activity className="h-10 w-10 text-primary" />
+                  <div>
+                    <p className="text-sm font-semibold">Detailed Behavior Tracking</p>
+                    <p className="text-xs text-muted-foreground">
+                      Log page visits, clicked elements, and page copy for downstream mining.
+                    </p>
                   </div>
-                  <Badge variant="outline">{collaborators.length}</Badge>
                 </div>
-                <ScrollArea className="max-h-72 border rounded-md">
+                <Badge variant={systemTrackingEnabled ? "default" : "outline"}>
+                  {systemTrackingEnabled ? "Active" : "Paused"}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {systemTrackingEnabled ? (
+                  <>
+                    <Button
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={() => void stopSystemTracking()}
+                    >
+                      Stop Tracking
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => void flushSystemActivities()}
+                      disabled={systemActivities.length === 0}
+                    >
+                      Save Snapshot
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      if (!currentUser) {
+                        toast.error("Please sign in to enable tracking");
+                        return;
+                      }
+                      setSystemTrackingEnabled(true);
+                      startSystemTracking();
+                      toast.success(
+                        "System tracking enabled — capturing visits, clicks, and page context."
+                      );
+                    }}
+                  >
+                    Enable Tracking
+                  </Button>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">
+                  Tracked activity ({systemActivities.length})
+                </p>
+                <ScrollArea className="max-h-60 border rounded-md">
                   <div className="divide-y">
-                    {isLoadingCollaborators ? (
-                      <div className="p-4 text-sm text-muted-foreground">
-                        Loading collaborators...
-                      </div>
-                    ) : collaborators.length ? (
-                      collaborators.map((collab) => {
-                        const isManager = collab.roles.includes("admin");
-                        return (
-                          <div key={collab.userId} className="p-4 flex items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium flex items-center gap-2">
-                                {collab.email}
-                                {collab.userId === currentUser?.id && (
-                                  <Badge variant="outline">You</Badge>
-                                )}
-                              </p>
+                    {systemActivities.length ? (
+                      systemActivities.map((activity) => (
+                        <div key={activity.id} className="flex items-start gap-3 p-3">
+                          {activity.type === "visit" ? (
+                            <Globe className="h-4 w-4 mt-1 text-primary" />
+                          ) : (
+                            <MousePointerClick className="h-4 w-4 mt-1 text-primary" />
+                          )}
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">
+                              {activity.type === "visit" ? "Visited page" : "User click"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(activity.timestamp).toLocaleString()}
+                            </p>
+                            {activity.details.url && (
+                              <p className="text-xs break-all">{activity.details.url}</p>
+                            )}
+                            {activity.details.title && (
                               <p className="text-xs text-muted-foreground">
-                                {isManager ? "Process Manager" : "Collaborator"}
+                                Title: {activity.details.title}
                               </p>
+                            )}
+                            {activity.details.text && (
+                              <p className="text-xs text-muted-foreground">
+                                "{activity.details.text}"
+                              </p>
+                            )}
+                            {activity.details.contentPreview && (
+                              <p className="text-xs text-muted-foreground">
+                                Preview: {activity.details.contentPreview}
+                              </p>
+                            )}
+                            {activity.details.tag && (
                               <p className="text-[11px] text-muted-foreground">
-                                Last active:{" "}
-                                {collab.lastLogin
-                                  ? new Date(collab.lastLogin).toLocaleString()
-                                  : "No activity recorded"}
+                                Element: {activity.details.tag}
+                                {activity.details.xpath ? ` · ${activity.details.xpath}` : ""}
                               </p>
-                            </div>
-                            {collab.userId !== currentUser?.id && (
-                              isManager ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => revokeProcessAccess(collab.userId)}
-                                >
-                                  Remove access
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => grantProcessAccess(collab.userId)}
-                                >
-                                  Grant access
-                                </Button>
-                              )
+                            )}
+                            {activity.details.referrer && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Referrer: {activity.details.referrer}
+                              </p>
                             )}
                           </div>
-                        );
-                      })
+                        </div>
+                      ))
                     ) : (
                       <div className="p-4 text-sm text-muted-foreground">
-                        No collaborators found.
+                        No activity captured yet. Enable tracking to begin logging interactions.
                       </div>
                     )}
                   </div>
                 </ScrollArea>
               </div>
             </div>
-          ) : (
-            <div className="border rounded-lg p-6 text-center bg-muted/40 space-y-2">
-              <p className="text-sm font-medium">View-only access</p>
-              <p className="text-xs text-muted-foreground">
-                You do not have Process Manager permissions. Please contact an administrator
-                to update access rights.
-              </p>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Properties Panel */}
-      {showPropertiesPanel && (
-        <Dialog open={showPropertiesPanel} onOpenChange={setShowPropertiesPanel}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Diagram Overview</DialogTitle>
-              <DialogDescription>Edit process properties and metadata</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Process Name</Label>
-                <Input placeholder="Enter process name" />
-              </div>
-              <div>
-                <Label>Process ID</Label>
-                <Input placeholder="process-id" />
-              </div>
-              <div>
-                <Label>Description</Label>
-                <Textarea placeholder="Enter process description" rows={4} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowPropertiesPanel(false)}>Cancel</Button>
-                <Button onClick={() => { toast.success("Properties saved"); setShowPropertiesPanel(false); }}>Save</Button>
-              </div>
-            </div>
           </DialogContent>
         </Dialog>
-      )}
 
-      {/* Participants Panel */}
-      {showParticipantsPanel && (
-        <Dialog open={showParticipantsPanel} onOpenChange={setShowParticipantsPanel}>
+        {/* Process Manager Dialog */}
+        <Dialog
+          open={processDialogOpen}
+          onOpenChange={(open) => {
+            if (open && !isProcessManager) {
+              toast.error("Process Manager rights required");
+              return;
+            }
+            setProcessDialogOpen(open);
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Participants / Pools & Lanes</DialogTitle>
-              <DialogDescription>Manage collaboration elements</DialogDescription>
+              <DialogTitle>Process Manager Console</DialogTitle>
+              <DialogDescription>
+                Exercise full editing control, lock or unlock the canvas, and grant or revoke collaborator rights.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                Manage pools, lanes, and participant assignments for your BPMN diagram.
-              </div>
-              <Button onClick={() => toast.info("Add participant functionality - coming soon")}>Add Participant</Button>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowParticipantsPanel(false)}>Close</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Settings Panel */}
-      {showSettingsPanel && (
-        <Dialog open={showSettingsPanel} onOpenChange={setShowSettingsPanel}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Execution Settings</DialogTitle>
-              <DialogDescription>Configure process engine options and metadata</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Process Version</Label>
-                <Input type="number" defaultValue="1" />
-              </div>
-              <div>
-                <Label>Process Namespace</Label>
-                <Input placeholder="http://example.org/bpmn" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch id="executable" />
-                <Label htmlFor="executable">Executable Process</Label>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowSettingsPanel(false)}>Cancel</Button>
-                <Button onClick={() => { toast.success("Settings saved"); setShowSettingsPanel(false); }}>Save</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Documentation Panel */}
-      {showDocumentationPanel && (
-        <Dialog open={showDocumentationPanel} onOpenChange={setShowDocumentationPanel}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Element Documentation</DialogTitle>
-              <DialogDescription>Add documentation for the selected element</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label>Element: {selectedElement?.id || 'None selected'}</Label>
-                <Textarea placeholder="Enter element documentation" rows={6} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowDocumentationPanel(false)}>Cancel</Button>
-                <Button onClick={() => { toast.success("Documentation saved"); setShowDocumentationPanel(false); }}>Save</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Validation Results Panel */}
-      {showValidationResults && (
-        <Dialog open={showValidationResults} onOpenChange={setShowValidationResults}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Validation Results</DialogTitle>
-              <DialogDescription>BPMN structural validation issues</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {validationErrors.length === 0 ? (
-                <div className="text-center py-8 text-green-600">
-                  <Check className="h-12 w-12 mx-auto mb-2" />
-                  <p className="font-semibold">No validation issues found!</p>
+            {isProcessManager ? (
+              <div className="space-y-6">
+                <div className="border rounded-lg p-4 flex items-center justify-between bg-muted/40">
+                  <div>
+                    <p className="text-sm font-medium">Editing lock</p>
+                    <p className="text-xs text-muted-foreground">
+                      When locked, collaborators can only view the diagram.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={editingLocked ? "default" : "outline"}>
+                      {editingLocked ? "Locked" : "Unlocked"}
+                    </Badge>
+                    <Switch
+                      id="editing-lock"
+                      checked={editingLocked}
+                      onCheckedChange={(checked) => handleToggleEditingLock(checked)}
+                    />
+                  </div>
                 </div>
-              ) : (
-                <ScrollArea className="h-[400px]">
-                  <div className="space-y-2">
-                    {validationErrors.map((error, idx) => (
-                      <div key={idx} className="p-3 border border-destructive/20 rounded-lg bg-destructive/5">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{error.message}</p>
-                            {error.elementId && (
-                              <p className="text-xs text-muted-foreground mt-1">Element ID: {error.elementId}</p>
-                            )}
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-primary" />
+                      <p className="text-sm font-medium">Collaborators</p>
+                    </div>
+                    <Badge variant="outline">{collaborators.length}</Badge>
+                  </div>
+                  <ScrollArea className="max-h-72 border rounded-md">
+                    <div className="divide-y">
+                      {isLoadingCollaborators ? (
+                        <div className="p-4 text-sm text-muted-foreground">
+                          Loading collaborators...
+                        </div>
+                      ) : collaborators.length ? (
+                        collaborators.map((collab) => {
+                          const isManager = collab.roles.includes("admin");
+                          return (
+                            <div key={collab.userId} className="p-4 flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium flex items-center gap-2">
+                                  {collab.email}
+                                  {collab.userId === currentUser?.id && (
+                                    <Badge variant="outline">You</Badge>
+                                  )}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {isManager ? "Process Manager" : "Collaborator"}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Last active:{" "}
+                                  {collab.lastLogin
+                                    ? new Date(collab.lastLogin).toLocaleString()
+                                    : "No activity recorded"}
+                                </p>
+                              </div>
+                              {collab.userId !== currentUser?.id && (
+                                isManager ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => revokeProcessAccess(collab.userId)}
+                                  >
+                                    Remove access
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => grantProcessAccess(collab.userId)}
+                                  >
+                                    Grant access
+                                  </Button>
+                                )
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-sm text-muted-foreground">
+                          No collaborators found.
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+            ) : (
+              <div className="border rounded-lg p-6 text-center bg-muted/40 space-y-2">
+                <p className="text-sm font-medium">View-only access</p>
+                <p className="text-xs text-muted-foreground">
+                  You do not have Process Manager permissions. Please contact an administrator
+                  to update access rights.
+                </p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Properties Panel */}
+        {showPropertiesPanel && (
+          <Dialog open={showPropertiesPanel} onOpenChange={setShowPropertiesPanel}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Diagram Overview</DialogTitle>
+                <DialogDescription>Edit process properties and metadata</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Process Name</Label>
+                  <Input placeholder="Enter process name" />
+                </div>
+                <div>
+                  <Label>Process ID</Label>
+                  <Input placeholder="process-id" />
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Textarea placeholder="Enter process description" rows={4} />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowPropertiesPanel(false)}>Cancel</Button>
+                  <Button onClick={() => { toast.success("Properties saved"); setShowPropertiesPanel(false); }}>Save</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Participants Panel */}
+        {showParticipantsPanel && (
+          <Dialog open={showParticipantsPanel} onOpenChange={setShowParticipantsPanel}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Participants / Pools & Lanes</DialogTitle>
+                <DialogDescription>Manage collaboration elements</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="text-sm text-muted-foreground">
+                  Manage pools, lanes, and participant assignments for your BPMN diagram.
+                </div>
+                <Button onClick={() => toast.info("Add participant functionality - coming soon")}>Add Participant</Button>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowParticipantsPanel(false)}>Close</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Settings Panel */}
+        {showSettingsPanel && (
+          <Dialog open={showSettingsPanel} onOpenChange={setShowSettingsPanel}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Execution Settings</DialogTitle>
+                <DialogDescription>Configure process engine options and metadata</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Process Version</Label>
+                  <Input type="number" defaultValue="1" />
+                </div>
+                <div>
+                  <Label>Process Namespace</Label>
+                  <Input placeholder="http://example.org/bpmn" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="executable" />
+                  <Label htmlFor="executable">Executable Process</Label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowSettingsPanel(false)}>Cancel</Button>
+                  <Button onClick={() => { toast.success("Settings saved"); setShowSettingsPanel(false); }}>Save</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Documentation Panel */}
+        {showDocumentationPanel && (
+          <Dialog open={showDocumentationPanel} onOpenChange={setShowDocumentationPanel}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Element Documentation</DialogTitle>
+                <DialogDescription>Add documentation for the selected element</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Element: {selectedElement?.id || 'None selected'}</Label>
+                  <Textarea placeholder="Enter element documentation" rows={6} />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowDocumentationPanel(false)}>Cancel</Button>
+                  <Button onClick={() => { toast.success("Documentation saved"); setShowDocumentationPanel(false); }}>Save</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Validation Results Panel */}
+        {showValidationResults && (
+          <Dialog open={showValidationResults} onOpenChange={setShowValidationResults}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Validation Results</DialogTitle>
+                <DialogDescription>BPMN structural validation issues</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                {validationErrors.length === 0 ? (
+                  <div className="text-center py-8 text-green-600">
+                    <Check className="h-12 w-12 mx-auto mb-2" />
+                    <p className="font-semibold">No validation issues found!</p>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-2">
+                      {validationErrors.map((error, idx) => (
+                        <div key={idx} className="p-3 border border-destructive/20 rounded-lg bg-destructive/5">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{error.message}</p>
+                              {error.elementId && (
+                                <p className="text-xs text-muted-foreground mt-1">Element ID: {error.elementId}</p>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowValidationResults(false)}>Close</Button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowValidationResults(false)}>Close</Button>
+                </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+            </DialogContent>
+          </Dialog>
+        )}
 
       </div>
     </>

@@ -4,7 +4,7 @@ import { useFreePrompts } from "@/hooks/useFreePrompts";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, Mic, Send, Sparkles, MicOff, Languages, MessageSquare, Factory, FileText, File, Image } from "lucide-react";
+import { Paperclip, Mic, Send, Sparkles, MicOff, Languages, MessageSquare, Factory, FileText, File, Image, History, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 import { scrollRevealVariants } from "@/hooks/useScrollReveal";
 import { useReducedMotion, getReducedMotionTransition } from "@/hooks/useReducedMotion";
@@ -75,6 +75,8 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [pendingXml, setPendingXml] = useState<string | null>(null);
+  const [promptHistory, setPromptHistory] = useState<Array<{ prompt: string; timestamp: number }>>([]);
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
 
   // Multi-diagram support for complex workflows
   const [multipleDiagrams, setMultipleDiagrams] = useState<Array<{
@@ -87,6 +89,43 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   const [currentDiagramIndex, setCurrentDiagramIndex] = useState(0);
   const [combinedOverviewXml, setCombinedOverviewXml] = useState<string | null>(null);
   const [showCombinedView, setShowCombinedView] = useState(false);
+
+  // Load prompt history from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('prossmind_prompt_history');
+      if (stored) {
+        const history = JSON.parse(stored);
+        setPromptHistory(history);
+      }
+    } catch (error) {
+      console.warn("Failed to load prompt history:", error);
+    }
+  }, []);
+
+  // Save prompt to history
+  const savePromptToHistory = (prompt: string) => {
+    if (!prompt.trim()) return;
+
+    const newEntry = {
+      prompt: prompt.trim(),
+      timestamp: Date.now()
+    };
+
+    setPromptHistory(prev => {
+      // Remove duplicates and add new entry at the beginning
+      const filtered = prev.filter(item => item.prompt !== newEntry.prompt);
+      const updated = [newEntry, ...filtered].slice(0, 50); // Keep last 50 prompts
+
+      try {
+        localStorage.setItem('prossmind_prompt_history', JSON.stringify(updated));
+      } catch (error) {
+        console.warn("Failed to save prompt history:", error);
+      }
+
+      return updated;
+    });
+  };
 
   // Load generated BPMN or P&ID from localStorage on mount
   useEffect(() => {
@@ -436,6 +475,9 @@ const TryProssMe = ({ user }: { user: User | null }) => {
   };
 
   const handleSend = () => {
+    if (message.trim()) {
+      savePromptToHistory(message);
+    }
     handleGenerate(message);
     // Keep the prompt text in the input until user explicitly clears it
   };
@@ -870,7 +912,19 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
                     {/* Prompt Input Box */}
                     <div className="bg-card border border-border rounded-2xl p-8 shadow-xl flex flex-col flex-1 min-h-0">
-                      <h3 className="text-xl font-semibold mb-4 flex-shrink-0">Prompt</h3>
+                      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                        <h3 className="text-xl font-semibold">Prompt</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowHistoryDialog(true)}
+                          className="gap-2"
+                          title="View prompt history"
+                        >
+                          <History className="h-4 w-4" />
+                          <span className="hidden sm:inline">History</span>
+                        </Button>
+                      </div>
                       <div className="flex-1 flex flex-col min-h-0">
                         {/* Segmented Control Style Tabs for Input Methods */}
                         <Tabs defaultValue="prompt" className="w-full flex-1 flex flex-col min-h-0">
@@ -1098,11 +1152,6 @@ const TryProssMe = ({ user }: { user: User | null }) => {
                         </div>
                       )}
                     </div>
-                    {bpmnXml && (
-                      <p className="text-xs text-muted-foreground mt-4 text-right">
-                        Generated via Gemini 2.5 Pro · v1
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1176,8 +1225,117 @@ const TryProssMe = ({ user }: { user: User | null }) => {
           isLoading={isSavingProject}
         />
       )}
+
+      {/* Prompt History Dialog */}
+      <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Prompt History</DialogTitle>
+            <DialogDescription>
+              Select a previous prompt to reuse it
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {promptHistory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Clock className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No prompt history yet</p>
+                <p className="text-sm text-muted-foreground mt-2">Your used prompts will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                {promptHistory.map((item, index) => {
+                  const timeAgo = getTimeAgo(item.timestamp);
+
+                  return (
+                    <div
+                      key={index}
+                      className="p-4 border border-border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        setMessage(item.prompt);
+                        setShowHistoryDialog(false);
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <p className="text-sm flex-1 line-clamp-3">{item.prompt}</p>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                          {timeAgo}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMessage(item.prompt);
+                            setShowHistoryDialog(false);
+                          }}
+                        >
+                          Use this prompt
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-muted-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPromptHistory(prev => {
+                              const updated = prev.filter((_, i) => i !== index);
+                              try {
+                                localStorage.setItem('prossmind_prompt_history', JSON.stringify(updated));
+                              } catch (error) {
+                                console.warn("Failed to update prompt history:", error);
+                              }
+                              return updated;
+                            });
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {promptHistory.length > 0 && (
+              <div className="flex justify-end pt-2 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPromptHistory([]);
+                    try {
+                      localStorage.removeItem('prossmind_prompt_history');
+                    } catch (error) {
+                      console.warn("Failed to clear prompt history:", error);
+                    }
+                  }}
+                >
+                  Clear All History
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </motion.section>
   );
+};
+
+// Helper function to format time ago
+const getTimeAgo = (timestamp: number): string => {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+  const date = new Date(timestamp);
+  return date.toLocaleDateString();
 };
 
 export default TryProssMe;
