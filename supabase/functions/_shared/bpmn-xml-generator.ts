@@ -126,7 +126,6 @@ function calculateLayoutFromIR(ir: BpmnIR): Layout & { laneHeights?: Map<string,
   const elements: BPMNElement[] = ir.nodes.map((node) => ({
     id: node.id,
     type: mapNodeTypeToBpmnElement(node.type) as BPMNElementType,
-    type: mapNodeTypeToBpmnElement(node.type) as BPMNElementType,
     name: node.name,
   }));
 
