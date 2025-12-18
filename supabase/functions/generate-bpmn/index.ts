@@ -22,20 +22,35 @@ interface SummarizationResult {
 }
 
 /**
- * Detect if prompt requires async generation (conservative thresholds)
- * Only use async for genuinely complex prompts that risk timeout
+ * Detect if prompt requires async generation (adjusted thresholds to prevent timeouts)
+ * Routes complex prompts to background jobs to avoid 60s edge function timeout
  */
 function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
-  const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service/gi) || []).length;
-  const complexity = (prompt.match(/subprocess|parallel|timer|boundary|escalate|event|gateway|decision/gi) || [])
-    .length;
+  const actors = (
+    prompt.match(
+      /actor|participant|swimlane|pool|lane|department|system|service|business|court|creditor|customer|manager|team|user/gi,
+    ) || []
+  ).length;
+  const complexity = (
+    prompt.match(
+      /subprocess|parallel|timer|boundary|escalate|event|gateway|decision|approval|review|meeting|discharge/gi,
+    ) || []
+  ).length;
 
-  // Conservative thresholds - only async for truly complex prompts
+  // Enhanced detection for business processes
+  const businessProcessKeywords = (
+    prompt.match(/filing|paperwork|submit|review|approve|attend|meeting|issue|release|complete|determine/gi) || []
+  ).length;
+  const sequentialSteps = (prompt.match(/then|after|once|when|must|will|can/gi) || []).length;
+
+  // More aggressive thresholds to prevent timeouts
   return (
-    promptLength > 1500 || // Very long prompts
-    actors >= 4 || // 4+ swimlanes/actors
-    complexity >= 4 || // Multiple complex BPMN features
-    (actors >= 3 && complexity >= 2) // Moderate actors + complexity
+    promptLength > 800 || // Long prompts (lowered from 1500)
+    actors >= 3 || // 3+ actors/entities (lowered from 4)
+    complexity >= 3 || // 3+ complex features (lowered from 4)
+    businessProcessKeywords >= 5 || // Business process with many steps
+    sequentialSteps >= 6 || // Many sequential steps
+    (actors >= 2 && complexity >= 2) // Moderate actors + complexity (lowered from 3+2)
   );
 }
 
@@ -491,14 +506,9 @@ Deno.serve(async (req) => {
       try {
         const embedding = await generateEmbedding(finalPromptToGenerate);
         const semanticCache = await checkSemanticCache(embedding, diagramType, getSemanticSimilarityThreshold());
-
-        if (semanticCache) {
-          const cachedXml = semanticCache!.bpmnXml;
-          const similarity = semanticCache!.similarity;
-
+        if (semanticCache !== null && semanticCache !== undefined) {
           cacheType = "semantic";
-          similarityScore = similarity;
-
+          similarityScore = semanticCache.similarity;
           await logPerformanceMetric({
             function_name: "generate-bpmn",
             cache_type: "semantic",
@@ -506,27 +516,25 @@ Deno.serve(async (req) => {
             complexity_score: complexityScore,
             response_time_ms: Date.now() - startTime,
             cache_hit: true,
-            similarity_score: similarity,
+            similarity_score: semanticCache.similarity,
             error_occurred: false,
           });
-
           // Log semantic cache hit
           if (supabase && logId) {
             await logGenerationSuccess({
               supabase,
               logId: logId!,
-              resultXml: cachedXml,
+              resultXml: semanticCache!.bpmnXml,
               durationMs: Date.now() - startTime,
               cacheHit: true,
-              cacheSimilarity: similarity,
+              cacheSimilarity: semanticCache!.similarity,
             });
           }
-
           return new Response(
             JSON.stringify({
-              bpmnXml: cachedXml,
+              bpmnXml: semanticCache.bpmnXml,
               cached: true,
-              similarity,
+              similarity: semanticCache.similarity,
             }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
