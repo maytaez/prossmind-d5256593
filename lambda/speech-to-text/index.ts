@@ -1,5 +1,6 @@
-
 import { serve } from '../shared/aws-shim';
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server';
 
 const openaiApiKey = process.env['OPENAI_API_KEY'];
 
@@ -8,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-export const handler = serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

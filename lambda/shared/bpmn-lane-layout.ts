@@ -4,8 +4,8 @@
  * Improved algorithm that properly assigns elements to lanes and creates clean left-to-right flow
  */
 
-import { BPMNElement, BPMNSequenceFlow } from "./bpmn-json-schema.ts";
-import { Bounds, Point, getElementSize } from "./bpmn-layout-calculator.ts";
+import { BPMNElement, BPMNSequenceFlow } from './bpmn-json-schema';
+import { Bounds, Point, getElementSize } from './bpmn-layout-calculator';
 
 interface LaneElements {
   laneId: string;

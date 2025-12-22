@@ -1,10 +1,11 @@
+import { serve } from '../shared/aws-shim';
 
-import { serve } from '../shared/aws-shim.ts';
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache.ts';
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings.ts';
-import { logPerformanceMetric } from '../shared/metrics.ts';
-import { extractXmlSummary } from '../shared/xml-utils.ts';
-import { instrumentBpmnXml } from '../shared/instrumentation.ts';
+import { serve } from 'https://deno.land/std@0.168.0/http/server';
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings';
+import { logPerformanceMetric } from '../shared/metrics';
+import { extractXmlSummary } from '../shared/xml-utils';
+import { instrumentBpmnXml } from '../shared/instrumentation';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,7 +32,7 @@ const applyMonitoringInstrumentation = (xml: string, context: string) => {
   }
 };
 
-export const handler = serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -67,7 +68,7 @@ export const handler = serve(async (req) => {
 
     const { currentBpmnXml, instructions, userId, diagramType = 'bpmn' } = reqData;
     console.log(`Refining ${diagramType.toUpperCase()} with instructions:`, instructions);
-
+    
     // SECURITY: Validate userId
     if (!userId) {
       console.error('Missing userId in request');
@@ -347,35 +348,35 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
     if (!response.ok) {
       const errorText = await response.text();
       console.error('AI refinement error:', response.status, errorText);
-
+      
       if (response.status === 402) {
         throw new Error('AI service temporarily unavailable due to credit limits. Please try again later.');
       }
-
+      
       throw new Error(`Failed to refine BPMN: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     let refinedBpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
+    
     console.log('Raw AI response length:', refinedBpmnXml.length);
     console.log('First 200 chars:', refinedBpmnXml.substring(0, 200));
     console.log('Last 200 chars:', refinedBpmnXml.substring(refinedBpmnXml.length - 200));
-
+    
     // Clean up markdown code blocks
     refinedBpmnXml = refinedBpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
-
+    
     // Extract XML if there's surrounding text
     const xmlStartMatch = refinedBpmnXml.match(/<\?xml[^>]*>/);
     const xmlEndMatch = refinedBpmnXml.match(/<\/(bpmn:)?definitions>\s*$/);
-
+    
     if (xmlStartMatch && xmlEndMatch) {
       const startIndex = refinedBpmnXml.indexOf(xmlStartMatch[0]);
       const endTag = refinedBpmnXml.includes('</bpmn:definitions>') ? '</bpmn:definitions>' : '</definitions>';
       const endIndex = refinedBpmnXml.lastIndexOf(endTag) + endTag.length;
       refinedBpmnXml = refinedBpmnXml.substring(startIndex, endIndex).trim();
     }
-
+    
     // Validate that we have valid XML (check for both possible closing tags)
     const hasValidClosing = refinedBpmnXml.includes('</bpmn:definitions>') || refinedBpmnXml.includes('</definitions>');
     if (!refinedBpmnXml.includes('<?xml') || !hasValidClosing) {
@@ -425,7 +426,7 @@ Apply these modifications to the BPMN diagram and return the complete updated XM
     });
 
     return new Response(
-      JSON.stringify({
+      JSON.stringify({ 
         bpmnXml: refinedBpmnXml,
         instructions,
         cached: false,

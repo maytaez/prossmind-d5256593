@@ -1,5 +1,6 @@
 import { serve } from '../shared/aws-shim';
-import { createClient } from "@supabase/supabase-js";
+import { serve } from 'https://deno.land/std@0.168.0/http/server';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -168,7 +169,7 @@ function validateVisitorData(data: unknown): { valid: boolean; error?: string; d
   };
 }
 
-export const handler = serve(async (req) => {
+serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

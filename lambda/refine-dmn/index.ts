@@ -1,17 +1,18 @@
+import { serve } from '../shared/aws-shim';
 
-import { serve } from '../shared/aws-shim.ts';
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache.ts';
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings.ts';
-import { logPerformanceMetric } from '../shared/metrics.ts';
-import { extractXmlSummary } from '../shared/xml-utils.ts';
-import { getDmnSystemPrompt } from '../shared/prompts.ts';
+import { serve } from 'https://deno.land/std@0.168.0/http/server';
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings';
+import { logPerformanceMetric } from '../shared/metrics';
+import { extractXmlSummary } from '../shared/xml-utils';
+import { getDmnSystemPrompt } from '../shared/prompts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-export const handler = serve(async (req) => {
+serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
     }

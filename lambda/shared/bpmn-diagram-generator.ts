@@ -4,15 +4,15 @@
  * Takes structure-only BPMN XML and adds complete diagram interchange (DI)
  */
 
-import { parseStructureXml, generateDiagramXml, insertDiagram } from './bpmn-xml-parser.ts';
+import { parseStructureXml, generateDiagramXml, insertDiagram } from './bpmn-xml-parser';
 import {
-    calculateLayout,
-    calculateLaneLayout,
-    constrainElementsToLanes,
-    positionBoundaryEvents,
-    type Layout,
-    type Bounds
-} from './bpmn-layout-calculator.ts';
+  calculateLayout,
+  calculateLaneLayout,
+  constrainElementsToLanes,
+  positionBoundaryEvents,
+  type Layout,
+  type Bounds
+} from './bpmn-layout-calculator';
 
 /**
  * Main entry point: Add complete BPMN diagram to structure-only XML
@@ -37,7 +37,7 @@ export async function addBpmnDiagram(structureXml: string): Promise<string> {
     console.log(`[addBpmnDiagram] Using lane-aware layout for ${process.lanes.length} lanes...`);
 
     // Import and use lane-aware layout
-    const { calculateLaneAwareLayout } = await import("./bpmn-lane-layout.ts");
+    const { calculateLaneAwareLayout } = await import("./bpmn-lane-layout");
 
     const laneLayoutResult = calculateLaneAwareLayout(
       process.lanes,
@@ -106,10 +106,10 @@ export async function addBpmnDiagram(structureXml: string): Promise<string> {
   const baseLayout =
     process.lanes.length === 0
       ? calculateLayout(
-          { id: process.id, name: process.name, elements: process.elements, flows: process.flows } as any,
-          200,
-          100,
-        )
+        { id: process.id, name: process.name, elements: process.elements, flows: process.flows } as any,
+        200,
+        100,
+      )
       : { edges: new Map() }; // We'll need to recalculate edges for lane layout
 
   // For lane-aware layout, recalculate edges

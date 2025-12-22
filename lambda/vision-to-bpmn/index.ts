@@ -1,9 +1,9 @@
-import { serve } from '../shared/aws-shim.ts';
+import { serve } from '../shared/aws-shim';
 
-import { createClient } from "@supabase/supabase-js";
-import { generateHash, checkVisionCache, storeVisionCache, checkSemanticImageCache } from '../shared/cache.ts';
-import { logPerformanceMetric } from '../shared/metrics.ts';
-import { generateEmbedding, isSemanticCacheEnabled } from '../shared/embeddings.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
+import { generateHash, checkVisionCache, storeVisionCache, checkSemanticImageCache } from '../shared/cache';
+import { logPerformanceMetric } from '../shared/metrics';
+import { generateEmbedding, isSemanticCacheEnabled } from '../shared/embeddings';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,7 +18,7 @@ export const handler = serve(async (req) => {
   try {
     const supabaseUrl = process.env['SUPABASE_URL'];
     const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-
+    
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing Supabase configuration');
     }
@@ -49,7 +49,7 @@ export const handler = serve(async (req) => {
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
     const estimatedSize = base64Data.length * 0.75; // Base64 is ~33% larger than binary
-
+    
     if (estimatedSize > MAX_FILE_SIZE) {
       console.error(`File too large: ${Math.round(estimatedSize / 1024 / 1024)}MB exceeds 10MB limit`);
       return new Response(
@@ -63,12 +63,12 @@ export const handler = serve(async (req) => {
       'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp',
       'application/pdf', 'text/plain', 'text/csv'
     ];
-
+    
     let mimeType = 'unknown';
     if (imageBase64.includes(':') && imageBase64.includes(';')) {
       mimeType = imageBase64.split(';')[0].split(':')[1] || 'unknown';
     }
-
+    
     // Only validate MIME type if we can detect it (data URL format)
     if (mimeType !== 'unknown' && !allowedMimeTypes.some(allowed => mimeType.startsWith(allowed.split('/')[0]))) {
       console.error(`Invalid file type: ${mimeType}`);
@@ -79,7 +79,7 @@ export const handler = serve(async (req) => {
     }
 
     console.log(`Input validation passed: ${Math.round(estimatedSize / 1024)}KB, type: ${mimeType}`);
-
+    
     console.log(`Processing ${diagramType.toUpperCase()} diagram`);
 
     // Create job record immediately
@@ -103,7 +103,7 @@ export const handler = serve(async (req) => {
     // Start background processing
     const processJob = async () => {
       const startTime = Date.now();
-
+      
       try {
         // Update status to processing
         await supabase
@@ -115,7 +115,7 @@ export const handler = serve(async (req) => {
 
         const GOOGLE_API_KEY = process.env['GOOGLE_API_KEY'];
         const LOVABLE_API_KEY = process.env['LOVABLE_API_KEY'];
-
+        
         if (!GOOGLE_API_KEY) {
           throw new Error('Google API key not configured');
         }
@@ -141,10 +141,10 @@ export const handler = serve(async (req) => {
 
         if (isImage || isPDF) {
           // Extract base64 data (remove data URL prefix) and normalize
-          const base64Data = imageBase64.includes(',')
+          const base64Data = imageBase64.includes(',') 
             ? imageBase64.split(',')[1].trim().replace(/\s+/g, '')
             : imageBase64.trim().replace(/\s+/g, '');
-
+          
           imageHash = await generateHash(`${base64Data}:${diagramType}`);
           console.log('Generated image hash for cache lookup:', imageHash.substring(0, 16) + '...');
 
@@ -160,7 +160,7 @@ export const handler = serve(async (req) => {
             if (visionCache.bpmnXml) {
               console.log('✅ Using cached BPMN XML directly');
               bpmnXml = visionCache.bpmnXml;
-
+              
               await supabase
                 .from('vision_bpmn_jobs')
                 .update({
@@ -180,13 +180,13 @@ export const handler = serve(async (req) => {
                 model_used: 'cached',
                 error_occurred: false,
               });
-
+              
               console.log('Job completed from exact cache:', job.id, 'in', responseTime, 'ms');
               return; // Exit early with cached result
             }
           } else {
             console.log('❌ Exact vision cache miss - No cached data found for hash:', imageHash.substring(0, 16) + '...');
-
+            
             // Try semantic similarity search if enabled
             if (isSemanticCacheEnabled() && isImage && LOVABLE_API_KEY) {
               console.log('🔍 Attempting semantic image cache search...');
@@ -194,10 +194,10 @@ export const handler = serve(async (req) => {
                 // Generate embedding from image description for semantic search
                 // First, get a quick description of the image
                 const descriptionPrompt = `Describe this image briefly in 2-3 sentences focusing on: processes, workflows, diagrams, symbols, connections, and flow patterns.`;
-
+                
                 const semanticController = new AbortController();
                 const semanticTimeoutId = setTimeout(() => semanticController.abort(), 15000); // 15s timeout
-
+                
                 const quickDescResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
                   method: 'POST',
                   headers: {
@@ -219,29 +219,29 @@ export const handler = serve(async (req) => {
                   }),
                   signal: semanticController.signal
                 });
-
+                
                 clearTimeout(semanticTimeoutId);
 
                 if (quickDescResponse.ok) {
                   const descData = await quickDescResponse.json();
                   const imageDescription = descData.choices?.[0]?.message?.content || '';
-
+                  
                   if (imageDescription) {
                     console.log('Generated image description for embedding:', imageDescription.substring(0, 100) + '...');
-
+                    
                     // Generate embedding from description
                     const embedding = await generateEmbedding(imageDescription);
-
+                    
                     // Check semantic cache
                     const semanticCache = await checkSemanticImageCache(embedding, diagramType, 0.80);
-
+                    
                     if (semanticCache && semanticCache.bpmnXml) {
                       console.log('✅ SEMANTIC VISION CACHE HIT - Found similar image! Similarity:', semanticCache.similarity);
                       console.log('Cache entry ID:', semanticCache.cacheId);
                       cacheHit = true;
                       cacheType = 'semantic';
                       bpmnXml = semanticCache.bpmnXml;
-
+                      
                       await supabase
                         .from('vision_bpmn_jobs')
                         .update({
@@ -262,7 +262,7 @@ export const handler = serve(async (req) => {
                         model_used: 'cached',
                         error_occurred: false,
                       });
-
+                      
                       console.log('Job completed from semantic cache:', job.id, 'in', responseTime, 'ms');
                       return; // Exit early with cached result
                     } else {
@@ -315,7 +315,7 @@ Return ONLY the XML, no other text.`;
 Return ONLY the XML, no other text.`;
 
           const directPrompt = diagramType === 'pid' ? pidDirectPrompt : bpmnDirectPrompt;
-          const systemPrompt = diagramType === 'pid'
+          const systemPrompt = diagramType === 'pid' 
             ? `You are a P&ID expert. Generate complete BPMN 2.0 XML with pid:type, pid:symbol, pid:category attributes for P&ID elements.`
             : `You are a BPMN 2.0 expert. Generate valid BPMN 2.0 XML with horizontal swimlanes and decision gateways.`;
 
@@ -323,9 +323,9 @@ Return ONLY the XML, no other text.`;
           console.log('Generating with gemini-2.5-pro...');
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 120000);
-
+          
           const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_API_KEY}`;
-
+          
           const requestBody = {
             contents: [{
               parts: [
@@ -360,11 +360,11 @@ Return ONLY the XML, no other text.`;
 
           const result = await response.json();
           bpmnXml = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
+          
           if (!bpmnXml) {
             throw new Error('Empty response from Gemini 2.5 Pro');
           }
-
+          
           console.log('✅ Success with gemini-2.5-pro');
           selectedModel = 'gemini-2.5-pro';
 
@@ -387,20 +387,20 @@ Return ONLY the XML, no other text.`;
             hasMultipleLanes: textContent.match(/lane|swimlane|category|phase|stage/gi)?.length || 0,
             taskCount: textContent.match(/task|step|activity|action/gi)?.length || 0
           };
-
-          const complexityScore =
+          
+          const complexityScore = 
             (complexityMetrics.wordCount > 500 ? 2 : complexityMetrics.wordCount > 250 ? 1 : 0) +
             (complexityMetrics.hasMultipleLanes > 4 ? 2 : complexityMetrics.hasMultipleLanes > 2 ? 1 : 0) +
             (complexityMetrics.taskCount > 15 ? 2 : complexityMetrics.taskCount > 8 ? 1 : 0) +
             (complexityMetrics.hasDecisionPoints ? 1 : 0);
-
+          
           console.log(`Text complexity: ${complexityScore}/8, using fallback chain`);
 
           const diagramLabel = diagramType === 'pid' ? 'P&ID' : 'BPMN';
           console.log(`Generating ${diagramLabel} XML from text...`);
 
           const bpmnSystemPrompt = `You are a BPMN 2.0 expert. Generate valid XML with horizontal swimlanes and decision gateways. Return ONLY XML starting with <?xml version="1.0" encoding="UTF-8"?>. No markdown.`;
-
+          
           const pidSystemPrompt = `You are a P&ID expert. Generate BPMN 2.0 XML with pid:type, pid:symbol, pid:category attributes for P&ID elements. Return ONLY XML, no markdown.`;
 
           const systemPrompt = diagramType === 'pid' ? pidSystemPrompt : bpmnSystemPrompt;
@@ -410,9 +410,9 @@ Return ONLY the XML, no other text.`;
           console.log('Generating text with gemini-2.5-pro...');
           const textController = new AbortController();
           const textTimeoutId = setTimeout(() => textController.abort(), 90000);
-
+          
           const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GOOGLE_API_KEY}`;
-
+          
           const requestBody = {
             contents: [{
               parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
@@ -439,11 +439,11 @@ Return ONLY the XML, no other text.`;
 
           const result = await response.json();
           bpmnXml = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
+          
           if (!bpmnXml) {
             throw new Error('Empty response from Gemini 2.5 Pro for text');
           }
-
+          
           console.log('✅ Success with gemini-2.5-pro (text)');
           selectedModel = 'gemini-2.5-pro';
         } else {
@@ -464,7 +464,7 @@ Return ONLY the XML, no other text.`;
         if (!bpmnXml.startsWith('<?xml')) {
           throw new Error('Generated content is not valid XML - missing XML declaration');
         }
-
+        
         if (!bpmnXml.includes('<bpmn:definitions') && !bpmnXml.includes('<bpmn:Definitions')) {
           throw new Error('Generation failed (Reason: failed to parse document as <bpmn:Definitions>). Try simplified prompt.');
         }
@@ -487,7 +487,7 @@ Return ONLY the XML, no other text.`;
           // Extract a brief description from the first few elements for cache
           const descMatch = bpmnXml.match(/<bpmn:textAnnotation[^>]*>.*?<bpmn:text>(.*?)<\/bpmn:text>/s);
           const briefDesc = descMatch ? descMatch[1].substring(0, 200) : 'BPMN diagram from image';
-
+          
           // Generate embedding for semantic search
           let embedding: number[] | undefined;
           if (isSemanticCacheEnabled()) {
@@ -499,7 +499,7 @@ Return ONLY the XML, no other text.`;
               // Continue without embedding
             }
           }
-
+          
           await storeVisionCache(imageHash, diagramType, briefDesc, bpmnXml, embedding);
           console.log('✅ Vision cache stored successfully');
         } else if (updateError) {
@@ -521,7 +521,7 @@ Return ONLY the XML, no other text.`;
       } catch (err) {
         console.error('Error processing job:', err);
         const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-
+        
         await supabase
           .from('vision_bpmn_jobs')
           .update({
@@ -545,14 +545,14 @@ Return ONLY the XML, no other text.`;
 
     // Use proper EdgeRuntime.waitUntil for background processing
     // @ts-ignore - EdgeRuntime is available in Deno Deploy
-    await processJob();
+    EdgeRuntime.waitUntil(processJob());
 
     // Return immediately with job ID
     return new Response(
       JSON.stringify({ jobId: job.id }),
-      {
+      { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
+        status: 200 
       }
     );
   } catch (err) {
@@ -560,9 +560,9 @@ Return ONLY the XML, no other text.`;
     const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      {
+      { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+        status: 500 
       }
     );
   }

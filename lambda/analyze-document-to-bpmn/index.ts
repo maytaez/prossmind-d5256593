@@ -1,9 +1,9 @@
 
-import { serve } from '../shared/aws-shim.ts';
+import { serve } from '../shared/aws-shim';
 import { createClient } from "@supabase/supabase-js";
-import { generateHash, checkExactHashCache, storeExactHashCache } from '../shared/cache.ts';
-import { logPerformanceMetric } from '../shared/metrics.ts';
-import { detectLanguage, getLanguageName } from '../shared/language-detection.ts';
+import { generateHash, checkExactHashCache, storeExactHashCache } from '../shared/cache';
+import { logPerformanceMetric } from '../shared/metrics';
+import { detectLanguage, getLanguageName } from '../shared/language-detection';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

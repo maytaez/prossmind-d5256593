@@ -1,14 +1,14 @@
-import { serve } from '../shared/aws-shim.ts';
+import { serve } from '../shared/aws-shim';
 
 import { createClient } from "@supabase/supabase-js";
-import { checkCache, storeCacheAsync } from "../shared/semantic-cache.ts";
-import { logPerformanceMetric, measureExecutionTime } from "../shared/metrics.ts";
-import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from "../shared/prompts.ts";
-import { analyzePrompt, selectModel } from "../shared/model-selection.ts";
-import { detectLanguage, getLanguageName } from "../shared/language-detection.ts";
-import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from "../shared/bpmn-di-optimizer.ts";
+import { checkCache, storeCacheAsync } from '../shared/semantic-cache';
+import { logPerformanceMetric, measureExecutionTime } from '../shared/metrics';
+import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../shared/prompts';
+import { analyzePrompt, selectModel } from '../shared/model-selection';
+import { detectLanguage, getLanguageName } from '../shared/language-detection';
+import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../shared/bpmn-di-optimizer';
 
-import { logGenerationRequest, logGenerationSuccess, logGenerationError } from "../shared/dashboard-logger.ts";
+import { logGenerationRequest, logGenerationSuccess, logGenerationError } from '../shared/dashboard-logger';
 
 interface ValidationResult {
   isValid: boolean;

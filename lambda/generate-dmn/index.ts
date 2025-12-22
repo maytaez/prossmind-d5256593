@@ -1,10 +1,10 @@
-import { serve } from '../shared/aws-shim.ts';
+import { serve } from '../shared/aws-shim';
 
-import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache.ts';
-import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings.ts';
-import { logPerformanceMetric, measureExecutionTime } from '../shared/metrics.ts';
-import { getDmnSystemPrompt, buildMessagesWithExamples } from '../shared/prompts.ts';
-import { analyzePrompt, selectModel } from '../shared/model-selection.ts';
+import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache';
+import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings';
+import { logPerformanceMetric, measureExecutionTime } from '../shared/metrics';
+import { getDmnSystemPrompt, buildMessagesWithExamples } from '../shared/prompts';
+import { analyzePrompt, selectModel } from '../shared/model-selection';
 
 /**
  * Extract XML from response text, handling cases where there's text before the XML.

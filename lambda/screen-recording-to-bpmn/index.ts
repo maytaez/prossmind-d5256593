@@ -1,6 +1,6 @@
 import { serve } from '../shared/aws-shim';
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -564,7 +564,7 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
 
     // Run processing in background
     // @ts-expect-error EdgeRuntime is available in Supabase edge functions
-    await processJob();
+    EdgeRuntime.waitUntil(processJob());
 
     // Return job ID immediately
     return new Response(

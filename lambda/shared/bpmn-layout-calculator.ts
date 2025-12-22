@@ -5,7 +5,7 @@
  * using a simplified graph layout algorithm.
  */
 
-import { BPMNElement, BPMNSequenceFlow, BPMNProcess } from "./bpmn-json-schema.ts";
+import { BPMNElement, BPMNSequenceFlow, BPMNProcess } from './bpmn-json-schema';
 
 export interface Bounds {
     x: number;

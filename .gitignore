@@ -1,1 +1,44 @@
+# Dependencies
 node_modules
+package-lock.json
+
+# Build outputs
+dist/
+*.js
+*.js.map
+
+# AWS SAM
+.aws-sam/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Lambda specific
+lambda/**/dist/
+lambda/**/node_modules/
+lambda/**/*.js
+lambda/**/*.js.map
+!lambda/**/jest.config.js
+
+# Exclude compiled shared utilities
+lambda/shared/*.js
+lambda/shared/*.js.map
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -8,7 +8,7 @@
  * - Sequential analysis of the process flow
  */
 
-import { BPMNElement } from "./bpmn-json-schema.ts";
+import { BPMNElement } from './bpmn-json-schema';
 
 interface Lane {
   id: string;
