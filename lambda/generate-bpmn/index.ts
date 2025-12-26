@@ -1,6 +1,7 @@
 import { serve } from '../shared/aws-shim';
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 
-import { createClient } from "@supabase/supabase-js";
+// Supabase interactions removed as per requirement: Lambdas should not call Supabase directly.
 import { checkCache, storeCacheAsync } from '../shared/semantic-cache';
 import { logPerformanceMetric, measureExecutionTime } from '../shared/metrics';
 import { getBpmnSystemPrompt, getPidSystemPrompt, buildMessagesWithExamples } from '../shared/prompts';
@@ -9,6 +10,7 @@ import { detectLanguage, getLanguageName } from '../shared/language-detection';
 import { optimizeBpmnDI, estimateTokenCount, needsDIOptimization } from '../shared/bpmn-di-optimizer';
 
 import { logGenerationRequest, logGenerationSuccess, logGenerationError } from '../shared/dashboard-logger';
+import { getGoogleApiKey } from '../shared/secrets';
 
 interface ValidationResult {
   isValid: boolean;
@@ -16,14 +18,11 @@ interface ValidationResult {
   errorDetails?: string;
 }
 
-interface SummarizationResult {
-  summarizedPrompt: string;
-  wasSummarized: boolean;
-}
+// Summarization function removed as it was unused and not present in Edge implementation
 
 /**
- * Detect if prompt requires async generation (adjusted thresholds to prevent timeouts)
- * Routes complex prompts to background jobs to avoid 60s edge function timeout
+ * Detect if prompt requires async generation (adjusted thresholds to prevent API Gateway 29s timeout)
+ * Routes prompts likely to take >25s to background jobs to avoid 504 errors
  */
 function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean {
   const actors = (prompt.match(/actor|participant|swimlane|pool|lane|department|system|service|business|court|creditor|customer|manager|team|user/gi) || []).length;
@@ -33,14 +32,14 @@ function shouldUseAsyncGeneration(prompt: string, promptLength: number): boolean
   const businessProcessKeywords = (prompt.match(/filing|paperwork|submit|review|approve|attend|meeting|issue|release|complete|determine/gi) || []).length;
   const sequentialSteps = (prompt.match(/then|after|once|when|must|will|can/gi) || []).length;
 
-  // More aggressive thresholds to prevent timeouts
+  // Balanced thresholds - only trigger async for genuinely complex prompts
   return (
-    promptLength > 800 ||            // Long prompts (lowered from 1500)
-    actors >= 3 ||                   // 3+ actors/entities (lowered from 4)
-    complexity >= 3 ||               // 3+ complex features (lowered from 4)
-    businessProcessKeywords >= 5 ||  // Business process with many steps
-    sequentialSteps >= 6 ||          // Many sequential steps
-    (actors >= 2 && complexity >= 2) // Moderate actors + complexity (lowered from 3+2)
+    promptLength > 1200 ||           // Long prompts (increased from 300)
+    actors >= 5 ||                   // 5+ actors/entities (increased from 2)
+    complexity >= 4 ||               // 4+ complex features (increased from 2)
+    businessProcessKeywords >= 8 ||  // Business process with many steps (increased from 3)
+    sequentialSteps >= 8 ||          // Many sequential steps (increased from 4)
+    (actors >= 3 && complexity >= 3) // Moderate actors + complexity (increased from 1+1)
   );
 }
 
@@ -83,40 +82,6 @@ function sanitizeBpmnXml(xml: string): string {
   return sanitized.trim();
 }
 
-async function summarizeInputWithFlash(userPrompt: string, googleApiKey: string): Promise<SummarizationResult> {
-  const shouldSummarize = userPrompt.length > 1500 || userPrompt.split("\n").length > 10;
-  if (!shouldSummarize) return { summarizedPrompt: userPrompt, wasSummarized: false };
-  console.log(`[Summarization] Summarizing prompt (length: ${userPrompt.length} chars)`);
-  const summarizationPrompt = `You are a business process modeling assistant. Summarize and simplify the following prompt while preserving ALL critical information for BPMN 2.0 diagram generation.\n\nPreserve: workflow steps, decision points, participants/roles, sequence flows, exception handling, subprocesses, parallel activities, message flows, data objects.\n\nSimplify by: removing redundant explanations, consolidating similar concepts, using concise language.\n\nReturn ONLY the simplified prompt.\n\nOriginal prompt:\n${userPrompt}`;
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${googleApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: summarizationPrompt }] }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
-        }),
-      },
-    );
-    if (!response.ok) {
-      console.warn("[Summarization] Failed");
-      return { summarizedPrompt: userPrompt, wasSummarized: false };
-    }
-    const data = await response.json();
-    const summarized = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || userPrompt;
-    if (summarized && summarized.length < userPrompt.length * 0.8) {
-      console.log(`[Summarization] Success: ${userPrompt.length} -> ${summarized.length} chars`);
-      return { summarizedPrompt: summarized, wasSummarized: true };
-    }
-    return { summarizedPrompt: userPrompt, wasSummarized: false };
-  } catch (error) {
-    console.warn("[Summarization] Error:", error);
-    return { summarizedPrompt: userPrompt, wasSummarized: false };
-  }
-}
-
 function validateBpmnXml(xml: string): ValidationResult {
   if (!xml || typeof xml !== "string") return { isValid: false, error: "Invalid XML: empty or non-string input" };
   if (!xml.trim().startsWith("<?xml")) return { isValid: false, error: "Missing XML declaration" };
@@ -145,6 +110,7 @@ async function generateBpmnXmlWithGemini(
   languageCode: string,
   languageName: string,
   googleApiKey: string,
+  model: string,
   maxTokens: number,
   temperature: number,
   retryContext?: { error: string; errorDetails?: string; attemptNumber: number },
@@ -156,9 +122,13 @@ async function generateBpmnXmlWithGemini(
   const messages = buildMessagesWithExamples(systemPrompt, generationPrompt, diagramType, languageCode, languageName);
   const systemMessage = messages.find((m: any) => m.role === "system");
   const userMessages = messages.filter((m: any) => m.role === "user");
-  console.log("[GEMINI REQUEST] Sending to Gemini 2.5 Pro");
+
+  // Format model ID (strip 'google/' if present)
+  const modelId = model.startsWith('google/') ? model.split('/')[1] : model;
+
+  console.log(`[GEMINI REQUEST] Sending to ${modelId}`);
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${googleApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${googleApiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -175,7 +145,7 @@ async function generateBpmnXmlWithGemini(
   }
   const data = await response.json();
   let bpmnXml = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  if (!bpmnXml) throw new Error("No content generated from Gemini 2.5 Pro");
+  if (!bpmnXml) throw new Error(`No content generated from ${modelId}`);
   bpmnXml = bpmnXml
     .replace(/```xml\n?/g, "")
     .replace(/```\n?/g, "")
@@ -211,6 +181,7 @@ async function retryBpmnGenerationIfNecessary(
   languageCode: string,
   languageName: string,
   googleApiKey: string,
+  model: string,
   maxTokens: number,
   temperature: number,
   maxAttempts: number = 3,
@@ -226,6 +197,7 @@ async function retryBpmnGenerationIfNecessary(
         languageCode,
         languageName,
         googleApiKey,
+        model,
         maxTokens,
         temperature,
         lastValidationError
@@ -269,20 +241,40 @@ export const handler = serve(async (req) => {
   let prompt: string | undefined;
   let promptLength = 0;
   let logId: string | null = null;
-  let supabase: any = null;
+
   try {
     let requestData;
     try {
-      requestData = await req.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      console.log('[DEBUG] Request method:', req.method);
+      console.log('[DEBUG] Content-Type:', req.headers.get('content-type'));
+      const bodyText = await req.text();
+      console.log('[DEBUG] Request body (raw):', bodyText);
+      console.log('[DEBUG] Request body length:', bodyText?.length || 0);
+      console.log('[DEBUG] Request body type:', typeof bodyText);
+
+      if (!bodyText || bodyText.trim() === '') {
+        console.error('[DEBUG] Empty body received');
+        return new Response(JSON.stringify({ error: "Empty request body", details: 'No data received in request body' }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      requestData = JSON.parse(bodyText);
+      console.log('[DEBUG] Parsed request data:', JSON.stringify(requestData));
+    } catch (parseError) {
+      console.error('[DEBUG] JSON parse error:', parseError);
+      console.error('[DEBUG] Parse error type:', parseError instanceof Error ? parseError.constructor.name : typeof parseError);
+      console.error('[DEBUG] Parse error message:', parseError instanceof Error ? parseError.message : String(parseError));
+      return new Response(JSON.stringify({ error: "Invalid JSON", details: parseError instanceof Error ? parseError.message : 'Unknown parse error' }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     prompt = requestData.prompt;
     const diagramType = requestData.diagramType || "bpmn";
-    const skipCache = requestData.skipCache === true;
+    // Force skipCache as per user request to disable caching
+    const skipCache = true; // requestData.skipCache === true;
     const modelingAgentMode = requestData.modelingAgentMode === true;
     if (!prompt) throw new Error("Prompt is required");
     promptLength = prompt.length;
@@ -291,37 +283,60 @@ export const handler = serve(async (req) => {
     const detectedLanguageName = modelingAgentMode ? "English" : getLanguageName(detectedLanguageCode);
     console.log(`Language: ${detectedLanguageName} (${detectedLanguageCode})`);
 
-    const GOOGLE_API_KEY = process.env["GOOGLE_API_KEY"];
-    if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
+    // ASYNC HANDOFF FOR COMPLEX PROMPTS - High Priority
+    // Bypass all local processing and hand off to background job to avoid API Gateway 29s timeout
+    if (!modelingAgentMode && (promptLength > 200 || shouldUseAsyncGeneration(prompt, promptLength))) {
+      console.log(`[Async Mode] Complex prompt detected (length: ${promptLength}), handoff to background job`);
+      try {
+        const jobId = crypto.randomUUID();
+        const client = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+        const payload = JSON.stringify({
+          jobId,
+          prompt,
+          diagramType,
+          authHeader: req.headers.get('Authorization'),
+          sourceFunction: 'generate-bpmn'
+        });
 
-    // Create Supabase client for logging
-    const supabaseUrl = process.env["SUPABASE_URL"];
-    const supabaseServiceKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
-    if (supabaseUrl && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey);
-    }
+        const command = new InvokeCommand({
+          FunctionName: 'prossmind-process-bpmn-job',
+          InvocationType: 'Event',
+          Payload: new TextEncoder().encode(payload),
+        });
 
-    // Get user ID for logging
-    let userId: string | undefined;
-    if (supabase) {
-      const authHeader = req.headers.get("Authorization");
-      const token = authHeader?.replace("Bearer ", "");
-      if (token) {
-        try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser(token);
-          userId = user?.id;
-        } catch (error) {
-          console.warn("[Logging] Failed to get user:", error);
-        }
+        await client.send(command).catch(err => {
+          console.error('[Async Mode] Lambda invocation failed:', err);
+          throw err;
+        });
+
+        return new Response(JSON.stringify({
+          requiresPolling: true,
+          jobId: jobId,
+          message: 'Complex prompt - generation started in background',
+          estimatedTime: '60-90 seconds'
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      } catch (asyncError) {
+        console.error('[Async Mode] Critical handoff error, attempting sync fallback:', asyncError);
+        // Fall through to sync generation if handoff fails
       }
     }
 
-    // Log generation request
-    if (supabase && userId) {
+    // Fetch Google API Key from AWS Secrets Manager
+    const GOOGLE_API_KEY = await getGoogleApiKey();
+    if (!GOOGLE_API_KEY) throw new Error("Google API key not configured");
+
+    // Supabase client and user resolution removed
+    let userId: string | undefined;
+
+
+    // Log generation request - Temporarily disabled
+    /*
+    if (userId) {
       logId = await logGenerationRequest({
-        supabase,
+        supabase: undefined as any,
         userId,
         prompt,
         diagramType,
@@ -330,18 +345,19 @@ export const handler = serve(async (req) => {
         isMultiDiagram: false,
       });
     }
+    */
 
-    // CHECK CACHE FIRST - Check for exact match or semantically similar prompts
-    // This unified cache check handles both exact hash matching and semantic similarity
+    // CHECK CACHE FIRST - Temporarily disabled
+    /*
     if (!skipCache && !modelingAgentMode) {
       try {
-        const GOOGLE_API_KEY = process.env["GOOGLE_API_KEY"];
+        const GOOGLE_API_KEY = await getGoogleApiKey();
         if (GOOGLE_API_KEY) {
           console.log('[Cache] Checking for cached results...');
           const cachedResult = await checkCache({
             prompt,
             diagramType,
-            supabase,
+            supabase: undefined as any,
             googleApiKey: GOOGLE_API_KEY,
           });
 
@@ -362,9 +378,9 @@ export const handler = serve(async (req) => {
             });
 
             // Log cache hit
-            if (supabase && logId) {
+            if (logId) {
               await logGenerationSuccess({
-                supabase,
+                supabase: undefined as any,
                 logId,
                 resultXml: cachedResult.bpmn_xml,
                 durationMs: Date.now() - startTime,
@@ -391,89 +407,19 @@ export const handler = serve(async (req) => {
         // Continue with generation if cache check fails
       }
     }
+    */
 
-    // TIME BUDGET MANAGEMENT - Track elapsed time to prevent timeout
-    const TIMEOUT_LIMIT_MS = 50000; // 50 seconds, leaving 10s buffer before edge function timeout
+    // TIME BUDGET MANAGEMENT - Track elapsed time to prevent API Gateway timeout
+    const TIMEOUT_LIMIT_MS = 25000; // 25 seconds, leaving 4s buffer before API Gateway's 29s hard limit
     const getElapsedTime = () => Date.now() - startTime;
     const hasTimeBudget = (requiredMs: number = 0) => getElapsedTime() + requiredMs < TIMEOUT_LIMIT_MS;
 
     console.log(`[Time Budget] Starting with ${TIMEOUT_LIMIT_MS}ms limit`);
 
-    // SIMPLIFIED FLOW: Use async generation for complex prompts, direct generation for simple ones
+    // SIMPLIFIED FLOW: Direct generation for simple prompts (Complex already handled above)
     let finalPromptToGenerate = prompt;
 
-    // ASYNC GENERATION FOR COMPLEX PROMPTS - Bypass 60s timeout using background jobs
-    if (!modelingAgentMode && shouldUseAsyncGeneration(prompt, promptLength)) {
-      console.log(`[Async Mode] Complex prompt detected (length: ${promptLength}), creating background job`);
-
-      try {
-        // Create Supabase client
-        const supabaseUrl = process.env['SUPABASE_URL'];
-        const supabaseServiceKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-
-        if (!supabaseUrl || !supabaseServiceKey) {
-          console.warn('[Async Mode] Supabase config missing, falling back to sync');
-        } else {
-          const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-          // Get user ID from JWT
-          const authHeader = req.headers.get('Authorization');
-          const token = authHeader?.replace('Bearer ', '');
-          let userId: string | undefined;
-
-          if (token) {
-            const { data: { user } } = await supabase.auth.getUser(token);
-            userId = user?.id;
-          }
-
-          // Create job in vision_bpmn_jobs table
-          const { data: job, error: jobError } = await supabase
-            .from('vision_bpmn_jobs')
-            .insert({
-              user_id: userId || null,
-              source_type: 'prompt',
-              prompt: prompt,
-              diagram_type: diagramType,
-              image_data: null,
-              status: 'pending'
-            })
-            .select()
-            .single();
-
-          if (jobError || !job) {
-            console.error('[Async Mode] Failed to create job:', jobError);
-            console.warn('[Async Mode] Falling back to sync generation');
-          } else {
-            console.log(`[Async Mode] Job created: ${job.id}`);
-
-            // Trigger async processing (fire and forget)
-            fetch(`${supabaseUrl}/functions/v1/process-bpmn-job`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env['SUPABASE_ANON_KEY']}`
-              },
-              body: JSON.stringify({ jobId: job.id })
-            }).catch(err => console.error('[Async Mode] Failed to trigger processor:', err));
-
-            // Return immediately with job ID for client polling
-            return new Response(JSON.stringify({
-              requiresPolling: true,
-              jobId: job.id,
-              message: 'Complex prompt - generation started in background',
-              estimatedTime: '60-90 seconds'
-            }), {
-              status: 200,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-        }
-      } catch (asyncError) {
-        console.error('[Async Mode] Error setting up async:', asyncError);
-        console.warn('[Async Mode] Falling back to sync generation');
-        // Continue with normal synchronous generation below
-      }
-    }
+    // Direct generation for non-complex prompts begins here
 
     // Complex prompts are handled via async generation above
     // Simple prompts proceed directly to generation
@@ -512,26 +458,29 @@ export const handler = serve(async (req) => {
       detectedLanguageCode,
       detectedLanguageName,
       GOOGLE_API_KEY,
+      model,
       maxTokens,
       temperature,
       3,
     );
-    modelUsed = "google/gemini-2.5-pro";
+    modelUsed = model;
     const finalValidation = validateBpmnXml(bpmnXml);
     if (!finalValidation.isValid) throw new Error(`Final validation failed: ${finalValidation.error}`);
-    // Store in cache asynchronously with embedding for future semantic matches
+    // Store in cache asynchronously - Temporarily disabled
+    /*
     if (!skipCache && !modelingAgentMode) {
-      const GOOGLE_API_KEY = process.env["GOOGLE_API_KEY"];
+      const GOOGLE_API_KEY = await getGoogleApiKey();
       if (GOOGLE_API_KEY) {
         storeCacheAsync({
           prompt: finalPromptToGenerate,
           bpmnXml: bpmnXml,
           diagramType,
-          supabase,
+          supabase: undefined as any,
           googleApiKey: GOOGLE_API_KEY,
         });
       }
     }
+    */
     await logPerformanceMetric({
       function_name: "generate-bpmn",
       cache_type: cacheType,
@@ -543,16 +492,18 @@ export const handler = serve(async (req) => {
       similarity_score: similarityScore,
       error_occurred: false,
     });
-    // Log successful generation
-    if (supabase && logId) {
+    // Log successful generation - Temporarily disabled
+    /*
+    if (logId) {
       await logGenerationSuccess({
-        supabase,
+        supabase: undefined as any,
         logId,
         resultXml: bpmnXml,
         durationMs: Date.now() - startTime,
         cacheHit: false,
       });
     }
+    */
     return new Response(
       JSON.stringify({
         bpmnXml,
@@ -577,16 +528,18 @@ export const handler = serve(async (req) => {
     } catch {
       /* ignore */
     }
-    // Log error
-    if (supabase && logId) {
+    // Log error - Temporarily disabled
+    /*
+    if (logId) {
       await logGenerationError({
-        supabase,
+        supabase: undefined as any,
         logId,
         errorMessage,
         errorStack: error instanceof Error ? error.stack : undefined,
         durationMs: Date.now() - startTime,
       });
     }
+    */
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

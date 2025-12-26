@@ -1,6 +1,6 @@
 import { serve } from '../shared/aws-shim';
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server';
+
 
 const openaiApiKey = process.env['OPENAI_API_KEY'];
 
@@ -16,7 +16,7 @@ serve(async (req) => {
 
   try {
     const { audio } = await req.json();
-    
+
     if (!audio) {
       throw new Error('No audio data provided');
     }
@@ -30,12 +30,12 @@ serve(async (req) => {
     // Convert base64 to Uint8Array
     const binaryData = Uint8Array.from(atob(audio), c => c.charCodeAt(0));
     const audioBlob = new Blob([binaryData], { type: 'audio/webm' });
-    
+
     // Create FormData for multipart upload
     const formData = new FormData();
     formData.append('file', audioBlob, 'audio.webm');
     formData.append('model', 'whisper-1');
-    
+
     // Send audio to OpenAI Whisper API
     const response = await fetch(
       'https://api.openai.com/v1/audio/transcriptions',
@@ -56,7 +56,7 @@ serve(async (req) => {
 
     const result = await response.json();
     const transcription = result.text || '';
-    
+
     console.log('Transcription successful');
 
     return new Response(

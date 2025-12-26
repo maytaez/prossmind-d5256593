@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Copy, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { invokeDashboardApi } from "@/utils/dashboard-api-client";
 
 interface RequestDetailModalProps {
   requestId: string;
@@ -24,20 +24,9 @@ export function RequestDetailModal({ requestId, onClose }: RequestDetailModalPro
   const { data: request, isLoading } = useQuery({
     queryKey: ["dashboard-request-detail", requestId],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/requests/${requestId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch request details");
-      return response.json();
+      const result = await invokeDashboardApi(`/requests/${requestId}`);
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
     },
   });
 

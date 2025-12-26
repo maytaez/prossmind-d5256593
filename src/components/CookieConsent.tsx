@@ -156,9 +156,8 @@ async function trackVisitor(consent: boolean) {
     };
 
     // Call edge function to log visitor data
-    const { data, error } = await supabase.functions.invoke("track-visitor", {
-      body: visitorData,
-    });
+    const { invokeFunction } = await import('@/utils/api-client');
+    const { data, error } = await invokeFunction("track-visitor", visitorData);
 
     if (error) {
       console.error("Error tracking visitor:", error);

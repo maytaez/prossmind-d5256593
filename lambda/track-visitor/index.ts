@@ -1,6 +1,5 @@
 import { serve } from '../shared/aws-shim';
-import { serve } from 'https://deno.land/std@0.168.0/http/server';
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.0";
+// Supabase interactions removed as per requirement: Lambdas should not call Supabase directly.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,17 +59,17 @@ function getIpAddress(req: Request): string | null {
   if (forwarded) {
     return forwarded.split(",")[0].trim();
   }
-  
+
   const realIp = req.headers.get("x-real-ip");
   if (realIp) return realIp;
-  
+
   return null;
 }
 
 // SECURITY: Anonymize IP address (remove last octet for IPv4, last 80 bits for IPv6)
 function anonymizeIp(ip: string | null): string | null {
   if (!ip) return null;
-  
+
   // IPv4: Replace last octet with 0
   if (ip.includes('.') && !ip.includes(':')) {
     const parts = ip.split('.');
@@ -78,7 +77,7 @@ function anonymizeIp(ip: string | null): string | null {
       return `${parts[0]}.${parts[1]}.${parts[2]}.0`;
     }
   }
-  
+
   // IPv6: Replace last 5 groups with zeros (keeps first 3 groups = /48)
   if (ip.includes(':')) {
     const parts = ip.split(':');
@@ -86,27 +85,27 @@ function anonymizeIp(ip: string | null): string | null {
       return `${parts.slice(0, 3).join(':')}::`;
     }
   }
-  
+
   return null; // Return null for malformed IPs
 }
 
 // SECURITY: Rate limiting check
 function checkRateLimit(ip: string | null): { allowed: boolean; remaining: number } {
   if (!ip) return { allowed: true, remaining: RATE_LIMIT }; // Allow if no IP detected
-  
+
   const now = Date.now();
   const record = rateLimitStore.get(ip);
-  
+
   if (!record || now - record.start > RATE_WINDOW) {
     // New window
     rateLimitStore.set(ip, { count: 1, start: now });
     return { allowed: true, remaining: RATE_LIMIT - 1 };
   }
-  
+
   if (record.count >= RATE_LIMIT) {
     return { allowed: false, remaining: 0 };
   }
-  
+
   record.count++;
   return { allowed: true, remaining: RATE_LIMIT - record.count };
 }
@@ -118,12 +117,12 @@ function validateVisitorData(data: unknown): { valid: boolean; error?: string; d
   }
 
   const d = data as Record<string, unknown>;
-  
+
   // session_id is required and must be a non-empty string
   if (!d.session_id || typeof d.session_id !== 'string' || d.session_id.length < 1) {
     return { valid: false, error: 'Invalid or missing session_id' };
   }
-  
+
   // session_id should be a reasonable length (UUID-like)
   if (d.session_id.length > 100) {
     return { valid: false, error: 'session_id too long' };
@@ -133,7 +132,7 @@ function validateVisitorData(data: unknown): { valid: boolean; error?: string; d
   if (!d.landing_page || typeof d.landing_page !== 'string') {
     return { valid: false, error: 'Invalid or missing landing_page' };
   }
-  
+
   // Limit string lengths to prevent abuse
   const maxLengths: Record<string, number> = {
     session_id: 100,
@@ -179,15 +178,15 @@ serve(async (req) => {
     // SECURITY: Get and check rate limit
     const rawIp = getIpAddress(req);
     const rateLimitResult = checkRateLimit(rawIp);
-    
+
     if (!rateLimitResult.allowed) {
       console.warn(`Rate limit exceeded for IP: ${anonymizeIp(rawIp)}`);
       return new Response(
         JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
         {
           status: 429,
-          headers: { 
-            ...corsHeaders, 
+          headers: {
+            ...corsHeaders,
             "Content-Type": "application/json",
             "Retry-After": "60"
           },
@@ -218,9 +217,9 @@ serve(async (req) => {
     const visitorData = validation.data;
 
     // Get Supabase client
+    // Supabase client removed
     const supabaseUrl = process.env["SUPABASE_URL"] ?? "";
     const supabaseServiceKey = process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? "";
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // SECURITY: Anonymize IP address before storing
     const anonymizedIp = anonymizeIp(rawIp);
@@ -247,28 +246,9 @@ serve(async (req) => {
       consent_timestamp: visitorData.consent_timestamp ? new Date(visitorData.consent_timestamp).toISOString() : null,
     };
 
-    // Insert or update visitor tracking data
-    // Use upsert to handle cases where the same session visits multiple times
-    const { data, error } = await supabase
-      .from("visitor_tracking")
-      .upsert(
-        trackingData,
-        {
-          onConflict: "session_id",
-        }
-      )
-      .select();
-
-    if (error) {
-      console.error("Error inserting visitor tracking:", error);
-      return new Response(
-        JSON.stringify({ error: error.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+    // DB Insertion skipped as per requirement
+    console.log('[Track Visitor] Tracking data prepared (storage skipped):', JSON.stringify(trackingData));
+    const data = { id: 'local_tracking_' + Date.now() };
 
     return new Response(
       JSON.stringify({ success: true, data }),

@@ -2,7 +2,7 @@
  * Cache utility functions for BPMN/P&ID generation
  */
 
-import { createClient } from "@supabase/supabase-js";
+// Supabase interactions removed as per requirement: Lambdas should not call Supabase directly.
 
 /**
  * Generate SHA-256 hash of a string
@@ -19,286 +19,66 @@ export async function generateHash(text: string): Promise<string> {
  * Check exact hash cache for prompt
  */
 export async function checkExactHashCache(
-  promptHash: string,
-  diagramType: string
+  _promptHash: string,
+  _diagramType: string
 ): Promise<{ bpmnXml: string; cacheId: string } | null> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const { data, error } = await supabase
-    .from('bpmn_prompt_cache')
-    .select('id, bpmn_xml')
-    .eq('prompt_hash', promptHash)
-    .eq('diagram_type', diagramType)
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-
-  // Update hit count and last accessed time
-  await supabase.rpc('update_cache_access', { cache_id: data.id });
-
-  return { bpmnXml: data.bpmn_xml, cacheId: data.id };
+  return null;
 }
 
 /**
  * Store result in exact hash cache
  */
 export async function storeExactHashCache(
-  promptHash: string,
-  promptText: string,
-  diagramType: string,
-  bpmnXml: string,
-  embedding?: number[]
+  _promptHash: string,
+  _promptText: string,
+  _diagramType: string,
+  _bpmnXml: string,
+  _embedding?: number[]
 ): Promise<void> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  // Convert embedding array to PostgreSQL vector format
-  const embeddingVector = embedding ? `[${embedding.join(',')}]` : null;
-
-  const { error } = await supabase
-    .from('bpmn_prompt_cache')
-    .upsert({
-      prompt_hash: promptHash,
-      prompt_text: promptText,
-      diagram_type: diagramType,
-      bpmn_xml: bpmnXml,
-      prompt_embedding: embeddingVector,
-      last_accessed_at: new Date().toISOString(),
-    }, {
-      onConflict: 'prompt_hash,diagram_type',
-    });
-
-  if (error) {
-    console.error('Failed to store in cache:', error);
-  }
+  // No-op: Lambdas should not call Supabase
 }
 
 /**
  * Check semantic similarity cache
  */
 export async function checkSemanticCache(
-  embedding: number[],
-  diagramType: string,
-  threshold: number = 0.85
+  _embedding: number[],
+  _diagramType: string,
+  _threshold: number = 0.85
 ): Promise<{ bpmnXml: string; similarity: number; cacheId: string } | null> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    return null;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  // Convert embedding array to PostgreSQL vector format
-  const embeddingVector = `[${embedding.join(',')}]`;
-
-  const { data, error } = await supabase.rpc('match_similar_prompts', {
-    query_embedding: embeddingVector,
-    match_threshold: threshold,
-    match_count: 1,
-    diagram_type_filter: diagramType,
-  });
-
-  if (error || !data || data.length === 0) {
-    return null;
-  }
-
-  const bestMatch = data[0];
-  
-  // Update hit count
-  await supabase.rpc('update_cache_access', { cache_id: bestMatch.id });
-
-  return {
-    bpmnXml: bestMatch.bpmn_xml,
-    similarity: bestMatch.similarity,
-    cacheId: bestMatch.id,
-  };
+  return null;
 }
 
 /**
  * Check vision analysis cache for image
  */
 export async function checkVisionCache(
-  imageHash: string,
-  diagramType: string
+  _imageHash: string,
+  _diagramType: string
 ): Promise<{ processDescription: string; bpmnXml?: string; cacheId: string } | null> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.log('Vision cache check skipped: missing Supabase config');
-    return null;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  try {
-    const { data, error } = await supabase
-      .from('vision_analysis_cache')
-      .select('id, process_description, bpmn_xml, hit_count')
-      .eq('image_hash', imageHash)
-      .eq('diagram_type', diagramType)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Vision cache lookup error:', error);
-      return null;
-    }
-
-    if (!data) {
-      console.log('Vision cache: No match found for image hash');
-      return null;
-    }
-
-    console.log('Vision cache: Found match! Cache ID:', data.id, 'Hit count:', data.hit_count);
-
-    // Update hit count and last accessed time
-    const { error: updateError } = await supabase.rpc('update_vision_cache_access', { cache_id: data.id });
-    if (updateError) {
-      console.error('Failed to update vision cache hit count:', updateError);
-    }
-
-    return {
-      processDescription: data.process_description,
-      bpmnXml: data.bpmn_xml || undefined,
-      cacheId: data.id,
-    };
-  } catch (err) {
-    console.error('Vision cache check exception:', err);
-    return null;
-  }
+  return null;
 }
 
 /**
  * Check semantic similarity cache for images
  */
 export async function checkSemanticImageCache(
-  embedding: number[],
-  diagramType: string,
-  threshold: number = 0.80
+  _embedding: number[],
+  _diagramType: string,
+  _threshold: number = 0.80
 ): Promise<{ processDescription: string; bpmnXml?: string; similarity: number; cacheId: string } | null> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.log('Semantic image cache check skipped: missing Supabase config');
-    return null;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  try {
-    // Convert embedding array to PostgreSQL vector format
-    const embeddingVector = `[${embedding.join(',')}]`;
-
-    const { data, error } = await supabase.rpc('match_similar_images', {
-      query_embedding: embeddingVector,
-      match_threshold: threshold,
-      match_count: 1,
-      diagram_type_filter: diagramType,
-    });
-
-    if (error) {
-      console.error('Semantic image cache lookup error:', error);
-      return null;
-    }
-
-    if (!data || data.length === 0) {
-      console.log('Semantic image cache: No similar images found');
-      return null;
-    }
-
-    const bestMatch = data[0];
-    console.log('Semantic image cache: Found similar image! Similarity:', bestMatch.similarity, 'Cache ID:', bestMatch.id);
-    
-    // Update hit count
-    const { error: updateError } = await supabase.rpc('update_vision_cache_access', { cache_id: bestMatch.id });
-    if (updateError) {
-      console.error('Failed to update vision cache hit count:', updateError);
-    }
-
-    return {
-      processDescription: bestMatch.process_description,
-      bpmnXml: bestMatch.bpmn_xml || undefined,
-      similarity: bestMatch.similarity,
-      cacheId: bestMatch.id,
-    };
-  } catch (err) {
-    console.error('Semantic image cache check exception:', err);
-    return null;
-  }
+  return null;
 }
 
 /**
  * Store vision analysis result in cache
  */
 export async function storeVisionCache(
-  imageHash: string,
-  diagramType: string,
-  processDescription: string,
-  bpmnXml?: string,
-  embedding?: number[]
+  _imageHash: string,
+  _diagramType: string,
+  _processDescription: string,
+  _bpmnXml?: string,
+  _embedding?: number[]
 ): Promise<void> {
-  const supabaseUrl = process.env['SUPABASE_URL'];
-  const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.log('Vision cache storage skipped: missing Supabase config');
-    return;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  try {
-    console.log('Storing vision cache entry:', {
-      hashPrefix: imageHash.substring(0, 16) + '...',
-      diagramType,
-      descriptionLength: processDescription.length,
-      hasBpmnXml: !!bpmnXml,
-      bpmnXmlLength: bpmnXml?.length || 0,
-      hasEmbedding: !!embedding
-    });
-
-    // Convert embedding array to PostgreSQL vector format
-    const embeddingVector = embedding ? `[${embedding.join(',')}]` : null;
-
-    const { error } = await supabase
-      .from('vision_analysis_cache')
-      .upsert({
-        image_hash: imageHash,
-        diagram_type: diagramType,
-        process_description: processDescription,
-        bpmn_xml: bpmnXml || null,
-        image_embedding: embeddingVector,
-        last_accessed_at: new Date().toISOString(),
-      }, {
-        onConflict: 'image_hash,diagram_type',
-      });
-
-    if (error) {
-      console.error('Failed to store vision cache:', error);
-      throw error;
-    }
-
-    console.log('Vision cache stored successfully');
-  } catch (err) {
-    console.error('Vision cache storage exception:', err);
-  }
+  // No-op
 }
-

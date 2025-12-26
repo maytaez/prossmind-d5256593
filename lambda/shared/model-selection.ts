@@ -86,25 +86,24 @@ export function selectModel(criteria: ModelSelectionCriteria): ModelSelectionRes
     return {
       model: "google/gemini-2.5-pro",
       maxTokens: 20480, // Increased from 16384 to handle complex diagrams
-      temperature: 0.3, // Lower temperature for Pro model (more deterministic)
+      temperature: 0.3, // Lower temperature for more deterministic output
       complexityScore,
-      reasoning: `Using Pro model: ${
-        diagramType === "pid"
-          ? "P&ID requires Pro"
-          : promptLength > 3000
-            ? `Very long prompt (${promptLength} chars)`
-            : promptLength > 2000 && complexityScore >= 5
-              ? `Long prompt (${promptLength} chars) with complexity score ${complexityScore}`
-              : `Complexity score ${complexityScore} >= 7`
-      }`,
+      reasoning: `Using Gemini 2.5 Pro: ${diagramType === "pid"
+        ? "P&ID requires advanced model"
+        : promptLength > 3000
+          ? `Very long prompt (${promptLength} chars)`
+          : promptLength > 2000 && complexityScore >= 5
+            ? `Long prompt (${promptLength} chars) with complexity score ${complexityScore}`
+            : `Complexity score ${complexityScore} >= 7`
+        }`,
     };
   } else {
     return {
       model: "google/gemini-2.5-flash",
       maxTokens: 12288,
-      temperature: 0.5, // Higher temperature for Flash (more creative)
+      temperature: 0.5, // Higher temperature for more creative output
       complexityScore,
-      reasoning: `Using Flash model: Complexity score ${complexityScore} < 7, prompt length ${promptLength}`,
+      reasoning: `Using Gemini 2.5 Flash: Complexity score ${complexityScore} < 7, prompt length ${promptLength}`,
     };
   }
 }

@@ -2,10 +2,11 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "prossmind-lambda-stack"
-s3_prefix = "prossmind-lambda-stack"
-region = "us-east-1"
-confirm_changeset = true
+stack_name = "prossmind-rest-api"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-8zcmnzb75v7x"
+s3_prefix = "prossmind-rest-api"
+region = "eu-central-2"
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "SupabaseUrl=\"https://lnxbvkcggoyfmpfthhhk.supabase.co\" SupabaseServiceRoleKey=\"\" AwsRegion=\"us-east-1\""
+parameter_overrides = "SupabaseUrl=\"https://lnxbvkcggoyfmpfthhhk.supabase.co\" SupabaseServiceRoleKey=\"\" AwsRegion=\"eu-central-2\""
 image_repositories = []

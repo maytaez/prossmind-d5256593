@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Save, Download, Undo, Redo, Trash2, Wrench, Upload, QrCode, History, Bot, Activity, Info, Palette, X, FileDown, Home, Layers, Sparkles, ShieldCheck, Loader2, Globe, MousePointerClick, Check, Search, User, Grid3x3, Ruler, Image as ImageIcon, AlertTriangle, Plus, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Users, Settings, Code, ZoomIn, ZoomOut, Maximize2, Minus, Maximize, Minimize, Hand, FileSearch, GripVertical, GripHorizontal, List, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/utils/api-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1090,21 +1091,8 @@ const generateSimplifiedPreview = (xml: string, title: string): string => {
   }
 };
 
-function invokeWithTimeout(functionName: string, options: any, timeout: number): Promise<{ data: any; error: any; }> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      resolve({ data: null, error: new Error(`Function call timed out after ${timeout / 1000} seconds`) });
-    }, timeout);
-
-    supabase.functions.invoke(functionName, options).then(result => {
-      clearTimeout(timer);
-      resolve(result);
-    }).catch(error => {
-      clearTimeout(timer);
-      resolve({ data: null, error });
-    });
-  });
-}
+// Legacy invokeWithTimeout removed - now using centralized invokeFunction from api-client.ts
+// This provides automatic Lambda routing, circuit breaker protection, and Supabase fallback
 
 // Cache for successful previews (5-minute TTL)
 const previewCache = new Map<string, { svg: string; timestamp: number }>();
@@ -2318,14 +2306,12 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
                 ? (isTransformationVariant ? 105000 : 90000)
                 : 45000;
             const apiStartTime = Date.now();
-            const { data, error } = await invokeWithTimeout("generate-bpmn", {
-              body: {
-                prompt,
-                diagramType,
-                skipCache: true, // Disable caching for modeling agent mode to ensure unique variants
-                modelingAgentMode: true // Enable variation mode for different outputs
-              },
-            }, timeout);
+            const { data, error } = await invokeFunction("generate-bpmn", {
+              prompt,
+              diagramType,
+              skipCache: true, // Disable caching for modeling agent mode to ensure unique variants
+              modelingAgentMode: true // Enable variation mode for different outputs
+            }, { timeout });
             const apiDuration = Date.now() - apiStartTime;
 
             // Log API response details

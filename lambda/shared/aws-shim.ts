@@ -1,20 +1,44 @@
+import { APIGatewayProxyEvent, APIGatewayProxyResult, APIGatewayProxyEventV2 } from 'aws-lambda';
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+// Type guard to check if event is v2 format
+function isV2Event(event: any): event is APIGatewayProxyEventV2 {
+    return 'version' in event && event.version === '2.0';
+}
 
 // Helper to convert Lambda event to Web Standard Request
-function createRequest(event: APIGatewayProxyEvent): Request {
+function createRequest(event: APIGatewayProxyEvent | APIGatewayProxyEventV2): Request {
     const headers = new Headers();
-    if (event.headers) {
-        for (const [key, value] of Object.entries(event.headers)) {
-            if (value) headers.set(key, value);
+
+    // Handle both v1 and v2 event formats
+    const eventHeaders = isV2Event(event) ? event.headers : event.headers;
+    if (eventHeaders) {
+        for (const [key, value] of Object.entries(eventHeaders)) {
+            if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
         }
     }
 
-    const method = event.httpMethod || 'GET';
-    const body = event.body ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64') : event.body) : null;
+    const method = isV2Event(event)
+        ? event.requestContext.http.method
+        : (event.httpMethod || 'GET');
 
-    // Construct URL (approximate)
-    const url = `https://${event.headers?.Host || 'localhost'}${event.path}`;
+    // Handle body - could be base64 encoded or plain text
+    let body: string | null = null;
+    if (event.body) {
+        if (event.isBase64Encoded) {
+            body = Buffer.from(event.body, 'base64').toString('utf-8');
+        } else {
+            body = event.body;
+        }
+    }
+
+    // Construct URL
+    const host = isV2Event(event)
+        ? event.requestContext.domainName
+        : (event.headers?.Host || event.headers?.host || 'localhost');
+    const path = isV2Event(event)
+        ? event.rawPath
+        : event.path;
+    const url = `https://${host}${path}`;
 
     const init: RequestInit = {
         method,
@@ -28,9 +52,36 @@ function createRequest(event: APIGatewayProxyEvent): Request {
 // The serve function compatible with the existing Deno code style, 
 // but returning an AWS Lambda handler
 export function serve(handler: (req: Request) => Promise<Response>) {
-    return async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    return async (event: any): Promise<APIGatewayProxyResult> => {
         try {
-            const req = createRequest(event);
+            // Log the COMPLETE raw event for debugging
+            console.log('[AWS Shim] COMPLETE Raw event:', JSON.stringify(event, null, 2));
+
+            // Check if this is a direct Lambda invocation (Function URL or direct invoke)
+            // vs an API Gateway proxy event
+            const isDirectInvoke = !('httpMethod' in event) && !('requestContext' in event);
+
+            let req: Request;
+
+            if (isDirectInvoke) {
+                // Direct Lambda invocation - event IS the body
+                console.log('[AWS Shim] Detected direct Lambda invocation (Function URL)');
+
+                // Create a synthetic Request object
+                const bodyString = typeof event === 'string' ? event : JSON.stringify(event);
+                req = new Request('https://lambda-function-url/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: bodyString,
+                });
+            } else {
+                // API Gateway proxy event
+                console.log('[AWS Shim] Detected API Gateway proxy event');
+                req = createRequest(event);
+            }
+
             const res = await handler(req);
 
             const responseHeaders: Record<string, string> = {};
@@ -44,9 +95,14 @@ export function serve(handler: (req: Request) => Promise<Response>) {
                 body: await res.text(),
             };
         } catch (err: any) {
-            console.error('Error in lambda handler:', err);
+            console.error('[AWS Shim] Error in lambda handler:', err);
+            console.error('[AWS Shim] Error stack:', err.stack);
             return {
                 statusCode: 500,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                },
                 body: JSON.stringify({ error: err.message || 'Internal Server Error' }),
             };
         }

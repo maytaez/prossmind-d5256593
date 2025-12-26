@@ -1,6 +1,6 @@
 import { serve } from '../shared/aws-shim';
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server';
+
 import { generateHash, checkExactHashCache, storeExactHashCache, checkSemanticCache } from '../shared/cache';
 import { generateEmbedding, isSemanticCacheEnabled, getSemanticSimilarityThreshold } from '../shared/embeddings';
 import { logPerformanceMetric } from '../shared/metrics';

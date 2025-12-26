@@ -11,6 +11,7 @@ Globals:
       Variables:
         SUPABASE_URL: !Ref SupabaseUrl
         SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+        GOOGLE_API_KEY_SECRET_NAME: !Ref GoogleApiKeySecretName
         NODE_ENV: production
     Architectures:
       - arm64
@@ -34,6 +35,10 @@ Parameters:
       - eu-central-2  # Zurich, Switzerland
       - eu-central-1  # Frankfurt, Germany (alternative)
       - eu-west-1     # Ireland (alternative)
+  GoogleApiKeySecretName:
+    Type: String
+    Description: Name of the AWS Secrets Manager secret containing the Google API Key
+    Default: "prossmind/google-api-key"
 
 Resources:
   # BPMN Generation Functions
@@ -42,8 +47,18 @@ Resources:
     Properties:
       FunctionName: prossmind-generate-bpmn
       CodeUri: lambda/generate-bpmn/
-      Handler: dist/index.handler
+      Handler: dist/generate-bpmn/index.handler
       Description: Generate BPMN diagrams from text prompts
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:prossmind-process-bpmn-job'
       Events:
         ApiEvent:
           Type: Api
@@ -57,7 +72,7 @@ Resources:
     Properties:
       FunctionName: prossmind-generate-bpmn-combined
       CodeUri: lambda/generate-bpmn-combined/
-      Handler: dist/index.handler
+      Handler: dist/generate-bpmn-combined/index.handler
       Description: Generate combined BPMN diagrams
       Events:
         ApiEvent:
@@ -66,13 +81,19 @@ Resources:
             Path: /generate-bpmn-combined
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   RefineBpmnFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: prossmind-refine-bpmn
       CodeUri: lambda/refine-bpmn/
-      Handler: dist/index.handler
+      Handler: dist/refine-bpmn/index.handler
       Description: Refine existing BPMN diagrams
       Events:
         ApiEvent:
@@ -81,16 +102,28 @@ Resources:
             Path: /refine-bpmn
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   ProcessBpmnJobFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: prossmind-process-bpmn-job
       CodeUri: lambda/process-bpmn-job/
-      Handler: dist/index.handler
+      Handler: dist/process-bpmn-job/index.handler
       Description: Process BPMN generation jobs asynchronously
       Timeout: 900
       MemorySize: 2048
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   # Document Analysis Functions
   AnalyzeDocumentToBpmnFunction:
@@ -98,7 +131,7 @@ Resources:
     Properties:
       FunctionName: prossmind-analyze-document-to-bpmn
       CodeUri: lambda/analyze-document-to-bpmn/
-      Handler: dist/index.handler
+      Handler: dist/analyze-document-to-bpmn/index.handler
       Description: Analyze documents and generate BPMN
       Timeout: 600
       MemorySize: 2048
@@ -109,13 +142,19 @@ Resources:
             Path: /analyze-document-to-bpmn
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   VisionToBpmnFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: prossmind-vision-to-bpmn
       CodeUri: lambda/vision-to-bpmn/
-      Handler: dist/index.handler
+      Handler: dist/vision-to-bpmn/index.handler
       Description: Convert images to BPMN diagrams
       Timeout: 600
       MemorySize: 2048
@@ -126,13 +165,19 @@ Resources:
             Path: /vision-to-bpmn
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   ScreenRecordingToBpmnFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: prossmind-screen-recording-to-bpmn
       CodeUri: lambda/screen-recording-to-bpmn/
-      Handler: dist/index.handler
+      Handler: dist/screen-recording-to-bpmn/index.handler
       Description: Convert screen recordings to BPMN
       Timeout: 900
       MemorySize: 3008
@@ -149,7 +194,7 @@ Resources:
     Properties:
       FunctionName: prossmind-speech-to-text
       CodeUri: lambda/speech-to-text/
-      Handler: dist/index.handler
+      Handler: dist/speech-to-text/index.handler
       Description: Convert speech to text
       Timeout: 600
       MemorySize: 2048
@@ -160,6 +205,12 @@ Resources:
             Path: /speech-to-text
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   # DMN Functions
   GenerateDmnFunction:
@@ -167,7 +218,7 @@ Resources:
     Properties:
       FunctionName: prossmind-generate-dmn
       CodeUri: lambda/generate-dmn/
-      Handler: dist/index.handler
+      Handler: dist/generate-dmn/index.handler
       Description: Generate DMN decision tables
       Events:
         ApiEvent:
@@ -176,13 +227,19 @@ Resources:
             Path: /generate-dmn
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   RefineDmnFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: prossmind-refine-dmn
       CodeUri: lambda/refine-dmn/
-      Handler: dist/index.handler
+      Handler: dist/refine-dmn/index.handler
       Description: Refine DMN decision tables
       Events:
         ApiEvent:
@@ -191,6 +248,12 @@ Resources:
             Path: /refine-dmn
             Method: post
             RestApiId: !Ref ProssMindApi
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GoogleApiKeySecretName}*'
 
   # Dashboard & Analytics Functions
   BpmnDashboardApiFunction:
@@ -198,7 +261,7 @@ Resources:
     Properties:
       FunctionName: prossmind-bpmn-dashboard-api
       CodeUri: lambda/bpmn-dashboard-api/
-      Handler: dist/index.handler
+      Handler: dist/bpmn-dashboard-api/index.handler
       Description: BPMN dashboard API
       Events:
         ApiEvent:
@@ -213,7 +276,7 @@ Resources:
     Properties:
       FunctionName: prossmind-bottleneck-metrics
       CodeUri: lambda/bottleneck-metrics/
-      Handler: dist/index.handler
+      Handler: dist/bottleneck-metrics/index.handler
       Description: Calculate bottleneck metrics
       Events:
         ApiEvent:
@@ -229,7 +292,7 @@ Resources:
     Properties:
       FunctionName: prossmind-chatbot
       CodeUri: lambda/chatbot/
-      Handler: dist/index.handler
+      Handler: dist/chatbot/index.handler
       Description: AI chatbot for ProssMind
       Events:
         ApiEvent:
@@ -245,7 +308,7 @@ Resources:
     Properties:
       FunctionName: prossmind-track-visitor
       CodeUri: lambda/track-visitor/
-      Handler: dist/index.handler
+      Handler: dist/track-visitor/index.handler
       Description: Track visitor analytics
       Events:
         ApiEvent:
@@ -262,10 +325,25 @@ Resources:
       StageName: Prod
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-client-info,apikey'"
         AllowOrigin: "'*'"
+        AllowCredentials: false
       Auth:
         ApiKeyRequired: false
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-client-info,apikey'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-client-info,apikey'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+
 
 Outputs:
   ApiUrl:

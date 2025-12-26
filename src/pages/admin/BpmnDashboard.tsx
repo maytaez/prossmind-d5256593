@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, TrendingUp, DollarSign, AlertCircle, Database, Zap } from "lucide-react";
@@ -7,26 +6,20 @@ import { DashboardMetrics } from "@/components/dashboard/DashboardMetrics";
 import { RequestsTable } from "@/components/dashboard/RequestsTable";
 import { AnalyticsCharts } from "@/components/dashboard/AnalyticsCharts";
 import Navigation from "@/components/Navigation";
+import { invokeDashboardApi } from "@/utils/dashboard-api-client";
 
 export default function BpmnDashboard() {
   // Fetch overview metrics
   const { data: metrics, isLoading: metricsLoading } = useQuery({
     queryKey: ["dashboard-metrics"],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/metrics/overview`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch metrics");
-      return response.json();
+      const result = await invokeDashboardApi('/metrics/overview');
+      
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      
+      return result.data;
     },
     refetchInterval: 30000, // Refresh every 30 seconds
   });

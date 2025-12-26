@@ -378,10 +378,9 @@ const ScreenRecorder = () => {
       console.log('Sending frames to edge function:', frames.length);
 
       // Call the edge function with extracted frames
-      const { data, error } = await supabase.functions.invoke('screen-recording-to-bpmn', {
-        body: {
-          frames: frames  // Send actual extracted frames
-        }
+      const { invokeFunction } = await import('@/utils/api-client');
+      const { data, error } = await invokeFunction('screen-recording-to-bpmn', {
+        frames: frames  // Send actual extracted frames
       });
 
       if (error) {

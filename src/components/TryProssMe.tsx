@@ -555,12 +555,10 @@ const TryProssMe = ({ user }: { user: User | null }) => {
 
             try {
               // Call speech-to-text edge function with language parameter
-              const { data, error } = await supabase.functions.invoke('speech-to-text', {
-                body: {
-                  audio: base64Audio,
-                  language: language
-                },
-                headers: user ? undefined : { Authorization: '' }
+              const { invokeFunction } = await import('@/utils/api-client');
+              const { data, error } = await invokeFunction('speech-to-text', {
+                audio: base64Audio,
+                language: language
               });
 
               if (error) throw error;
@@ -647,12 +645,10 @@ const TryProssMe = ({ user }: { user: User | null }) => {
       });
 
       // Call vision-to-bpmn function (same as Vision AI)
-      const { data, error } = await supabase.functions.invoke('vision-to-bpmn', {
-        body: {
-          imageBase64: uploadedFile.base64,
-          diagramType
-        },
-        headers: user ? undefined : { Authorization: '' }
+      const { invokeFunction } = await import('@/utils/api-client');
+      const { data, error } = await invokeFunction('vision-to-bpmn', {
+        imageBase64: uploadedFile.base64,
+        diagramType
       });
 
       toast.dismiss(loadingToast);
@@ -743,14 +739,12 @@ const TryProssMe = ({ user }: { user: User | null }) => {
     setRefinementStep("refining");
 
     try {
-      const { data, error } = await supabase.functions.invoke('refine-bpmn', {
-        body: {
-          currentBpmnXml: bpmnXml,
-          instructions: refinementPrompt,
-          userId: currentUser.id,
-          diagramType
-        },
-        headers: user ? undefined : { Authorization: '' }
+      const { invokeFunction } = await import('@/utils/api-client');
+      const { data, error } = await invokeFunction('refine-bpmn', {
+        currentBpmnXml: bpmnXml,
+        instructions: refinementPrompt,
+        userId: currentUser.id,
+        diagramType
       });
 
       // Check for errors in both error field and data.error

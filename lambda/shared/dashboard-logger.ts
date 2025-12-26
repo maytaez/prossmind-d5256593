@@ -1,4 +1,4 @@
-import { SupabaseClient } from "@supabase/supabase-js";
+// Supabase logging removed as per requirement: Lambdas should not call Supabase directly.
 
 /**
  * Token counting and cost estimation for Gemini 2.0 Flash
@@ -44,7 +44,7 @@ export function determineComplexityLevel(prompt: string, isMultiDiagram: boolean
 }
 
 export interface LogGenerationRequestParams {
-  supabase: SupabaseClient;
+  supabase?: any; // Kept for compatibility but not used
   userId: string;
   prompt: string;
   diagramType: "bpmn" | "pid";
@@ -58,7 +58,7 @@ export interface LogGenerationRequestParams {
 }
 
 export interface LogGenerationSuccessParams {
-  supabase: SupabaseClient;
+  supabase?: any; // Kept for compatibility but not used
   logId: string;
   resultXml: string;
   durationMs: number;
@@ -68,7 +68,7 @@ export interface LogGenerationSuccessParams {
 }
 
 export interface LogGenerationErrorParams {
-  supabase: SupabaseClient;
+  supabase?: any; // Kept for compatibility but not used
   logId: string;
   errorMessage: string;
   errorStack?: string;
@@ -97,33 +97,11 @@ export async function logGenerationRequest(params: LogGenerationRequestParams): 
   try {
     const complexityLevel = determineComplexityLevel(prompt, isMultiDiagram);
 
-    const { data, error } = await supabase
-      .from("bpmn_generation_logs")
-      .insert({
-        user_id: userId,
-        original_prompt: prompt,
-        diagram_type: diagramType,
-        detected_language: detectedLanguage,
-        complexity_level: complexityLevel,
-        source_function: sourceFunction,
-        status: "pending", // Will be updated to success/error/cached later
-        is_multi_diagram: isMultiDiagram,
-        sub_prompt_count: subPromptCount,
-        parent_request_id: parentRequestId,
-        job_id: jobId,
-        client_info: clientInfo,
-        request_timestamp: new Date().toISOString(),
-      })
-      .select("id")
-      .single();
+    console.log(`[Dashboard Logger] Generation Request: user=${userId}, type=${diagramType}, complexity=${complexityLevel}, source=${sourceFunction}, job=${jobId || 'none'}`);
 
-    if (error) {
-      console.error("[Dashboard Logger] Failed to log request:", error);
-      return null;
-    }
-
-    console.log(`[Dashboard Logger] Request logged: ${data.id}`);
-    return data.id;
+    // Generate a pseudo-ID for locally identifying logs if needed
+    const pseudoLogId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    return pseudoLogId;
   } catch (error) {
     console.error("[Dashboard Logger] Unexpected error logging request:", error);
     return null;
@@ -139,37 +117,11 @@ export async function logGenerationSuccess(params: LogGenerationSuccessParams): 
   try {
     // Count tokens and estimate cost
     const outputTokens = countTokens(resultXml);
-    // Input tokens are harder to estimate without the full prompt context,
-    // but we can approximate based on average prompt size
-    const inputTokens = Math.ceil(outputTokens * 0.3); // Rough estimate: prompt is ~30% of output
+    const inputTokens = Math.ceil(outputTokens * 0.3);
     const estimatedCost = estimateCost(inputTokens, outputTokens);
-
     const status = cacheHit ? "cached" : "success";
 
-    const { error } = await supabase
-      .from("bpmn_generation_logs")
-      .update({
-        status,
-        result_xml: resultXml,
-        generation_duration_ms: durationMs,
-        cache_hit: cacheHit,
-        cache_similarity_score: cacheSimilarity,
-        cached_from_id: cachedFromId,
-        input_tokens: inputTokens,
-        output_tokens: outputTokens,
-        estimated_cost_usd: estimatedCost,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", logId);
-
-    if (error) {
-      console.error("[Dashboard Logger] Failed to log success:", error);
-      return;
-    }
-
-    console.log(
-      `[Dashboard Logger] Success logged: ${logId}, tokens: ${outputTokens}, cost: $${estimatedCost.toFixed(6)}, cache: ${cacheHit}`,
-    );
+    console.log(`[Dashboard Logger] Success: id=${logId}, status=${status}, tokens=${outputTokens}, cost=$${estimatedCost.toFixed(6)}, cache=${cacheHit}`);
   } catch (error) {
     console.error("[Dashboard Logger] Unexpected error logging success:", error);
   }
@@ -182,23 +134,7 @@ export async function logGenerationError(params: LogGenerationErrorParams): Prom
   const { supabase, logId, errorMessage, errorStack, durationMs } = params;
 
   try {
-    const { error } = await supabase
-      .from("bpmn_generation_logs")
-      .update({
-        status: "error",
-        error_message: errorMessage,
-        error_stack: errorStack,
-        generation_duration_ms: durationMs,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", logId);
-
-    if (error) {
-      console.error("[Dashboard Logger] Failed to log error:", error);
-      return;
-    }
-
-    console.log(`[Dashboard Logger] Error logged: ${logId}, message: ${errorMessage}`);
+    console.log(`[Dashboard Logger] Error: id=${logId}, message=${errorMessage}, duration=${durationMs}ms`);
   } catch (error) {
     console.error("[Dashboard Logger] Unexpected error logging error:", error);
   }

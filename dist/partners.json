@@ -18,7 +18,7 @@
             "name": "IBT Uri",
             "role": "Business & Technology Partner",
             "type": "partner",
-            "logoUrl": "https://cdn.prossmind.com/logos/logo-ibt-url-150.png",
+            "logoUrl": "https://cdn.prossmind.com/logos/logo-ibt-uri-150.png",
             "websiteUrl": "https://ibt-uri.ch",
             "priority": 2,
             "active": true
@@ -45,10 +45,10 @@
         },
         {
             "id": "venture",
-            "name": ">>venture>>",
+            "name": "Venture",
             "role": "Startup Competition & Network",
             "type": "advisor",
-            "logoUrl": "https://cdn.prossmind.com/logos/venture_logo_RGB_Homebutton_editd.avif",
+            "logoUrl": "https://cdn.prossmind.com/logos/venture_logo_RGB_Homebutton_edited.avif",
             "websiteUrl": "https://www.venture.ch",
             "priority": 5,
             "active": true

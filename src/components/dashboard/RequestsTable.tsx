@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Search, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { RequestDetailModal } from "./RequestDetailModal";
+import { invokeDashboardApi, exportDashboardData } from "@/utils/dashboard-api-client";
 
 interface RequestLog {
   id: string;
@@ -34,6 +34,7 @@ interface RequestLog {
   estimated_cost_usd: number | null;
   request_timestamp: string;
   source_function: string;
+  result_xml?: string | null;
 }
 
 export function RequestsTable() {
@@ -46,9 +47,6 @@ export function RequestsTable() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-requests", page, search, statusFilter, diagramTypeFilter],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
       const params = new URLSearchParams({
         page: page.toString(),
         limit: "50",
@@ -58,43 +56,23 @@ export function RequestsTable() {
       if (statusFilter !== "all") params.append("status", statusFilter);
       if (diagramTypeFilter !== "all") params.append("diagramType", diagramTypeFilter);
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/requests?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch requests");
-      return response.json();
+      const result = await invokeDashboardApi(`/requests?${params}`);
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
     },
   });
 
   const handleExport = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    const blob = await exportDashboardData({
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      diagramType: diagramTypeFilter !== "all" ? diagramTypeFilter : undefined,
+    });
 
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/export`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          format: "csv",
-          filters: {
-            status: statusFilter !== "all" ? statusFilter : undefined,
-            diagramType: diagramTypeFilter !== "all" ? diagramTypeFilter : undefined,
-          },
-        }),
-      }
-    );
+    if (!blob) {
+      console.error('Export failed');
+      return;
+    }
 
-    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

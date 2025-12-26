@@ -5,6 +5,7 @@ import { MessageCircle, X, Send, Bot, User } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { invokeStreamingFunctionWithFallback } from "@/utils/streaming-client";
 
 interface Message {
   role: "user" | "assistant";
@@ -34,86 +35,47 @@ const ChatBot = () => {
     setInput("");
     setIsLoading(true);
 
-    try {
-      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chatbot`;
-      
-      const resp = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ messages: newMessages }),
+    let assistantContent = "";
+
+    const updateAssistantMessage = (content: string) => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant") {
+          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content } : m));
+        }
+        return [...prev, { role: "assistant", content }];
       });
+    };
 
-      if (!resp.ok) {
-        if (resp.status === 429) {
-          toast.error("Rate limit exceeded. Please try again in a moment.");
-        } else if (resp.status === 402) {
-          toast.error("AI credits depleted. Please contact support.");
-        } else {
-          toast.error("Failed to get response from AI.");
-        }
-        setIsLoading(false);
-        return;
-      }
-
-      if (!resp.body) {
-        throw new Error("No response body");
-      }
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
-      let assistantContent = "";
-      let streamDone = false;
-
-      const updateAssistantMessage = (content: string) => {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant") {
-            return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content } : m));
-          }
-          return [...prev, { role: "assistant", content }];
-        });
-      };
-
-      while (!streamDone) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") {
-            streamDone = true;
-            break;
-          }
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              updateAssistantMessage(assistantContent);
+    try {
+      await invokeStreamingFunctionWithFallback(
+        'chatbot',
+        { messages: newMessages },
+        {
+          onChunk: (chunk: string) => {
+            assistantContent += chunk;
+            updateAssistantMessage(assistantContent);
+          },
+          onComplete: () => {
+            console.log('[ChatBot] Stream completed');
+            setIsLoading(false);
+          },
+          onError: (error: Error) => {
+            console.error('[ChatBot] Stream error:', error);
+            
+            // Handle specific error cases
+            if (error.message.includes('429')) {
+              toast.error("Rate limit exceeded. Please try again in a moment.");
+            } else if (error.message.includes('402')) {
+              toast.error("AI credits depleted. Please contact support.");
+            } else {
+              toast.error("Failed to get response from AI.");
             }
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
+            
+            setIsLoading(false);
+          },
         }
-      }
-
-      setIsLoading(false);
+      );
     } catch (error) {
       console.error("Chat error:", error);
       toast.error("An error occurred. Please try again.");

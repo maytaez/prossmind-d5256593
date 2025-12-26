@@ -1,6 +1,6 @@
 import { serve } from '../shared/aws-shim';
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.47.0';
+import { createClient } from "@supabase/supabase-js";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,22 +11,22 @@ const corsHeaders = {
 // Helper function to extract frames from video
 async function extractFramesFromVideo(videoBlob: string): Promise<Array<{ timestamp: number; frameData: string; sceneChange: boolean; extracted: boolean }>> {
   console.log('Extracting frames from video blob...');
-  
+
   try {
     // Decode base64 video
     const base64Data = videoBlob.includes(',') ? videoBlob.split(',')[1] : videoBlob;
     const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-    
+
     // For WebM format (MediaRecorder default), we can't extract frames in Deno edge function
     // So we'll use a workaround: analyze the video duration and create representative frames
     // In production, you'd use ffmpeg.wasm or similar for actual frame extraction
-    
+
     // Simulate frame extraction by creating frames at intervals
     // This is a simplified approach - real implementation would need video processing library
     const frames: Array<{ timestamp: number; frameData: string; sceneChange: boolean; extracted: boolean }> = [];
     const simulatedDuration = 30000; // Assume 30 seconds if unknown
     const frameInterval = 2000; // 2 seconds
-    
+
     // Generate frames based on video
     for (let timestamp = 0; timestamp < simulatedDuration; timestamp += frameInterval) {
       // In real implementation, would extract actual frame at this timestamp
@@ -38,7 +38,7 @@ async function extractFramesFromVideo(videoBlob: string): Promise<Array<{ timest
         extracted: true
       });
     }
-    
+
     console.log(`Extracted ${frames.length} frames from video`);
     return frames;
   } catch (error) {
@@ -57,7 +57,7 @@ async function analyzeFrameWithGemini(frameBase64: string, geminiApiKey: string)
   try {
     // Remove data URL prefix if present
     const base64Data = frameBase64.includes(',') ? frameBase64.split(',')[1] : frameBase64;
-    
+
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -67,30 +67,30 @@ async function analyzeFrameWithGemini(frameBase64: string, geminiApiKey: string)
             {
               text: 'Analyze this screen capture and extract information. Return JSON format only, no markdown: {texts: ["visible text"], elements: ["button", "form"], appName: "app name", action: "current action", url: "website URL if visible"}'
             },
-            { 
-              inline_data: { 
-                mime_type: 'image/jpeg', 
-                data: base64Data 
-              } 
+            {
+              inline_data: {
+                mime_type: 'image/jpeg',
+                data: base64Data
+              }
             }
           ]
         }],
-        generationConfig: { 
+        generationConfig: {
           temperature: 0.2,
           maxOutputTokens: 1024
         }
       })
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Gemini API error:', response.status, errorText);
       return null;
     }
-    
+
     const data = await response.json();
     const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
+
     // Try to parse JSON from response
     try {
       const analysis = JSON.parse(analysisText);
@@ -112,9 +112,9 @@ async function analyzeFrameWithGemini(frameBase64: string, geminiApiKey: string)
 // Helper function to build event timeline from frames using Gemini vision
 async function buildEventTimeline(frames: Array<{ timestamp: number; frameData: string; sceneChange: boolean; extracted: boolean }>, geminiApiKey: string | null): Promise<Array<{ timestamp: number; action: string; details?: unknown; element?: string; context?: string; userInitiated?: boolean; detectedText?: unknown[]; detectedElements?: unknown[] }>> {
   console.log('Building event timeline from frames...');
-  
+
   const events: Array<{ timestamp: number; action: string; details?: unknown; element?: string; context?: string; userInitiated?: boolean; detectedText?: unknown[]; detectedElements?: unknown[] }> = [];
-  
+
   // Start event
   events.push({
     timestamp: 0,
@@ -123,15 +123,15 @@ async function buildEventTimeline(frames: Array<{ timestamp: number; frameData: 
     context: 'Recording started',
     userInitiated: true
   });
-  
+
   // Analyze frames with Gemini if available
   const hasGeminiVision = !!geminiApiKey;
   const isSimulated = frames.length > 0 && typeof frames[0] === 'object' && 'frameData' in frames[0];
-  
+
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
     const timestamp = i * 2000; // 2 seconds per frame
-    
+
     // Check if frame has base64 data (real frame) or is simulated
     if (!isSimulated && typeof frame === 'string') {
       // Real frame base64 data
@@ -139,7 +139,7 @@ async function buildEventTimeline(frames: Array<{ timestamp: number; frameData: 
         try {
           console.log(`Analyzing real frame ${i + 1}/${frames.length} with Gemini...`);
           const analysis = await analyzeFrameWithGemini(frame, geminiApiKey!);
-          
+
           if (analysis) {
             events.push({
               timestamp: timestamp,
@@ -189,7 +189,7 @@ async function buildEventTimeline(frames: Array<{ timestamp: number; frameData: 
       });
     }
   }
-  
+
   // End event
   const lastTimestamp = (frames.length - 1) * 2000;
   events.push({
@@ -199,7 +199,7 @@ async function buildEventTimeline(frames: Array<{ timestamp: number; frameData: 
     context: 'Recording completed',
     userInitiated: true
   });
-  
+
   console.log(`Built timeline with ${events.length} events from ${frames.length} frames`);
   return events;
 }
@@ -212,7 +212,7 @@ export const handler = serve(async (req) => {
   try {
     const supabaseUrl = process.env['SUPABASE_URL'];
     const supabaseKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
-    
+
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing Supabase configuration');
     }
@@ -236,7 +236,7 @@ export const handler = serve(async (req) => {
     const { frames } = await req.json();
 
     console.log('Received frames from client:', frames?.length || 0);
-    
+
     // If no frames provided (or empty array), we'll simulate analysis
     // In production, would extract frames from video server-side
 
@@ -277,7 +277,7 @@ export const handler = serve(async (req) => {
         const OPENAI_API_KEY = process.env['OPENAI_API_KEY'];
         const ANTHROPIC_API_KEY = process.env['ANTHROPIC_API_KEY'];
         const OLLAMA_HOST = process.env['OLLAMA_HOST'];
-        
+
         // Debug logging
         console.log('Environment variables check:', {
           hasGemini: !!GEMINI_API_KEY,
@@ -289,25 +289,25 @@ export const handler = serve(async (req) => {
 
         // Process real frames if provided, otherwise use simulated frames
         const actualFrames = frames && frames.length > 0 ? frames : [];
-        
+
         // Generate simulated frames if none provided
-        const frameData = actualFrames.length > 0 
-          ? actualFrames 
-          : Array.from({ length: 8 }, (_, i) => ({ 
-              timestamp: i * 2000, 
-              frameData: `simulated_frame_${i}`,
-              sceneChange: i % 3 === 0 
-            }));
-        
+        const frameData = actualFrames.length > 0
+          ? actualFrames
+          : Array.from({ length: 8 }, (_, i) => ({
+            timestamp: i * 2000,
+            frameData: `simulated_frame_${i}`,
+            sceneChange: i % 3 === 0
+          }));
+
         console.log('Processing', frameData.length, 'frames');
         console.log('- Real frames:', actualFrames.length);
         console.log('- Simulated frames:', frameData.length - actualFrames.length);
         console.log('- Has Gemini Vision:', !!GEMINI_API_KEY);
-        
+
         // Update job with frame metadata
         await supabase
           .from('screen_recording_jobs')
-          .update({ 
+          .update({
             extracted_frames: JSON.stringify({ count: frameData.length, timestamp: Date.now() }),
             recording_metadata: {
               frame_count: frameData.length,
@@ -319,11 +319,11 @@ export const handler = serve(async (req) => {
         // Build event timeline from frames (or generate simulated if none)
         const eventTimeline = await buildEventTimeline(frameData, GEMINI_API_KEY || null);
         console.log('Event timeline:', eventTimeline.length, 'events');
-        
+
         // Generate BPMN from event timeline
         console.log('Starting BPMN generation...');
         console.log('Event timeline sample:', JSON.stringify(eventTimeline.slice(0, 3), null, 2));
-        
+
         const bpmnSystemPrompt = `You are an expert BPMN 2.0 XML generator. 
 Convert user workflow events from a screen recording into a valid BPMN 2.0 diagram.
 
@@ -446,12 +446,12 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
         } else if (OLLAMA_HOST) {
           // Use Ollama (for local development or via ngrok)
           console.log('Using Ollama API at:', OLLAMA_HOST);
-          
+
           // Validate OLLAMA_HOST is set
           if (!OLLAMA_HOST || OLLAMA_HOST.includes('undefined')) {
             throw new Error('OLLAMA_HOST environment variable is not set or invalid. Please set OLLAMA_HOST in your Supabase project settings.');
           }
-          
+
           const ollamaResponse = await fetch(`${OLLAMA_HOST}/api/generate`, {
             method: 'POST',
             headers: {
@@ -484,23 +484,23 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
         if (!bpmnXml) {
           throw new Error('Failed to generate BPMN diagram - empty response');
         }
-        
+
         console.log('Raw BPMN XML (first 500 chars):', bpmnXml.substring(0, 500));
-        
+
         // Clean up the XML response
         bpmnXml = bpmnXml.replace(/```xml\n?/g, '').replace(/```\n?/g, '').trim();
 
         // Validate XML completeness
         const hasProperClosing = bpmnXml.includes('</definitions>') || bpmnXml.includes('</bpmn:definitions>');
         const hasXmlDeclaration = bpmnXml.includes('<?xml');
-        
+
         console.log('XML validation:', {
           hasXmlDeclaration,
           hasProperClosing,
           xmlLength: bpmnXml.length,
           last100Chars: bpmnXml.substring(Math.max(0, bpmnXml.length - 100))
         });
-        
+
         if (!hasXmlDeclaration) {
           // Try to add XML declaration if missing
           if (bpmnXml.startsWith('<definitions')) {
@@ -510,7 +510,7 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
             throw new Error('Generated BPMN XML is missing XML declaration. Got: ' + bpmnXml.substring(0, 200));
           }
         }
-        
+
         if (!hasProperClosing) {
           // Try to close the document if missing
           if (!bpmnXml.endsWith('</definitions>')) {
@@ -540,11 +540,11 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
         console.error('Error processing job:', error);
         console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
         console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        
+
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        
+
         console.log('Updating job status to failed with error:', errorMessage);
-        
+
         // Update job with error
         try {
           await supabase
@@ -577,7 +577,7 @@ Generate a complete, valid BPMN 2.0 XML document using the ACTUAL event data abo
   } catch (error) {
     console.error('Error in screen-recording-to-bpmn function:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    
+
     return new Response(
       JSON.stringify({ error: errorMessage }),
       {

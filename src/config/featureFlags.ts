@@ -31,4 +31,16 @@ export const featureFlags = {
    * - Backend functions will reject P&ID requests
    */
   enablePidDiagrams: false,
+
+  /**
+   * Use AWS Lambda instead of Supabase Edge Functions
+   * Set to true to route all API calls to AWS Lambda endpoints
+   * Set to false to use Supabase Edge Functions (default behavior)
+   * 
+   * When enabled:
+   * - All function invocations will be routed to Lambda API Gateway
+   * - Lambda endpoints must be configured in environment variables
+   * - Useful for testing Lambda migration and performance comparison
+   */
+  USE_LAMBDA: true,
 } as const;

@@ -1,0 +1,8 @@
+{
+    "httpMethod": "POST",
+    "path": "/generate-bpmn",
+    "headers": {
+        "Content-Type": "application/json"
+    },
+    "body": "{\"diagramType\":\"bpmn\",\"prompt\":\"test\",\"userId\":\"test-user\"}"
+}

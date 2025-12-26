@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   LineChart,
@@ -13,65 +12,33 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { invokeDashboardApi } from "@/utils/dashboard-api-client";
 
 export function AnalyticsCharts() {
   const { data: dailyStats } = useQuery({
     queryKey: ["dashboard-daily-stats"],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/analytics/daily`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch daily stats");
-      return response.json();
+      const result = await invokeDashboardApi('/analytics/daily');
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
     },
   });
 
   const { data: cachePerformance } = useQuery({
     queryKey: ["dashboard-cache-performance"],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/analytics/cache`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch cache performance");
-      return response.json();
+      const result = await invokeDashboardApi('/analytics/cache');
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
     },
   });
 
   const { data: errorSummary } = useQuery({
     queryKey: ["dashboard-error-summary"],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bpmn-dashboard-api/analytics/errors`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error("Failed to fetch error summary");
-      return response.json();
+      const result = await invokeDashboardApi('/analytics/errors');
+      if (result.error) throw new Error(result.error.message);
+      return result.data;
     },
   });
 

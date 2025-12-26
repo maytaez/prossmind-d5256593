@@ -1,0 +1,8 @@
+{
+    "httpMethod": "POST",
+    "path": "/generate-bpmn",
+    "headers": {
+        "Content-Type": "application/json"
+    },
+    "body": "{\"prompt\":\"The process starts when an individual submits an application for a building permit. The application is reviewed by the local government to ensure that it meets all the necessary requirements. If the application is rejected, the process ends. If the application is accepted, the local government will issue a building permit. Once the building permit is issued, the individual can begin construction on the project. After construction is completed, the local government will inspect the project to ensure that it meets all the necessary safety and building codes. If the project passes inspection, the local government will issue a certificate of occupancy. The process instance is then finished.\",\"diagramType\":\"bpmn\",\"userId\":\"bf651b7b-b318-4c7f-8f9e-f6bd7ff0a6ba\"}"
+}

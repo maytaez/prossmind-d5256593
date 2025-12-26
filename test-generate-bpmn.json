@@ -1,0 +1,8 @@
+{
+    "httpMethod": "POST",
+    "path": "/generate-bpmn",
+    "headers": {
+        "Content-Type": "application/json"
+    },
+    "body": "{\"prompt\":\"Generate a customer onboarding process\",\"diagramType\":\"bpmn\",\"userId\":\"bf651b7b-b318-4c7f-8f9e-f6bd7ff0a6ba\"}"
+}
