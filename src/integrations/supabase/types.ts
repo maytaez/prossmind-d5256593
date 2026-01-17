@@ -716,7 +716,7 @@ export type Database = {
           source_type: string | null
           status: string
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           bpmn_xml?: string | null
@@ -732,7 +732,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           bpmn_xml?: string | null
@@ -748,7 +748,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
       }
