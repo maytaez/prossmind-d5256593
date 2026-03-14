@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.0";
 import { generateHash, checkVisionCache, storeVisionCache, checkSemanticImageCache } from "../_shared/cache.ts";
 import { logPerformanceMetric } from "../_shared/metrics.ts";
 import { generateEmbedding, isSemanticCacheEnabled } from "../_shared/embeddings.ts";
+import { normalizeBpmnDI } from "../_shared/bpmn-di-normalizer.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
