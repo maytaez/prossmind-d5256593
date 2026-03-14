@@ -2782,22 +2782,14 @@ Seed: ${Date.now()}-${Math.random().toString(36).substring(7)}`;
     // Fix any remaining unclosed waypoint tags without attributes
     sanitized = sanitized.replace(/<(\s*)di:waypoint\s*>/gi, '<$1di:waypoint/>');
 
-    // Remove invalid tags that don't exist in BPMN 2.0
-    sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmn:flowNodeRef\s*>/gi, '');
-    sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*>[\s\S]*?<\/\s*bpmns:flowNodeRef\s*>/gi, '');
-    sanitized = sanitized.replace(/<\/\s*bpmn:flowNodeRef\s*>/gi, '');
-    sanitized = sanitized.replace(/<\/\s*bpmns:flowNodeRef\s*>/gi, '');
-    sanitized = sanitized.replace(/<\s*bpmn:flowNodeRef[^>]*\/?\s*>/gi, '');
-    sanitized = sanitized.replace(/<\s*bpmns:flowNodeRef[^>]*\/?\s*>/gi, '');
+    // Note: bpmn:flowNodeRef IS valid BPMN 2.0 - it's used inside <bpmn:lane> to assign nodes.
+    // Do NOT remove it as it's essential for proper lane rendering.
 
     // Fix XML declaration issues
     sanitized = sanitized.replace(/<\s*\/\?xml/gi, '<?xml');
 
     // Fix unescaped ampersands
     sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
-
-    // Remove orphaned closing tags
-    sanitized = sanitized.replace(/<\/\s*[^>]*:flowNodeRef[^>]*>/gi, '');
 
     return sanitized.trim();
   }, []);

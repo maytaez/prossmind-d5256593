@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.0";
 import { generateHash, checkVisionCache, storeVisionCache, checkSemanticImageCache } from "../_shared/cache.ts";
 import { logPerformanceMetric } from "../_shared/metrics.ts";
 import { generateEmbedding, isSemanticCacheEnabled } from "../_shared/embeddings.ts";
+import { normalizeBpmnDI } from "../_shared/bpmn-di-normalizer.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -400,6 +401,14 @@ Return ONLY the XML, no other text.`;
           .replace(/^[^<]*/, "") // Remove any text before XML
           .replace(/>\s*[^<>]*$/, ">") // Remove any text after last closing tag
           .trim();
+        
+        // Normalize DI (Diagram Interchange) to fix common LLM layout issues:
+        // - Elements with too-small bounds rendering as tiny/invisible dots
+        // - Lane/participant bounds not encompassing their children (causes faded rendering)
+        // - Zero-size or missing bounds
+        console.log("Normalizing BPMN DI bounds...");
+        bpmnXml = normalizeBpmnDI(bpmnXml);
+        
         // Validate XML structure
         if (!bpmnXml.startsWith("<?xml")) {
           throw new Error("Generated content is not valid XML - missing XML declaration");
