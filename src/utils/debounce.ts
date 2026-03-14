@@ -29,7 +29,7 @@ export function debounceImmediate<T extends (...args: any[]) => any>(
   wait: number,
   immediate: boolean = false
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
 
   return function executedFunction(...args: Parameters<T>) {
     const callNow = immediate && !timeout;
