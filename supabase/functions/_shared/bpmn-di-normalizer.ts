@@ -120,9 +120,38 @@ export function normalizeBpmnDI(xml: string): string {
       }
     }
     
-    // Step 6: Fix lane bounds to encompass their children
+    // Step 6: Add missing lane BPMNShapes and fix lane bounds
     for (const [laneId, childIds] of laneChildren.entries()) {
-      const laneBounds = updatedBounds.get(laneId);
+      let laneBounds = updatedBounds.get(laneId);
+      
+      // If lane has no BPMNShape, create one based on its children
+      if (!laneBounds && childIds.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const childId of childIds) {
+          const childBounds = updatedBounds.get(childId);
+          if (!childBounds) continue;
+          minX = Math.min(minX, childBounds.x);
+          minY = Math.min(minY, childBounds.y);
+          maxX = Math.max(maxX, childBounds.x + childBounds.width);
+          maxY = Math.max(maxY, childBounds.y + childBounds.height);
+        }
+        if (minX !== Infinity) {
+          const newBounds: BoundsInfo = {
+            shapeId: laneId,
+            x: minX - LANE_PADDING,
+            y: minY - LANE_PADDING,
+            width: (maxX - minX) + (LANE_PADDING * 2),
+            height: (maxY - minY) + (LANE_PADDING * 2),
+          };
+          // Insert BPMNShape before </BPMNPlane>
+          const laneShapeXml = `      <bpmndi:BPMNShape id="${laneId}_Shape" bpmnElement="${laneId}" isHorizontal="true">\n        <dc:Bounds x="${newBounds.x}" y="${newBounds.y}" width="${newBounds.width}" height="${newBounds.height}" />\n      </bpmndi:BPMNShape>\n`;
+          result = result.replace(/<\/bpmndi:BPMNPlane>/, laneShapeXml + "    </bpmndi:BPMNPlane>");
+          updatedBounds.set(laneId, newBounds);
+          console.log(`[DI Normalizer] Added missing BPMNShape for lane: ${laneId}`);
+        }
+        continue;
+      }
+      
       if (!laneBounds) continue;
       
       // Calculate bounding box of all children
@@ -159,49 +188,142 @@ export function normalizeBpmnDI(xml: string): string {
       }
     }
     
-    // Step 7: Fix participant bounds to encompass all lanes and elements
-    for (const [participantId] of participantProcesses.entries()) {
-      const participantBounds = updatedBounds.get(participantId);
-      if (!participantBounds) continue;
-      
-      // Find all lane bounds for this participant
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      let hasContent = false;
-      
-      // Check lanes
-      for (const [laneId] of laneChildren.entries()) {
-        const laneBounds = updatedBounds.get(laneId);
-        if (!laneBounds) continue;
-        hasContent = true;
-        minX = Math.min(minX, laneBounds.x);
-        minY = Math.min(minY, laneBounds.y);
-        maxX = Math.max(maxX, laneBounds.x + laneBounds.width);
-        maxY = Math.max(maxY, laneBounds.y + laneBounds.height);
-      }
-      
-      // Also check all elements directly
-      for (const [elemId, bounds] of updatedBounds.entries()) {
-        const elemType = elementTypes.get(elemId);
-        if (elemType && elemType !== "participant" && elemType !== "lane") {
-          hasContent = true;
-          minX = Math.min(minX, bounds.x);
-          minY = Math.min(minY, bounds.y);
-          maxX = Math.max(maxX, bounds.x + bounds.width);
-          maxY = Math.max(maxY, bounds.y + bounds.height);
+    // Step 7: Fix overlapping participants - map each participant to its lanes
+    // Build lane-to-participant mapping
+    const laneToParticipant = new Map<string, string>();
+    for (const [participantId, processId] of participantProcesses.entries()) {
+      // Find lanes that belong to this participant's process
+      // Try to match by checking if the lane's children overlap with the participant's expected area
+      // Or use the laneSet structure in the XML
+      const laneSetPattern = new RegExp(
+        `<bpmn:process[^>]*id="${escapeRegex(processId)}"[^>]*>[\\s\\S]*?<bpmn:laneSet[^>]*>([\\s\\S]*?)<\\/bpmn:laneSet>`,
+        "g"
+      );
+      const lsMatch = laneSetPattern.exec(xml);
+      if (lsMatch) {
+        const laneSetContent = lsMatch[1];
+        const laneIdPattern = /<bpmn:lane\s[^>]*id="([^"]+)"/g;
+        let lm;
+        while ((lm = laneIdPattern.exec(laneSetContent)) !== null) {
+          laneToParticipant.set(lm[1], participantId);
         }
-      }
-      
-      if (hasContent) {
-        const newX = Math.min(participantBounds.x, minX - PARTICIPANT_PADDING);
-        const newY = Math.min(participantBounds.y, minY - PARTICIPANT_PADDING);
-        const newRight = Math.max(participantBounds.x + participantBounds.width, maxX + PARTICIPANT_PADDING);
-        const newBottom = Math.max(participantBounds.y + participantBounds.height, maxY + PARTICIPANT_PADDING);
-        
-        result = updateShapeBounds(result, participantId, newX, newY, newRight - newX, newBottom - newY);
       }
     }
     
-    console.log(`[DI Normalizer] Processed ${shapes.length} shapes, ${laneChildren.size} lanes`);
+    // Fix participant bounds based on their own lanes/elements only
+    const participantEntries = Array.from(participantProcesses.entries());
+    
+    // Detect if participants overlap (same bounds)
+    const participantBoundsList: Array<{ id: string; bounds: BoundsInfo }> = [];
+    for (const [participantId] of participantEntries) {
+      const bounds = updatedBounds.get(participantId);
+      if (bounds) participantBoundsList.push({ id: participantId, bounds });
+    }
+    
+    const hasOverlap = participantBoundsList.length >= 2 && participantBoundsList.every(
+      p => p.bounds.x === participantBoundsList[0].bounds.x && 
+           p.bounds.y === participantBoundsList[0].bounds.y
+    );
+    
+    if (hasOverlap && participantBoundsList.length >= 2) {
+      console.log(`[DI Normalizer] Detected ${participantBoundsList.length} overlapping participants, repositioning...`);
+      
+      // For each participant, compute bounds from its lanes' children
+      let currentY = participantBoundsList[0].bounds.y;
+      
+      for (const [participantId] of participantEntries) {
+        const participantBounds = updatedBounds.get(participantId);
+        if (!participantBounds) continue;
+        
+        // Find all elements belonging to this participant's lanes
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let hasContent = false;
+        
+        for (const [laneId, childIds] of laneChildren.entries()) {
+          if (laneToParticipant.get(laneId) !== participantId) continue;
+          for (const childId of childIds) {
+            const childBounds = updatedBounds.get(childId);
+            if (!childBounds) continue;
+            hasContent = true;
+            minX = Math.min(minX, childBounds.x);
+            minY = Math.min(minY, childBounds.y);
+            maxX = Math.max(maxX, childBounds.x + childBounds.width);
+            maxY = Math.max(maxY, childBounds.y + childBounds.height);
+          }
+        }
+        
+        if (hasContent) {
+          const newX = Math.min(participantBounds.x, minX - PARTICIPANT_PADDING);
+          const height = (maxY - minY) + (PARTICIPANT_PADDING * 2);
+          const width = Math.max(participantBounds.width, (maxX - minX) + (PARTICIPANT_PADDING * 2));
+          
+          result = updateShapeBounds(result, participantId, newX, currentY, width, height);
+          updatedBounds.set(participantId, { shapeId: participantId, x: newX, y: currentY, width, height });
+          
+          // Update lane bounds to be within this participant
+          for (const [laneId] of laneChildren.entries()) {
+            if (laneToParticipant.get(laneId) !== participantId) continue;
+            const laneBounds = updatedBounds.get(laneId);
+            if (laneBounds) {
+              const laneY = currentY + LANE_PADDING;
+              const laneHeight = height - (LANE_PADDING * 2);
+              result = updateShapeBounds(result, laneId, laneBounds.x, laneY, laneBounds.width, laneHeight);
+              updatedBounds.set(laneId, { ...laneBounds, y: laneY, height: laneHeight });
+            }
+          }
+          
+          currentY += height + 20; // 20px gap between participants
+        } else {
+          // No content found, give it a default height
+          const height = 150;
+          result = updateShapeBounds(result, participantId, participantBounds.x, currentY, participantBounds.width, height);
+          currentY += height + 20;
+        }
+      }
+    } else {
+      // Non-overlapping: just ensure each participant encompasses its content
+      for (const [participantId] of participantEntries) {
+        const participantBounds = updatedBounds.get(participantId);
+        if (!participantBounds) continue;
+        
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let hasContent = false;
+        
+        // Check lanes belonging to this participant
+        for (const [laneId] of laneChildren.entries()) {
+          const laneBounds = updatedBounds.get(laneId);
+          if (!laneBounds) continue;
+          hasContent = true;
+          minX = Math.min(minX, laneBounds.x);
+          minY = Math.min(minY, laneBounds.y);
+          maxX = Math.max(maxX, laneBounds.x + laneBounds.width);
+          maxY = Math.max(maxY, laneBounds.y + laneBounds.height);
+        }
+        
+        // Also check all elements directly
+        for (const [elemId, bounds] of updatedBounds.entries()) {
+          const elemType = elementTypes.get(elemId);
+          if (elemType && elemType !== "participant" && elemType !== "lane") {
+            hasContent = true;
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.x + bounds.width);
+            maxY = Math.max(maxY, bounds.y + bounds.height);
+          }
+        }
+        
+        if (hasContent) {
+          const newX = Math.min(participantBounds.x, minX - PARTICIPANT_PADDING);
+          const newY = Math.min(participantBounds.y, minY - PARTICIPANT_PADDING);
+          const newRight = Math.max(participantBounds.x + participantBounds.width, maxX + PARTICIPANT_PADDING);
+          const newBottom = Math.max(participantBounds.y + participantBounds.height, maxY + PARTICIPANT_PADDING);
+          
+          result = updateShapeBounds(result, participantId, newX, newY, newRight - newX, newBottom - newY);
+        }
+      }
+    }
+    
+    console.log(`[DI Normalizer] Processed ${shapes.length} shapes, ${laneChildren.size} lanes, ${participantProcesses.size} participants`);
     return result;
   } catch (error) {
     console.error("[DI Normalizer] Error normalizing DI, returning original XML:", error);
